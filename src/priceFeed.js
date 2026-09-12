@@ -16,10 +16,45 @@
  * WS_SOURCES with its url, subscribe message and parse function.
  */
 
+const FINNHUB_TOKEN = (import.meta.env && import.meta.env.VITE_FINNHUB_TOKEN) || '';
+const FINNHUB_SYMBOLS = {
+  'OANDA:XAU_USD': 'OANDA',
+  'IC MARKETS:41': 'IC Markets',
+};
+
+// Lower priority number = better source. When a better source starts
+// delivering while a worse one is active, the feed switches to it.
 const WS_SOURCES = [
+  // Real XAU/USD spot from forex brokers via Finnhub (needs VITE_FINNHUB_TOKEN).
+  // One Finnhub key allows a single open connection; extra devices fall back
+  // to the exchange sources below automatically.
+  ...(FINNHUB_TOKEN
+    ? [
+        {
+          id: 'finnhub',
+          label: 'OANDA',
+          symbol: 'XAU/USD',
+          priority: 1,
+          url: `wss://ws.finnhub.io?token=${encodeURIComponent(FINNHUB_TOKEN)}`,
+          subscribeMany: Object.keys(FINNHUB_SYMBOLS).map((s) => ({ type: 'subscribe', symbol: s })),
+          parse(m) {
+            if (!m || m.type !== 'trade' || !Array.isArray(m.data)) return null;
+            let best = null;
+            for (const d of m.data) {
+              if (!(d.s in FINNHUB_SYMBOLS) || typeof d.p !== 'number') continue;
+              // Prefer OANDA when both brokers tick in the same message.
+              if (!best || d.s === 'OANDA:XAU_USD') best = d;
+            }
+            return best ? { price: best.p, label: FINNHUB_SYMBOLS[best.s] } : null;
+          },
+        },
+      ]
+    : []),
   {
     id: 'okx',
     label: 'OKX',
+    symbol: 'PAXG/USD',
+    priority: 2,
     url: 'wss://ws.okx.com:8443/ws/v5/public',
     subscribe: { op: 'subscribe', args: [{ channel: 'tickers', instId: 'PAXG-USDT' }] },
     parse(m) {
@@ -31,6 +66,8 @@ const WS_SOURCES = [
   {
     id: 'binance',
     label: 'Binance',
+    symbol: 'PAXG/USD',
+    priority: 2,
     url: 'wss://data-stream.binance.vision/ws/paxgusdt@bookTicker',
     parse(m) {
       if (!m || !m.b || !m.a) return null;
@@ -40,6 +77,8 @@ const WS_SOURCES = [
   {
     id: 'binance2',
     label: 'Binance',
+    symbol: 'PAXG/USD',
+    priority: 2,
     url: 'wss://stream.binance.com:9443/ws/paxgusdt@bookTicker',
     parse(m) {
       if (!m || !m.b || !m.a) return null;
@@ -49,6 +88,8 @@ const WS_SOURCES = [
   {
     id: 'kraken',
     label: 'Kraken',
+    symbol: 'PAXG/USD',
+    priority: 3,
     url: 'wss://ws.kraken.com/v2',
     subscribe: { method: 'subscribe', params: { channel: 'ticker', symbol: ['PAXG/USD'], event_trigger: 'bbo' } },
     parse(m) {
@@ -81,6 +122,7 @@ const REST_INTERVAL_MS = 1000;
 const DEMO_INTERVAL_MS = 120;
 const STALE_MS = 15000; // a live source silent this long is considered dead
 const RECONNECT_MS = 2000;
+const UPGRADE_GRACE_MS = 12000; // keep better-priority sockets open this long after a worse one wins
 const DEFAULT_DEMO_PRICE = 4350;
 
 // Quiet-market layer: when the real price has not changed for this long
@@ -120,10 +162,14 @@ export function startPriceFeed({ onPrice, onStatus }) {
   let quietWatch = null;
   let quietTimer = null;
 
-  const setStatus = (next, src) => {
+  let symbol = null;
+  let upgradeTimer = null;
+
+  const setStatus = (next, src, sym) => {
     mode = next;
     source = src || null;
-    onStatus({ mode: next, source, quiet });
+    if (sym !== undefined) symbol = sym;
+    onStatus({ mode: next, source, symbol, quiet });
   };
 
   const clearTimers = () => {
@@ -135,6 +181,7 @@ export function startPriceFeed({ onPrice, onStatus }) {
     clearInterval(demoTimer);
     clearInterval(quietWatch);
     clearInterval(quietTimer);
+    clearTimeout(upgradeTimer);
     restTimer = demoTimer = quietWatch = quietTimer = null;
   };
 
@@ -144,14 +191,14 @@ export function startPriceFeed({ onPrice, onStatus }) {
     quietOffset = 0;
     clearInterval(quietTimer);
     quietTimer = null;
-    onStatus({ mode, source, quiet });
+    onStatus({ mode, source, symbol, quiet });
   };
 
   const startQuiet = () => {
     if (quiet || stopped || lastRealPrice === null) return;
     quiet = true;
     quietOffset = 0;
-    onStatus({ mode, source, quiet });
+    onStatus({ mode, source, symbol, quiet });
     quietTimer = setInterval(() => {
       if (stopped) return;
       // Bounded random walk with mean reversion so the simulated price never
@@ -189,6 +236,7 @@ export function startPriceFeed({ onPrice, onStatus }) {
     staleTimer = setTimeout(() => {
       if (stopped) return;
       // Live socket went quiet; restart the race without dropping to demo.
+      clearTimeout(upgradeTimer);
       closeAll();
       startRace();
     }, STALE_MS);
@@ -222,7 +270,7 @@ export function startPriceFeed({ onPrice, onStatus }) {
     if (demoTimer || stopped) return;
     let p = lastPrice || DEFAULT_DEMO_PRICE;
     stopQuiet();
-    setStatus('demo', null);
+    setStatus('demo', null, null);
     demoTimer = setInterval(() => {
       p += (Math.random() - 0.5) * 0.4 + (Math.random() - 0.5) * 0.1;
       deliver(p, 'demo', 'demo');
@@ -243,7 +291,7 @@ export function startPriceFeed({ onPrice, onStatus }) {
             clearInterval(demoTimer);
             demoTimer = null;
           }
-          if (mode !== 'poll') setStatus('poll', src.label);
+          if (mode !== 'poll') setStatus('poll', src.label, src.symbol || 'PAXG/USD');
           deliver(p, src.id, 'poll');
           return;
         }
@@ -265,7 +313,41 @@ export function startPriceFeed({ onPrice, onStatus }) {
       }, DEMO_TIMEOUT_MS);
       return;
     }
-    if (mode !== 'live') setStatus('connecting', null);
+    if (mode !== 'live') setStatus('connecting', null, null);
+
+    const closeEntry = (e) => {
+      try {
+        e.ws.onopen = e.ws.onmessage = e.ws.onerror = e.ws.onclose = null;
+        e.ws.close();
+      } catch {
+        /* ignore */
+      }
+    };
+
+    // Make `entry` the active source. Sockets that are not better than it are
+    // closed; better ones stay open for a grace period in case they start
+    // ticking (for example the broker feed connecting a moment later).
+    const promote = (entry) => {
+      active = entry;
+      sockets = sockets.filter((s) => {
+        if (s === entry) return true;
+        if (s.priority < entry.priority) return true;
+        closeEntry(s);
+        return false;
+      });
+      clearTimeout(upgradeTimer);
+      if (sockets.length > 1) {
+        upgradeTimer = setTimeout(() => {
+          sockets = sockets.filter((s) => {
+            if (s === active) return true;
+            closeEntry(s);
+            return false;
+          });
+        }, UPGRADE_GRACE_MS);
+      }
+      stopFallbacks();
+      setStatus('live', entry.label, entry.symbol);
+    };
 
     sockets = WS_SOURCES.map((src) => {
       let ws;
@@ -274,11 +356,12 @@ export function startPriceFeed({ onPrice, onStatus }) {
       } catch {
         return null;
       }
-      const entry = { id: src.id, label: src.label, ws };
+      const entry = { id: src.id, label: src.label, symbol: src.symbol || 'PAXG/USD', priority: src.priority || 9, ws };
       ws.onopen = () => {
-        if (src.subscribe) {
+        const msgs = src.subscribeMany || (src.subscribe ? [src.subscribe] : []);
+        for (const m of msgs) {
           try {
-            ws.send(JSON.stringify(src.subscribe));
+            ws.send(JSON.stringify(m));
           } catch {
             /* ignore */
           }
@@ -286,30 +369,19 @@ export function startPriceFeed({ onPrice, onStatus }) {
       };
       ws.onmessage = (ev) => {
         if (stopped) return;
-        let price = null;
+        let parsed = null;
         try {
-          price = src.parse(JSON.parse(ev.data));
+          parsed = src.parse(JSON.parse(ev.data));
         } catch {
           return;
         }
+        const price = parsed && typeof parsed === 'object' ? parsed.price : parsed;
         if (!isValid(price)) return;
-        if (!active) {
-          // First socket with a real price wins; close the others.
-          active = entry;
-          for (const other of sockets) {
-            if (other !== entry) {
-              try {
-                other.ws.onopen = other.ws.onmessage = other.ws.onerror = other.ws.onclose = null;
-                other.ws.close();
-              } catch {
-                /* ignore */
-              }
-            }
-          }
-          sockets = [entry];
-          stopFallbacks();
-          setStatus('live', src.label);
+        if (parsed && typeof parsed === 'object' && parsed.label && parsed.label !== entry.label) {
+          entry.label = parsed.label;
+          if (active === entry) setStatus('live', entry.label, entry.symbol);
         }
+        if (!active || entry.priority < active.priority) promote(entry);
         if (active !== entry) return;
         armStale();
         deliver(price, src.id, 'live');
@@ -318,8 +390,10 @@ export function startPriceFeed({ onPrice, onStatus }) {
         if (stopped) return;
         if (active === entry) {
           active = null;
-          sockets = [];
           clearTimeout(staleTimer);
+          clearTimeout(upgradeTimer);
+          for (const s of sockets) if (s !== entry) closeEntry(s);
+          sockets = [];
           reconnectTimer = setTimeout(startRace, RECONNECT_MS);
         } else {
           sockets = sockets.filter((s) => s !== entry);

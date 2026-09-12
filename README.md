@@ -49,12 +49,21 @@ webhook. The payload:
 
 ## Live gold price
 
-`src/priceFeed.js` streams the real gold price over public exchange
-WebSockets (no API key). Gold is quoted through PAXG (Paxos Gold, one token =
-one troy ounce) and the game settles on the mid price, (bid + ask) / 2.
+`src/priceFeed.js` streams the real gold price over WebSockets. Sources are
+raced in parallel and ranked by priority:
 
-- Sources raced in parallel: OKX, Binance (two hosts), Kraken. The first to
-  deliver a price wins; if it drops, the race restarts automatically.
+1. **XAU/USD from forex brokers (OANDA, IC Markets) via Finnhub.** Real spot
+   gold, the same quote traders see. Needs `VITE_FINNHUB_TOKEN` (free key from
+   finnhub.io, see `.env.example`). One key allows one open connection, so a
+   second device automatically falls back to the sources below.
+2. **PAXG/USD from OKX and Binance** (no key). Paxos Gold, one token = one troy
+   ounce; usually within a few dollars of spot. Settles on the mid price,
+   (bid + ask) / 2.
+3. Kraken PAXG/USD.
+
+The first source to deliver a price wins; if a better-ranked source starts
+ticking within 12 s it takes over. If the active source drops, the race
+restarts automatically.
 - If no socket answers within 5 s, a REST poller (Binance, then gold-api.com
   XAU spot) takes over at 1 request/second.
 - If nothing answers within 9 s, prices are simulated and the badge reads

@@ -168,7 +168,11 @@ function Display({ state, actions }) {
               {hasPrice ? money(price) : '— — —'}
             </div>
             <div className="feed-note">
-              {!hasPrice ? t('feed.waiting') : feed.quiet ? t('feed.noteQuiet') : t('feed.note')}
+              {!hasPrice
+                ? t('feed.waiting')
+                : feed.quiet
+                  ? t('feed.noteQuiet')
+                  : t('feed.note', { symbol: feed.symbol || 'PAXG/USD' })}
             </div>
             <div style={{ height: 10 }} />
             <div className="idle-title">{t('game.after')}</div>
