@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LANG_KEY, LangContext, makeT, money, num, readStoredLang, useLang } from './i18n.js';
 import LeadCapture from './LeadCapture.jsx';
+import Logo from './Logo.jsx';
 import { BASE_POINTS, useGame } from './useGame.js';
 
 const GREEN = '#35E36F';
@@ -61,7 +62,7 @@ function TopBar({ balance }) {
     <header className="topbar">
       <div className="topbar-start">
         <div className="logo" dir="ltr">
-          <span className="logo-x">x</span>Chief
+          <Logo height={30} />
         </div>
         <button
           type="button"

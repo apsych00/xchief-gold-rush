@@ -22,13 +22,35 @@ const FINNHUB_SYMBOLS = {
   'IC MARKETS:41': 'IC Markets',
 };
 
+const RELAY_URL = (import.meta.env && import.meta.env.VITE_RELAY_URL) || '';
+
 // Lower priority number = better source. When a better source starts
 // delivering while a worse one is active, the feed switches to it.
 const WS_SOURCES = [
+  // Our own relay (relay/server.js): one upstream connection shared by every
+  // player, so any number of devices get the broker XAU/USD feed and all see
+  // the same quote. Priority 0 = always preferred when reachable.
+  ...(RELAY_URL
+    ? [
+        {
+          id: 'relay',
+          label: 'Relay',
+          symbol: 'XAU/USD',
+          priority: 0,
+          url: RELAY_URL,
+          parse(m) {
+            if (!m || (m.type !== 'price' && m.type !== 'hello')) return null;
+            if (typeof m.price !== 'number') return null;
+            return { price: m.price, label: m.source || 'Relay', symbol: m.symbol || 'XAU/USD' };
+          },
+        },
+      ]
+    : []),
   // Real XAU/USD spot from forex brokers via Finnhub (needs VITE_FINNHUB_TOKEN).
   // One Finnhub key allows a single open connection; extra devices fall back
-  // to the exchange sources below automatically.
-  ...(FINNHUB_TOKEN
+  // to the exchange sources below automatically. Skipped when a relay is
+  // configured, because the relay already holds that one connection.
+  ...(FINNHUB_TOKEN && !RELAY_URL
     ? [
         {
           id: 'finnhub',
@@ -356,7 +378,7 @@ export function startPriceFeed({ onPrice, onStatus }) {
       } catch {
         return null;
       }
-      const entry = { id: src.id, label: src.label, symbol: src.symbol || 'PAXG/USD', priority: src.priority || 9, ws };
+      const entry = { id: src.id, label: src.label, symbol: src.symbol || 'PAXG/USD', priority: src.priority ?? 9, ws };
       ws.onopen = () => {
         const msgs = src.subscribeMany || (src.subscribe ? [src.subscribe] : []);
         for (const m of msgs) {
@@ -377,9 +399,14 @@ export function startPriceFeed({ onPrice, onStatus }) {
         }
         const price = parsed && typeof parsed === 'object' ? parsed.price : parsed;
         if (!isValid(price)) return;
-        if (parsed && typeof parsed === 'object' && parsed.label && parsed.label !== entry.label) {
-          entry.label = parsed.label;
-          if (active === entry) setStatus('live', entry.label, entry.symbol);
+        if (parsed && typeof parsed === 'object') {
+          const nextLabel = parsed.label || entry.label;
+          const nextSymbol = parsed.symbol || entry.symbol;
+          if (nextLabel !== entry.label || nextSymbol !== entry.symbol) {
+            entry.label = nextLabel;
+            entry.symbol = nextSymbol;
+            if (active === entry) setStatus('live', entry.label, entry.symbol);
+          }
         }
         if (!active || entry.priority < active.priority) promote(entry);
         if (active !== entry) return;
@@ -412,6 +439,7 @@ export function startPriceFeed({ onPrice, onStatus }) {
     }, DEMO_TIMEOUT_MS);
   };
 
+  console.info('[feed] sources:', WS_SOURCES.map((s) => `${s.id}(p${s.priority})`).join(', '));
   startRace();
 
   return () => {

@@ -23,6 +23,15 @@ static bundle to `dist/`, which can be hosted on any static file server.
 - `src/styles.css` — all styling, translated from the design's inline styles.
 - `api/lead.js` — Vercel serverless endpoint that receives leads.
 
+## Branding
+
+The top bar renders the xChief wordmark from `src/Logo.jsx` (SVG: X with the
+green swoosh over an italic serif "Chief", white on the dark UI). To use the
+official raster logo instead, drop a transparent-background file at
+`public/logo.png` (a white/light variant works best on the dark theme); the
+component picks it up automatically and falls back to the SVG if it is
+missing. `public/favicon.svg` is the X-mark tab icon.
+
 ## Languages
 
 Persian (RTL, Persian digits) is the default. The pill next to the logo toggles
@@ -52,6 +61,10 @@ webhook. The payload:
 `src/priceFeed.js` streams the real gold price over WebSockets. Sources are
 raced in parallel and ranked by priority:
 
+0. **The price relay** (`relay/`, see its README) when `VITE_RELAY_URL` is
+   set. One always-on service holds the single Finnhub connection and fans the
+   broker XAU/USD quote out to every player, so any number of devices can play
+   at once and all see the same price. This is the setup for the expo.
 1. **XAU/USD from forex brokers (OANDA, IC Markets) via Finnhub.** Real spot
    gold, the same quote traders see. Needs `VITE_FINNHUB_TOKEN` (free key from
    finnhub.io, see `.env.example`). One key allows one open connection, so a

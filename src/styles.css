@@ -106,10 +106,17 @@ button:focus:not(:focus-visible) { outline: none; }
   gap: 10px;
 }
 .logo {
-  font: 700 26px/1 var(--en);
-  letter-spacing: -0.5px;
+  display: flex;
+  align-items: center;
+  color: #fff;
 }
-.logo-x { color: var(--green); }
+.logo-img,
+.logo-svg {
+  display: block;
+  height: 30px;
+  width: auto;
+  user-select: none;
+}
 
 .lang-btn {
   height: 30px;

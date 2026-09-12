@@ -1,0 +1,25 @@
+# Fly.io config for the price relay.
+#   cd relay
+#   fly launch --copy-config --no-deploy   (pick a name and region, e.g. fra or dxb-nearest)
+#   fly secrets set FINNHUB_TOKEN=xxxx
+#   fly deploy
+# Relay URL will be wss://<app-name>.fly.dev/ws
+
+app = "xchief-gold-relay"
+primary_region = "fra"
+
+[build]
+
+[env]
+  PORT = "8787"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

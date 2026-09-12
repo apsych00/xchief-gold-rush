@@ -1,0 +1,18 @@
+# Render Blueprint for the price relay.
+# Dashboard -> New -> Blueprint -> pick this repo. Set FINNHUB_TOKEN when asked.
+# Relay URL will be wss://<service-name>.onrender.com/ws
+# Note: the free plan sleeps after 15 min of no traffic; use Starter for the expo.
+services:
+  - type: web
+    name: xchief-gold-relay
+    runtime: node
+    rootDir: relay
+    plan: starter
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: FINNHUB_TOKEN
+        sync: false
+      - key: NODE_VERSION
+        value: "20"

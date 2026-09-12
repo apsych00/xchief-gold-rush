@@ -1,0 +1,17 @@
+{
+  "name": "xchief-gold-relay",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Holds one upstream gold price connection and fans it out to any number of browser clients over WebSocket.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
