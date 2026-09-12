@@ -47,8 +47,28 @@ webhook. The payload:
   "page": "/", "ua": "...", "country": "IR", "at": "2026-09-12T10:00:00.000Z" }
 ```
 
+## Live gold price
+
+`src/priceFeed.js` streams the real gold price over public exchange
+WebSockets (no API key). Gold is quoted through PAXG (Paxos Gold, one token =
+one troy ounce) and the game settles on the mid price, (bid + ask) / 2.
+
+- Sources raced in parallel: OKX, Binance (two hosts), Kraken. The first to
+  deliver a price wins; if it drops, the race restarts automatically.
+- If no socket answers within 5 s, a REST poller (Binance, then gold-api.com
+  XAU spot) takes over at 1 request/second.
+- If nothing answers within 9 s, prices are simulated and the badge reads
+  DEMO. The moment a real source connects, the game switches to LIVE.
+- The badge in the game screen shows the current state and source.
+
+A round where the price is exactly unchanged after 5 seconds ends as FLAT:
+no points, play again. This happens mostly at weekends when gold is quiet.
+
+To use a broker feed instead (for example an MT5 bridge), add an entry to
+`WS_SOURCES` in `src/priceFeed.js` with its URL, subscribe message and a
+`parse()` that returns the price.
+
 ## Rules (as designed)
 
 - A win pays 100 base points × the selected lever. A miss deducts nothing.
 - The lever locks once a round starts and unlocks on "دور بعدی".
-- Prices are simulated locally (random walk around 2500, clamped to ±1).

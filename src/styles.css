@@ -340,6 +340,67 @@ button:focus:not(:focus-visible) { outline: none; }
   letter-spacing: 4px;
   color: var(--gold);
 }
+.price-waiting {
+  color: rgba(255, 255, 255, 0.35);
+  animation: gr-blink 1.2s ease-in-out infinite;
+}
+@keyframes gr-blink {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+.feed-note {
+  margin-top: 2px;
+  font: 500 11px var(--fa);
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* live/demo badge, top corner opposite the Home button */
+.feed-corner {
+  position: absolute;
+  top: 12px;
+  inset-inline-end: 12px;
+  z-index: 2;
+}
+.feed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  font: 700 11px var(--en);
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.feed-src {
+  font-weight: 500;
+  letter-spacing: 0;
+  color: rgba(255, 255, 255, 0.55);
+}
+.feed-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.4);
+}
+.feed-live .feed-dot,
+.feed-poll .feed-dot {
+  background: var(--green);
+  box-shadow: 0 0 0 0 rgba(53, 227, 111, 0.6);
+  animation: gr-ping 1.6s ease-out infinite;
+}
+.feed-live { border-color: rgba(53, 227, 111, 0.4); color: var(--green); }
+.feed-poll { border-color: rgba(53, 227, 111, 0.4); color: var(--green); }
+.feed-connecting .feed-dot { animation: gr-blink 1s ease-in-out infinite; }
+.feed-demo { border-color: rgba(233, 182, 42, 0.5); color: var(--gold); }
+.feed-demo .feed-dot { background: var(--gold); }
+@keyframes gr-ping {
+  0% { box-shadow: 0 0 0 0 rgba(53, 227, 111, 0.6); }
+  100% { box-shadow: 0 0 0 8px rgba(53, 227, 111, 0); }
+}
+.tie-word { color: var(--gold); }
 .ticker-sm { font-size: 12px; }
 .price-big { font: 700 44px/1 var(--en); }
 .idle-title { font: 800 30px var(--fa); }

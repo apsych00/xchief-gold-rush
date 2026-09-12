@@ -109,7 +109,7 @@ function Home({ balance, onStart }) {
 }
 
 function Chart({ history, start, color }) {
-  const h = history.length ? history : [start];
+  const h = history.length ? history : [start ?? 0];
   const mn = Math.min(...h, start) - 0.05;
   const mx = Math.max(...h, start) + 0.05;
   const pts = h
@@ -123,13 +123,27 @@ function Chart({ history, start, color }) {
   );
 }
 
+function FeedBadge({ feed }) {
+  const { t } = useLang();
+  const mode = feed.mode;
+  const label = t(`feed.${mode}`);
+  return (
+    <span className={`feed-badge feed-${mode}`} title={feed.source || undefined} dir="ltr">
+      <span className="feed-dot" aria-hidden="true" />
+      {label}
+      {feed.source && mode !== 'demo' ? <span className="feed-src"> · {feed.source}</span> : null}
+    </span>
+  );
+}
+
 function Display({ state, actions }) {
   const { t, lang } = useLang();
-  const { phase, price, start, lev, dir, remaining, history, win, points } = state;
+  const { phase, price, start, lev, dir, remaining, history, win, tie, points, feed } = state;
   const isIdle = phase === 'idle';
   const isRunning = phase === 'running';
   const isResult = phase === 'result';
-  const delta = price - start;
+  const hasPrice = price != null;
+  const delta = hasPrice && start != null ? price - start : 0;
   const up = delta >= 0;
   const deltaColor = up ? GREEN : RED;
   const digit = isRunning ? Math.max(1, Math.ceil(remaining)) : 0;
@@ -142,12 +156,18 @@ function Display({ state, actions }) {
         <button type="button" className="btn-home" onClick={actions.goHome}>
           {t('game.home')}
         </button>
+        <div className="feed-corner">
+          <FeedBadge feed={feed} />
+        </div>
 
         {isIdle && (
           <div className="pane pane-idle">
             <div className="ticker" dir="ltr">GOLD · XAUUSD</div>
-            <div className="price-big" dir="ltr">{money(price)}</div>
-            <div style={{ height: 18 }} />
+            <div className={hasPrice ? 'price-big' : 'price-big price-waiting'} dir="ltr" aria-live="polite">
+              {hasPrice ? money(price) : '— — —'}
+            </div>
+            <div className="feed-note">{hasPrice ? t('feed.note') : t('feed.waiting')}</div>
+            <div style={{ height: 10 }} />
             <div className="idle-title">{t('game.after')}</div>
             <div className="idle-help">{t('game.help')}</div>
             <div className="lev-pill">
@@ -161,7 +181,7 @@ function Display({ state, actions }) {
           <div className="pane pane-running">
             <div className="ticker ticker-sm" dir="ltr">GOLD · XAUUSD</div>
             <div className="price-row" dir="ltr">
-              <span className="price-mid">{money(price)}</span>
+              <span className="price-mid">{money(price ?? start)}</span>
               <span className="price-delta" style={{ color: deltaColor }}>
                 {(up ? '▲ +' : '▼ ') + delta.toFixed(2)}
               </span>
@@ -194,6 +214,12 @@ function Display({ state, actions }) {
                   {t('result.winSub', { base: num(BASE_POINTS, lang), lev: num(lev, lang) })}
                 </div>
               </>
+            ) : tie ? (
+              <>
+                <div className="miss-word tie-word" dir="ltr">FLAT</div>
+                <div className="result-line miss-line">{t('result.tieTitle')}</div>
+                <div className="result-sub miss-sub">{t('result.tieSub')}</div>
+              </>
             ) : (
               <>
                 <div className="miss-word" dir="ltr">MISS</div>
@@ -204,7 +230,7 @@ function Display({ state, actions }) {
             <div className="result-stats">
               <div className="stat">
                 <span className="stat-label">{t('result.start')}</span>
-                <span className="stat-val" dir="ltr">{money(start)}</span>
+                <span className="stat-val" dir="ltr">{money(start ?? price)}</span>
               </div>
               <div className="stat">
                 <span className="stat-label">{t('result.end')}</span>
@@ -228,11 +254,12 @@ function Display({ state, actions }) {
 
 function Console({ state, actions, trackRef }) {
   const { t, lang } = useLang();
-  const { phase, lev, dir, win, balance } = state;
+  const { phase, lev, dir, win, balance, price } = state;
   const isIdle = phase === 'idle';
   const isRunning = phase === 'running';
   const isResult = phase === 'result';
   const locked = !isIdle;
+  const noPrice = price == null;
   const onGold = !isResult;
 
   const bodyClass = isResult ? (win ? 'body body-win' : 'body body-lose') : 'body body-gold';
@@ -240,7 +267,8 @@ function Console({ state, actions, trackRef }) {
   const tickColor = (m) => (lev === m ? '#fff' : onGold ? 'rgba(0,0,0,.5)' : 'rgba(255,255,255,.4)');
 
   let hint;
-  if (isIdle) hint = t('body.hintIdle');
+  if (isIdle && noPrice) hint = t('feed.waiting');
+  else if (isIdle) hint = t('body.hintIdle');
   else if (isRunning) hint = t('body.hintRunning');
   else if (win) hint = t('body.hintWin', { bal: num(balance, lang) });
   else hint = t('body.hintLose');
@@ -310,8 +338,8 @@ function Console({ state, actions, trackRef }) {
           type="button"
           className="btn-dir btn-down"
           onClick={actions.pickDown}
-          disabled={locked}
-          style={{ opacity: locked && dir !== 'down' ? 0.45 : 1 }}
+          disabled={locked || noPrice}
+          style={{ opacity: (locked && dir !== 'down') || noPrice ? 0.45 : 1 }}
         >
           {t('game.down')}
         </button>
@@ -319,8 +347,8 @@ function Console({ state, actions, trackRef }) {
           type="button"
           className="btn-dir btn-up"
           onClick={actions.pickUp}
-          disabled={locked}
-          style={{ opacity: locked && dir !== 'up' ? 0.45 : 1 }}
+          disabled={locked || noPrice}
+          style={{ opacity: (locked && dir !== 'up') || noPrice ? 0.45 : 1 }}
         >
           {t('game.up')}
         </button>

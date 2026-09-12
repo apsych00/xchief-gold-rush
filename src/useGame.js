@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { startPriceFeed } from './priceFeed.js';
 
 export const BASE_POINTS = 100;
 export const ROUND_SECONDS = 5;
-export const START_PRICE = 2500;
 export const LEVERS = [1, 2, 5];
 const TICK_MS = 60;
 const MAX_HISTORY = 90;
@@ -23,27 +23,24 @@ const initialState = {
   lev: 1,
   dir: null, // 'up' | 'down' | null
   balance: 2400,
-  price: START_PRICE,
-  start: START_PRICE,
+  price: null, // latest market price, null until the feed delivers
+  start: null, // price locked at the start of the round
   remaining: ROUND_SECONDS,
   history: [],
   win: false,
+  tie: false,
   points: 0,
   drag: false,
   others: OTHERS,
+  feed: { mode: 'connecting', source: null }, // connecting | live | poll | demo
 };
-
-/** Random-walk tick for the simulated XAUUSD price, clamped to ±1 around the start. */
-function nextPrice(p) {
-  const step = (Math.random() - 0.5) * 0.09 + (Math.random() - 0.5) * 0.02;
-  return Math.max(START_PRICE - 1, Math.min(START_PRICE + 1, p + step));
-}
 
 export function useGame() {
   const [state, setState] = useState(initialState);
   const timer = useRef(null);
   const phaseRef = useRef(state.phase);
   const dragRef = useRef(false);
+  const priceRef = useRef(null);
   const trackRef = useRef(null);
 
   phaseRef.current = state.phase;
@@ -53,35 +50,42 @@ export function useGame() {
     timer.current = null;
   }, []);
 
-  useEffect(() => stopTimer, [stopTimer]);
-
   const patch = useCallback((p) => setState((s) => ({ ...s, ...p })), []);
+
+  // Live price feed: keeps priceRef fresh and mirrors it into state.
+  useEffect(() => {
+    const stop = startPriceFeed({
+      onPrice: (price) => {
+        priceRef.current = price;
+        setState((s) => (s.price === price ? s : { ...s, price }));
+      },
+      onStatus: (feed) => setState((s) => ({ ...s, feed })),
+    });
+    return () => {
+      stop();
+      stopTimer();
+    };
+  }, [stopTimer]);
 
   const startRound = useCallback(
     (dir) => {
       if (phaseRef.current !== 'idle') return;
+      const start = priceRef.current;
+      if (start == null) return; // no market price yet
       phaseRef.current = 'running';
       stopTimer();
 
       const t0 = performance.now();
-      let price = START_PRICE;
-      patch({
-        dir,
-        phase: 'running',
-        start: START_PRICE,
-        price,
-        remaining: ROUND_SECONDS,
-        history: [START_PRICE],
-      });
+      patch({ dir, phase: 'running', start, remaining: ROUND_SECONDS, history: [start], win: false, tie: false });
 
       timer.current = setInterval(() => {
         const elapsed = (performance.now() - t0) / 1000;
-        price = nextPrice(price);
+        const price = priceRef.current ?? start;
         if (elapsed >= ROUND_SECONDS) {
           stopTimer();
           setState((cur) => {
-            const wentUp = price >= cur.start;
-            const win = (dir === 'up') === wentUp && price !== cur.start;
+            const tie = price === cur.start;
+            const win = !tie && (dir === 'up') === price > cur.start;
             const points = win ? BASE_POINTS * cur.lev : 0;
             return {
               ...cur,
@@ -89,6 +93,7 @@ export function useGame() {
               price,
               remaining: 0,
               win,
+              tie,
               points,
               balance: cur.balance + points,
               history: [...cur.history, price],
@@ -96,9 +101,10 @@ export function useGame() {
           });
           return;
         }
+        // Sample the latest price on every tick so the chart moves smoothly
+        // even when the market only ticks a few times per second.
         setState((cur) => ({
           ...cur,
-          price,
           remaining: ROUND_SECONDS - elapsed,
           history: [...cur.history, price].slice(-MAX_HISTORY),
         }));
@@ -118,14 +124,16 @@ export function useGame() {
     [patch],
   );
 
+  const reset = { phase: 'idle', dir: null, start: null, history: [], win: false, tie: false };
+
   const actions = {
     startGame: () => patch({ screen: 'game' }),
     goHome: () => {
       stopTimer();
-      patch({ screen: 'home', phase: 'idle', dir: null, price: START_PRICE, history: [] });
+      patch({ screen: 'home', ...reset });
     },
     goLeaderboard: () => patch({ screen: 'lb' }),
-    playAgain: () => patch({ phase: 'idle', dir: null, price: START_PRICE, history: [] }),
+    playAgain: () => patch(reset),
     pickUp: () => startRound('up'),
     pickDown: () => startRound('down'),
     sliderDown: (e) => {
