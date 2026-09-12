@@ -25,12 +25,11 @@ static bundle to `dist/`, which can be hosted on any static file server.
 
 ## Branding
 
-The top bar renders the xChief wordmark from `src/Logo.jsx` (SVG: X with the
-green swoosh over an italic serif "Chief", white on the dark UI). To use the
-official raster logo instead, drop a transparent-background file at
-`public/logo.png` (a white/light variant works best on the dark theme); the
-component picks it up automatically and falls back to the SVG if it is
-missing. `public/favicon.svg` is the X-mark tab icon.
+`public/logo.svg` is the official xChief wordmark (from xchief.com) with the
+dark strokes recoloured white for the dark UI; `public/logo-dark.svg` is the
+untouched original for light backgrounds. `src/Logo.jsx` renders it in the top
+bar and falls back to `public/logo.png` (if you add one) or a small inline SVG.
+`public/favicon.svg` is the X-mark tab icon.
 
 ## Languages
 

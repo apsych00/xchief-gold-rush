@@ -1,18 +1,18 @@
 /**
- * xChief wordmark: a bold "X" whose rising stroke is a green swoosh that
- * sweeps over an italic serif "Chief". Drawn as SVG so it stays crisp on the
- * booth LCD and can take the surrounding text colour (white on the dark UI).
+ * xChief wordmark.
  *
- * If a raster brand file is preferred, drop it in `public/logo.png` and this
- * component will show it instead (falls back to the SVG if the file is
- * missing).
+ * `public/logo.svg` is the official logo (from xchief.com) with the dark
+ * strokes recoloured white for the dark UI; `public/logo-dark.svg` is the
+ * untouched original for light backgrounds. If `public/logo.png` exists it
+ * takes precedence, and if no file loads at all a small inline SVG keeps the
+ * brand visible.
  */
 import { useState } from 'react';
 
-const GREEN = '#00B51D';
+const GREEN = '#06D700';
+const CANDIDATES = ['/logo.png', '/logo.svg'];
 
 export function LogoMark({ size = 28, color = 'currentColor' }) {
-  // Standalone "X + swoosh" mark, used for the favicon-style badge.
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden="true">
       <path d="M8 22h22l62 70H70L8 22z" fill={color} />
@@ -23,15 +23,15 @@ export function LogoMark({ size = 28, color = 'currentColor' }) {
 }
 
 export default function Logo({ height = 28, className = '' }) {
-  const [useImage, setUseImage] = useState(true);
-  if (useImage) {
+  const [idx, setIdx] = useState(0);
+  if (idx < CANDIDATES.length) {
     return (
       <img
-        src="/logo.png"
+        src={CANDIDATES[idx]}
         alt="xChief"
         className={`logo-img ${className}`}
         style={{ height, width: 'auto' }}
-        onError={() => setUseImage(false)}
+        onError={() => setIdx((i) => i + 1)}
         draggable={false}
       />
     );
@@ -45,11 +45,8 @@ export default function Logo({ height = 28, className = '' }) {
       aria-label="xChief"
       style={{ width: 'auto', display: 'block' }}
     >
-      {/* falling stroke of the X */}
       <path d="M6 30h34l86 84H92L6 30z" fill="currentColor" />
-      {/* short upper-right stub of the rising stroke, above the swoosh */}
       <path d="M92 30h34L98 63 82 44 92 30z" fill="currentColor" />
-      {/* green swoosh: rising stroke that arcs over the wordmark */}
       <path d="M4 114C34 70 78 40 150 27c40-7 88-8 150 8-58-10-108-6-148 4-52 13-92 40-118 75H4z" fill={GREEN} />
       <text
         x="132"
