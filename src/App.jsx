@@ -1,4 +1,6 @@
-import { fa, money } from './format.js';
+import { useEffect, useMemo, useState } from 'react';
+import { LANG_KEY, LangContext, makeT, money, num, readStoredLang, useLang } from './i18n.js';
+import LeadCapture from './LeadCapture.jsx';
 import { BASE_POINTS, useGame } from './useGame.js';
 
 const GREEN = '#35E36F';
@@ -29,9 +31,9 @@ const COIN_PX = COIN_MAP.flatMap((row, r) =>
 
 const KNOB_TOP = { 1: 134, 2: 67, 5: 0 };
 
-function TrophyIcon({ stroke }) {
+function TrophyIcon({ stroke, size = 24 }) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.7V17c0 .6-.4 1-1 1.3L7 20h10l-2-1.7c-.6-.3-1-.7-1-1.3v-2.3M18 2H6v7a6 6 0 0 0 12 0V2z" />
     </svg>
   );
@@ -39,7 +41,7 @@ function TrophyIcon({ stroke }) {
 
 function HomeIcon({ stroke }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2z" />
     </svg>
   );
@@ -47,31 +49,46 @@ function HomeIcon({ stroke }) {
 
 function GamepadIcon({ stroke }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M6 11h4M8 9v4M15 12h.01M18 10h.01M17.3 5H6.7a4 4 0 0 0-4 3.6L2 15.6A2.4 2.4 0 0 0 6.2 17.5l1.6-2h8.4l1.6 2a2.4 2.4 0 0 0 4.2-1.9l-.7-7A4 4 0 0 0 17.3 5z" />
     </svg>
   );
 }
 
 function TopBar({ balance }) {
+  const { t, lang, setLang } = useLang();
   return (
     <header className="topbar">
-      <div className="logo" dir="ltr">
-        <span className="logo-x">x</span>Chief
+      <div className="topbar-start">
+        <div className="logo" dir="ltr">
+          <span className="logo-x">x</span>Chief
+        </div>
+        <button
+          type="button"
+          className="lang-btn"
+          onClick={() => setLang(lang === 'fa' ? 'en' : 'fa')}
+          aria-label={lang === 'fa' ? 'Switch to English' : 'تغییر به فارسی'}
+          lang={lang === 'fa' ? 'en' : 'fa'}
+        >
+          {t('langToggle')}
+        </button>
       </div>
-      <div className="balance-chip">
-        <span className="coin-dot" />
-        <span className="balance-text">{fa(balance)} امتیاز</span>
+      <div className="balance-chip" aria-live="polite">
+        <span className="coin-dot" aria-hidden="true" />
+        <span className="balance-text">
+          {num(balance, lang)} {t('pts')}
+        </span>
       </div>
     </header>
   );
 }
 
-function Home({ onStart }) {
+function Home({ balance, onStart }) {
+  const { t, lang } = useLang();
   return (
     <section className="home">
-      <div className="home-question">۵ ثانیه بعد، طلا بالاتر می‌ره یا پایین‌تر؟</div>
-      <div className="hero">
+      <div className="home-question">{t('home.question')}</div>
+      <div className="hero" aria-hidden="true">
         <div className="hero-ring" />
         <div className="hero-glow" />
         <div className="bar">
@@ -82,10 +99,11 @@ function Home({ onStart }) {
       </div>
       <div className="home-cta">
         <button type="button" className="btn-start" onClick={onStart}>
-          شروع چالش
+          {t('home.start')}
         </button>
-        <div className="home-note">امتیاز پایه هر برد: {fa(BASE_POINTS)} × اهرم</div>
+        <div className="home-note">{t('home.note', { base: num(BASE_POINTS, lang) })}</div>
       </div>
+      <LeadCapture source="home" balance={balance} />
     </section>
   );
 }
@@ -98,7 +116,7 @@ function Chart({ history, start, color }) {
     .map((v, i) => `${(i / Math.max(1, h.length - 1)) * 300},${80 - ((v - mn) / (mx - mn)) * 80}`)
     .join(' ');
   return (
-    <svg viewBox="0 0 300 80" className="chart">
+    <svg viewBox="0 0 300 80" className="chart" aria-hidden="true">
       <line x1="0" y1="40" x2="300" y2="40" stroke="rgba(255,255,255,.25)" strokeDasharray="4 6" strokeWidth="1.5" />
       <polyline points={pts} fill="none" stroke={color} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
@@ -106,6 +124,7 @@ function Chart({ history, start, color }) {
 }
 
 function Display({ state, actions }) {
+  const { t, lang } = useLang();
   const { phase, price, start, lev, dir, remaining, history, win, points } = state;
   const isIdle = phase === 'idle';
   const isRunning = phase === 'running';
@@ -118,10 +137,10 @@ function Display({ state, actions }) {
   return (
     <div className="display">
       <div className="display-inner">
-        <div className="display-rays" />
-        <div className="display-vignette" />
+        <div className="display-rays" aria-hidden="true" />
+        <div className="display-vignette" aria-hidden="true" />
         <button type="button" className="btn-home" onClick={actions.goHome}>
-          → خانه
+          {t('game.home')}
         </button>
 
         {isIdle && (
@@ -129,12 +148,11 @@ function Display({ state, actions }) {
             <div className="ticker" dir="ltr">GOLD · XAUUSD</div>
             <div className="price-big" dir="ltr">{money(price)}</div>
             <div style={{ height: 18 }} />
-            <div className="idle-title">۵ ثانیه بعد؟</div>
-            <div className="idle-help">اهرم رو با اسلایدر انتخاب کن، بعد جهت رو بزن</div>
+            <div className="idle-title">{t('game.after')}</div>
+            <div className="idle-help">{t('game.help')}</div>
             <div className="lev-pill">
-              اهرم امتیاز{' '}
-              <span dir="ltr" className="lev-pill-x">×{lev}</span>
-              {' '}· برد = <span>{fa(BASE_POINTS * lev)}</span> امتیاز
+              {t('game.levPill')} <span dir="ltr" className="lev-pill-x">×{lev}</span> · {t('game.win')}{' '}
+              <span>{num(BASE_POINTS * lev, lang)}</span> {t('pts')}
             </div>
           </div>
         )}
@@ -149,9 +167,10 @@ function Display({ state, actions }) {
               </span>
             </div>
             <Chart history={history} start={start} color={deltaColor} />
-            <div key={digit} className="countdown" dir="ltr">{digit}</div>
+            <div key={digit} className="countdown" dir="ltr" aria-live="polite">{digit}</div>
             <div className="locked-note">
-              پیش‌بینی قفل شد · {dir === 'up' ? 'صعود ▲' : 'نزول ▼'} · اهرم <span dir="ltr">×{lev}</span>
+              {t('game.locked')} · {dir === 'up' ? t('game.up') : t('game.down')} · {t('game.lever')}{' '}
+              <span dir="ltr">×{lev}</span>
             </div>
           </div>
         )}
@@ -160,7 +179,7 @@ function Display({ state, actions }) {
           <div className="pane pane-result">
             {win ? (
               <>
-                <div className="coin-grid">
+                <div className="coin-grid" aria-hidden="true">
                   {COIN_PX.map((c, i) => (
                     <div key={i} style={{ background: c }} />
                   ))}
@@ -169,33 +188,35 @@ function Display({ state, actions }) {
                   <span className="win-word">WIN</span>
                   <span className="win-mult">×{lev}</span>
                 </div>
-                <div className="result-line result-line-1">درست پیش‌بینی کردی!</div>
-                <div className="result-points">{fa(points)}+ امتیاز</div>
-                <div className="result-sub">{fa(BASE_POINTS)} امتیاز پایه × {fa(lev)}</div>
+                <div className="result-line">{t('result.winTitle')}</div>
+                <div className="result-points">{t('result.winPoints', { pts: num(points, lang) })}</div>
+                <div className="result-sub">
+                  {t('result.winSub', { base: num(BASE_POINTS, lang), lev: num(lev, lang) })}
+                </div>
               </>
             ) : (
               <>
                 <div className="miss-word" dir="ltr">MISS</div>
-                <div className="result-line miss-line">این بار نشد؛ دوباره پیش‌بینی کن</div>
-                <div className="result-sub miss-sub">امتیازی کسر نمی‌شود</div>
+                <div className="result-line miss-line">{t('result.missTitle')}</div>
+                <div className="result-sub miss-sub">{t('result.missSub')}</div>
               </>
             )}
             <div className="result-stats">
               <div className="stat">
-                <span className="stat-label">قیمت شروع</span>
+                <span className="stat-label">{t('result.start')}</span>
                 <span className="stat-val" dir="ltr">{money(start)}</span>
               </div>
               <div className="stat">
-                <span className="stat-label">قیمت پایان</span>
+                <span className="stat-label">{t('result.end')}</span>
                 <span className="stat-val stat-val-gold" dir="ltr">{money(price)}</span>
               </div>
             </div>
             <div className="result-actions">
               <button type="button" className="btn-again" onClick={actions.playAgain}>
-                دور بعدی
+                {t('result.again')}
               </button>
               <button type="button" className="btn-lb" onClick={actions.goLeaderboard}>
-                لیدربورد
+                {t('result.lb')}
               </button>
             </div>
           </div>
@@ -206,6 +227,7 @@ function Display({ state, actions }) {
 }
 
 function Console({ state, actions, trackRef }) {
+  const { t, lang } = useLang();
   const { phase, lev, dir, win, balance } = state;
   const isIdle = phase === 'idle';
   const isRunning = phase === 'running';
@@ -218,21 +240,28 @@ function Console({ state, actions, trackRef }) {
   const tickColor = (m) => (lev === m ? '#fff' : onGold ? 'rgba(0,0,0,.5)' : 'rgba(255,255,255,.4)');
 
   let hint;
-  if (isIdle) hint = 'اهرم رو بکش، بعد جهت رو انتخاب کن';
-  else if (isRunning) hint = 'انتخاب تا پایان دور قفل شد';
-  else if (win) hint = `موجودی: ${fa(balance)} امتیاز`;
-  else hint = 'دور بعدی رو شروع کن';
+  if (isIdle) hint = t('body.hintIdle');
+  else if (isRunning) hint = t('body.hintRunning');
+  else if (win) hint = t('body.hintWin', { bal: num(balance, lang) });
+  else hint = t('body.hintLose');
+
+  const onKey = (e) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') actions.setLev(lev === 1 ? 2 : 5);
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') actions.setLev(lev === 5 ? 2 : 1);
+    else return;
+    e.preventDefault();
+  };
 
   return (
     <section className="console">
       <Display state={state} actions={actions} />
 
       <div className={bodyClass}>
-        <div className="body-sheen" />
+        <div className="body-sheen" aria-hidden="true" />
         <div className="lev-label" style={{ color: levLabelColor }}>
-          <span>اهرم امتیاز</span>
+          <span>{t('body.lever')}</span>
           <span className="lev-label-x" dir="ltr">×{lev}</span>
-          <span className="lev-lock" style={{ opacity: locked ? 1 : 0 }}>
+          <span className="lev-lock" style={{ opacity: locked ? 1 : 0 }} aria-hidden="true">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M7 11V7a5 5 0 0 1 10 0v4M5 11h14v10H5z" />
             </svg>
@@ -241,29 +270,41 @@ function Console({ state, actions, trackRef }) {
 
         <div
           ref={trackRef}
-          className="slider"
+          className={locked ? 'slider slider-locked' : 'slider'}
           role="slider"
-          aria-label="اهرم امتیاز"
+          aria-label={t('body.lever')}
           aria-valuemin={1}
           aria-valuemax={5}
           aria-valuenow={lev}
+          aria-valuetext={`×${lev}`}
           aria-disabled={locked}
           tabIndex={0}
           onPointerDown={actions.sliderDown}
           onPointerMove={actions.sliderMove}
           onPointerUp={actions.sliderUp}
           onPointerCancel={actions.sliderUp}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowUp') actions.setLev(lev === 1 ? 2 : 5);
-            else if (e.key === 'ArrowDown') actions.setLev(lev === 5 ? 2 : 1);
-          }}
+          onKeyDown={onKey}
         >
           <div className="slider-track" />
-          <div className="slider-knob" style={{ top: KNOB_TOP[lev] }} />
+          <div className="slider-knob" style={{ top: KNOB_TOP[lev] }} dir="ltr">
+            ×{lev}
+          </div>
         </div>
-        <div className="tick tick-5" dir="ltr" style={{ color: tickColor(5) }} onClick={() => actions.setLev(5)}>— ×5</div>
-        <div className="tick tick-2" dir="ltr" style={{ color: tickColor(2) }} onClick={() => actions.setLev(2)}>— ×2</div>
-        <div className="tick tick-1" dir="ltr" style={{ color: tickColor(1) }} onClick={() => actions.setLev(1)}>— ×1</div>
+        {[5, 2, 1].map((m) => (
+          <button
+            key={m}
+            type="button"
+            className={`tick tick-${m}`}
+            dir="ltr"
+            style={{ color: tickColor(m) }}
+            onClick={() => actions.setLev(m)}
+            disabled={locked}
+            aria-label={`×${m}`}
+            aria-pressed={lev === m}
+          >
+            ×{m}
+          </button>
+        ))}
 
         <button
           type="button"
@@ -272,7 +313,7 @@ function Console({ state, actions, trackRef }) {
           disabled={locked}
           style={{ opacity: locked && dir !== 'down' ? 0.45 : 1 }}
         >
-          نزول ▼
+          {t('game.down')}
         </button>
         <button
           type="button"
@@ -281,9 +322,9 @@ function Console({ state, actions, trackRef }) {
           disabled={locked}
           style={{ opacity: locked && dir !== 'up' ? 0.45 : 1 }}
         >
-          صعود ▲
+          {t('game.up')}
         </button>
-        <div className="body-hint">{hint}</div>
+        <div className="body-hint" aria-live="polite">{hint}</div>
       </div>
     </section>
   );
@@ -292,13 +333,15 @@ function Console({ state, actions, trackRef }) {
 const ROW_H = 58;
 
 function Leaderboard({ others, balance }) {
-  const entries = [...others.map((o) => ({ ...o, me: false })), { name: 'شما', s: balance, me: true }];
+  const { t, lang } = useLang();
+  const you = t('lb.you');
+  const entries = [...others.map((o) => ({ ...o, me: false })), { name: you, s: balance, me: true }];
   const sorted = [...entries].sort((a, b) => b.s - a.s);
   return (
     <section className="lb">
       <div className="lb-title">
         <TrophyIcon stroke={GOLD} />
-        <span>لیدربورد</span>
+        <span>{t('lb.title')}</span>
       </div>
       <div className="lb-list">
         <div style={{ height: entries.length * ROW_H }} />
@@ -306,37 +349,41 @@ function Leaderboard({ others, balance }) {
           const rank = sorted.findIndex((a) => a.name === r.name);
           return (
             <div
-              key={r.name}
+              key={r.me ? '__me' : r.name}
               className={r.me ? 'lb-row lb-row-me' : 'lb-row'}
               style={{ transform: `translateY(${rank * ROW_H}px)` }}
             >
-              <span className="lb-rank">{fa(rank + 1)}</span>
-              <span className="lb-name" dir={r.me ? 'rtl' : 'ltr'}>{r.name}</span>
-              <span className="lb-score">{fa(r.s)} امتیاز</span>
+              <span className="lb-rank">{num(rank + 1, lang)}</span>
+              <span className="lb-name" dir={r.me ? undefined : 'ltr'}>{r.name}</span>
+              <span className="lb-score">
+                {num(r.s, lang)} {t('pts')}
+              </span>
             </div>
           );
         })}
       </div>
+      <LeadCapture source="leaderboard" balance={balance} variant="slim" title={t('lead.lbTitle')} subtitle={t('lead.lbSub')} />
     </section>
   );
 }
 
 function Nav({ screen, actions }) {
+  const { t } = useLang();
   const isHome = screen === 'home';
   const isLB = screen === 'lb';
   return (
     <nav className="nav">
-      <button type="button" className="nav-btn" style={{ color: isHome ? '#fff' : DIM }} onClick={actions.goHome}>
+      <button type="button" className="nav-btn" aria-current={isHome ? 'page' : undefined} style={{ color: isHome ? '#fff' : DIM }} onClick={actions.goHome}>
         <HomeIcon stroke={isHome ? GREEN : DIM} />
-        خانه
+        {t('nav.home')}
       </button>
-      <button type="button" className="nav-btn" style={{ color: DIM }} onClick={actions.startGame}>
+      <button type="button" className="nav-btn nav-btn-play" style={{ color: DIM }} onClick={actions.startGame}>
         <GamepadIcon stroke={DIM} />
-        بازی
+        {t('nav.play')}
       </button>
-      <button type="button" className="nav-btn" style={{ color: isLB ? '#fff' : DIM }} onClick={actions.goLeaderboard}>
-        <TrophyIcon stroke={isLB ? GREEN : DIM} />
-        لیدربورد
+      <button type="button" className="nav-btn" aria-current={isLB ? 'page' : undefined} style={{ color: isLB ? '#fff' : DIM }} onClick={actions.goLeaderboard}>
+        <TrophyIcon stroke={isLB ? GREEN : DIM} size={22} />
+        {t('nav.lb')}
       </button>
     </nav>
   );
@@ -345,16 +392,38 @@ function Nav({ screen, actions }) {
 export default function App() {
   const { state, actions, trackRef } = useGame();
   const { screen } = state;
+  const [lang, setLangState] = useState(readStoredLang);
+
+  const langCtx = useMemo(() => {
+    const setLang = (next) => {
+      setLangState(next);
+      try {
+        localStorage.setItem(LANG_KEY, next);
+      } catch {
+        /* storage unavailable */
+      }
+    };
+    return { lang, t: makeT(lang), setLang };
+  }, [lang]);
+
+  const dir = lang === 'fa' ? 'rtl' : 'ltr';
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = dir;
+  }, [lang, dir]);
 
   return (
-    <div className="app" dir="rtl">
-      <div className="phone">
-        <TopBar balance={state.balance} />
-        {screen === 'home' && <Home onStart={actions.startGame} />}
-        {screen === 'game' && <Console state={state} actions={actions} trackRef={trackRef} />}
-        {screen === 'lb' && <Leaderboard others={state.others} balance={state.balance} />}
-        {screen !== 'game' && <Nav screen={screen} actions={actions} />}
+    <LangContext.Provider value={langCtx}>
+      <div className="app" dir={dir} data-lang={lang}>
+        <div className="phone">
+          <TopBar balance={state.balance} />
+          {screen === 'home' && <Home balance={state.balance} onStart={actions.startGame} />}
+          {screen === 'game' && <Console state={state} actions={actions} trackRef={trackRef} />}
+          {screen === 'lb' && <Leaderboard others={state.others} balance={state.balance} />}
+          {screen !== 'game' && <Nav screen={screen} actions={actions} />}
+        </div>
       </div>
-    </div>
+    </LangContext.Provider>
   );
 }
