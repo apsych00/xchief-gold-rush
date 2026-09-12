@@ -29,8 +29,10 @@ const dict = {
       poll: 'زنده',
       connecting: 'در حال اتصال…',
       demo: 'دمو',
+      quiet: 'بازار آرام',
       waiting: 'در انتظار قیمت بازار…',
       note: 'قیمت لحظه‌ای طلا (PAXG/USD)',
+      noteQuiet: 'بازار ثابته؛ حرکت ریز شبیه‌سازی‌شده روی آخرین قیمت واقعی',
     },
     result: {
       winTitle: 'درست پیش‌بینی کردی!',
@@ -91,8 +93,10 @@ const dict = {
       poll: 'LIVE',
       connecting: 'Connecting…',
       demo: 'DEMO',
+      quiet: 'QUIET MARKET',
       waiting: 'Waiting for market price…',
       note: 'Live gold price (PAXG/USD)',
+      noteQuiet: 'Market is flat; micro-moves simulated on the last real price',
     },
     result: {
       winTitle: 'You called it!',

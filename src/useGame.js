@@ -33,7 +33,7 @@ const initialState = {
   points: 0,
   drag: false,
   others: OTHERS,
-  feed: { mode: 'connecting', source: null }, // connecting | live | poll | demo
+  feed: { mode: 'connecting', source: null, quiet: false }, // connecting | live | poll | demo
 };
 
 export function useGame() {

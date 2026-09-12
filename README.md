@@ -61,8 +61,14 @@ one troy ounce) and the game settles on the mid price, (bid + ask) / 2.
   DEMO. The moment a real source connects, the game switches to LIVE.
 - The badge in the game screen shows the current state and source.
 
-A round where the price is exactly unchanged after 5 seconds ends as FLAT:
-no points, play again. This happens mostly at weekends when gold is quiet.
+**Quiet-market layer.** When the real quote has not changed for 3 seconds
+(weekends, holidays, dead minutes), the feed simulates micro-moves (±$0.35,
+mean-reverting) on top of the last real price so rounds keep settling and the
+chart keeps moving. The badge turns gold and reads "QUIET MARKET · <source>".
+The first real price change snaps back to the market and ends the simulation.
+
+A round where the price is exactly unchanged after 5 seconds ends as FLAT
+(no points), which with the quiet layer should be rare.
 
 To use a broker feed instead (for example an MT5 bridge), add an entry to
 `WS_SOURCES` in `src/priceFeed.js` with its URL, subscribe message and a

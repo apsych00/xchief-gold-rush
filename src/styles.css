@@ -396,6 +396,11 @@ button:focus:not(:focus-visible) { outline: none; }
 .feed-connecting .feed-dot { animation: gr-blink 1s ease-in-out infinite; }
 .feed-demo { border-color: rgba(233, 182, 42, 0.5); color: var(--gold); }
 .feed-demo .feed-dot { background: var(--gold); }
+.feed-quiet { border-color: rgba(233, 182, 42, 0.5); color: var(--gold); }
+.feed-quiet .feed-dot {
+  background: var(--gold);
+  animation: gr-blink 1s ease-in-out infinite;
+}
 @keyframes gr-ping {
   0% { box-shadow: 0 0 0 0 rgba(53, 227, 111, 0.6); }
   100% { box-shadow: 0 0 0 8px rgba(53, 227, 111, 0); }

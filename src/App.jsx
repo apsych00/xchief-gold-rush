@@ -125,13 +125,14 @@ function Chart({ history, start, color }) {
 
 function FeedBadge({ feed }) {
   const { t } = useLang();
-  const mode = feed.mode;
+  const mode = feed.quiet ? 'quiet' : feed.mode;
   const label = t(`feed.${mode}`);
+  const showSrc = feed.source && mode !== 'demo';
   return (
     <span className={`feed-badge feed-${mode}`} title={feed.source || undefined} dir="ltr">
       <span className="feed-dot" aria-hidden="true" />
       {label}
-      {feed.source && mode !== 'demo' ? <span className="feed-src"> · {feed.source}</span> : null}
+      {showSrc ? <span className="feed-src"> · {feed.source}</span> : null}
     </span>
   );
 }
@@ -166,7 +167,9 @@ function Display({ state, actions }) {
             <div className={hasPrice ? 'price-big' : 'price-big price-waiting'} dir="ltr" aria-live="polite">
               {hasPrice ? money(price) : '— — —'}
             </div>
-            <div className="feed-note">{hasPrice ? t('feed.note') : t('feed.waiting')}</div>
+            <div className="feed-note">
+              {!hasPrice ? t('feed.waiting') : feed.quiet ? t('feed.noteQuiet') : t('feed.note')}
+            </div>
             <div style={{ height: 10 }} />
             <div className="idle-title">{t('game.after')}</div>
             <div className="idle-help">{t('game.help')}</div>

@@ -83,11 +83,19 @@ const STALE_MS = 15000; // a live source silent this long is considered dead
 const RECONNECT_MS = 2000;
 const DEFAULT_DEMO_PRICE = 4350;
 
+// Quiet-market layer: when the real price has not changed for this long
+// (weekends, holidays, dead minutes), micro-moves are simulated around the
+// last real price so a 5-second round can still settle. The first real change
+// snaps the price back to the market and ends the simulation.
+const QUIET_AFTER_MS = 3000;
+const QUIET_INTERVAL_MS = 120;
+const QUIET_AMPLITUDE = 0.35; // max drift from the real price, in dollars
+
 const isValid = (p) => typeof p === 'number' && Number.isFinite(p) && p > 100 && p < 100000;
 
 /**
- * @param {{ onPrice: (price:number, meta:{source:string, mode:'live'|'poll'|'demo'}) => void,
- *           onStatus: (s:{mode:'connecting'|'live'|'poll'|'demo', source:string|null}) => void }} opts
+ * @param {{ onPrice: (price:number, meta:{source:string, mode:'live'|'poll'|'demo'|'quiet'}) => void,
+ *           onStatus: (s:{mode:'connecting'|'live'|'poll'|'demo', source:string|null, quiet:boolean}) => void }} opts
  * @returns {() => void} stop
  */
 export function startPriceFeed({ onPrice, onStatus }) {
@@ -102,10 +110,20 @@ export function startPriceFeed({ onPrice, onStatus }) {
   let reconnectTimer = null;
   let lastPrice = null;
   let mode = 'connecting';
+  let source = null;
 
-  const setStatus = (next, source) => {
+  // quiet-market layer state
+  let lastRealPrice = null;
+  let lastChangeAt = 0;
+  let quiet = false;
+  let quietOffset = 0;
+  let quietWatch = null;
+  let quietTimer = null;
+
+  const setStatus = (next, src) => {
     mode = next;
-    onStatus({ mode: next, source: source || null });
+    source = src || null;
+    onStatus({ mode: next, source, quiet });
   };
 
   const clearTimers = () => {
@@ -115,8 +133,43 @@ export function startPriceFeed({ onPrice, onStatus }) {
     clearTimeout(reconnectTimer);
     clearInterval(restTimer);
     clearInterval(demoTimer);
-    restTimer = demoTimer = null;
+    clearInterval(quietWatch);
+    clearInterval(quietTimer);
+    restTimer = demoTimer = quietWatch = quietTimer = null;
   };
+
+  const stopQuiet = () => {
+    if (!quiet) return;
+    quiet = false;
+    quietOffset = 0;
+    clearInterval(quietTimer);
+    quietTimer = null;
+    onStatus({ mode, source, quiet });
+  };
+
+  const startQuiet = () => {
+    if (quiet || stopped || lastRealPrice === null) return;
+    quiet = true;
+    quietOffset = 0;
+    onStatus({ mode, source, quiet });
+    quietTimer = setInterval(() => {
+      if (stopped) return;
+      // Bounded random walk with mean reversion so the simulated price never
+      // drifts far from the real market.
+      quietOffset += (Math.random() - 0.5) * 0.12 - quietOffset * 0.05;
+      quietOffset = Math.max(-QUIET_AMPLITUDE, Math.min(QUIET_AMPLITUDE, quietOffset));
+      const p = Math.round((lastRealPrice + quietOffset) * 100) / 100;
+      lastPrice = p;
+      onPrice(p, { source: 'quiet', mode: 'quiet' });
+    }, QUIET_INTERVAL_MS);
+  };
+
+  // Watches for a market that has gone still while a real source is connected.
+  quietWatch = setInterval(() => {
+    if (stopped || lastRealPrice === null) return;
+    if (mode !== 'live' && mode !== 'poll') return;
+    if (!quiet && Date.now() - lastChangeAt > QUIET_AFTER_MS) startQuiet();
+  }, 250);
 
   const closeAll = () => {
     for (const s of sockets) {
@@ -151,6 +204,16 @@ export function startPriceFeed({ onPrice, onStatus }) {
 
   const deliver = (price, src, m) => {
     if (stopped || !isValid(price)) return;
+    if (m === 'live' || m === 'poll') {
+      const changed = price !== lastRealPrice;
+      lastRealPrice = price;
+      if (changed) {
+        lastChangeAt = Date.now();
+        if (quiet) stopQuiet(); // real move: snap back to the market
+      } else if (quiet) {
+        return; // unchanged real quote while simulating: keep the simulation
+      }
+    }
     lastPrice = price;
     onPrice(price, { source: src, mode: m });
   };
@@ -158,6 +221,7 @@ export function startPriceFeed({ onPrice, onStatus }) {
   const startDemo = () => {
     if (demoTimer || stopped) return;
     let p = lastPrice || DEFAULT_DEMO_PRICE;
+    stopQuiet();
     setStatus('demo', null);
     demoTimer = setInterval(() => {
       p += (Math.random() - 0.5) * 0.4 + (Math.random() - 0.5) * 0.1;
@@ -278,6 +342,7 @@ export function startPriceFeed({ onPrice, onStatus }) {
 
   return () => {
     stopped = true;
+    quiet = false;
     clearTimers();
     closeAll();
   };
