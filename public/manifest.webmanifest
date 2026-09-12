@@ -1,0 +1,15 @@
+{
+  "name": "xChief Gold Rush",
+  "short_name": "Gold Rush",
+  "description": "Predict gold in 5 seconds. Win coins, climb the board.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "lang": "fa",
+  "dir": "rtl",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

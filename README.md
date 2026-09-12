@@ -95,7 +95,44 @@ To use a broker feed instead (for example an MT5 bridge), add an entry to
 `WS_SOURCES` in `src/priceFeed.js` with its URL, subscribe message and a
 `parse()` that returns the price.
 
-## Rules (as designed)
+## Game economy
 
-- A win pays 100 base points × the selected lever. A miss deducts nothing.
-- The lever locks once a round starts and unlocks on "دور بعدی".
+Everything below is tunable in `src/config.js` (links, PIN and video also via
+env vars, see `.env.example`).
+
+- **Coins.** Every player starts with 1,000. Each round stakes 100 × lever
+  (×1 = 100, ×2 = 200, ×5 = 500). A correct call wins the stake, a wrong call
+  loses it, an unchanged price (FLAT) returns it. Levers you cannot afford are
+  locked; below 100 coins the console shows "out of coins" and points to the
+  tasks screen.
+- **Streaks.** The 3rd and 4th consecutive win pay ×1.5, the 5th and beyond
+  ×2. A loss resets the streak. First win of each day adds +100.
+- **Record & levels.** The best balance ever reached is the player's record.
+  The leaderboard ranks by record (losing never drops your rank). Levels by
+  record: Rookie → Trader (2,000) → Pro (5,000) → Gold Chief (10,000).
+- **Badges.** High Roller (win at ×5), Hot Streak (5 in a row), Comeback
+  (new record right after being broke).
+- **Rate limit.** 60 rounds per hour per device.
+
+## Refill tasks
+
+The "Coins" tab lists one-time tasks that pay coins so a broke player can come
+back: 15 s promo video (+100, repeatable every 5 min), email (+200), Instagram
+/ Telegram / YouTube follow (+300 each), story share (+300 daily), reviews on
+Trustpilot / Google / Forex Peace Army (+500 each) and opening an xChief demo
+account (+1,000, featured last as the "fast way back").
+
+Link tasks open the target in a new tab; the "Done" button unlocks after 15 s.
+With `VITE_TASK_VERIFY=pin` (expo mode) booth staff must also enter
+`VITE_STAFF_PIN` before coins are granted. Claims are stored per device in
+`localStorage` (`xchief.profile.v1`). A shared, server-side leaderboard and
+profile store is the next step if the game runs on several devices at once.
+
+## Layout
+
+The UI is a fixed, non-scrolling app shell (`position: fixed` root, safe-area
+insets, PWA manifest for "Add to Home Screen"). Screens use flex/clamp sizing;
+the console's fixed-pixel lever art is scaled by a runtime factor computed
+from the frame size (`--s`), so it fits 360×640 Androids, tall iPhones and the
+desktop phone frame alike without scrolling. Only long lists (leaderboard,
+tasks) scroll inside their own panel.
