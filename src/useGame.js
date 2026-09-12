@@ -25,6 +25,7 @@ const initialState = {
   balance: 2400,
   price: null, // latest market price, null until the feed delivers
   start: null, // price locked at the start of the round
+  end: null, // price the round settled on (frozen, unlike `price`)
   remaining: ROUND_SECONDS,
   history: [],
   win: false,
@@ -91,6 +92,7 @@ export function useGame() {
               ...cur,
               phase: 'result',
               price,
+              end: price,
               remaining: 0,
               win,
               tie,
@@ -124,7 +126,7 @@ export function useGame() {
     [patch],
   );
 
-  const reset = { phase: 'idle', dir: null, start: null, history: [], win: false, tie: false };
+  const reset = { phase: 'idle', dir: null, start: null, end: null, history: [], win: false, tie: false };
 
   const actions = {
     startGame: () => patch({ screen: 'game' }),

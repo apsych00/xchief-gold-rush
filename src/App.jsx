@@ -138,7 +138,7 @@ function FeedBadge({ feed }) {
 
 function Display({ state, actions }) {
   const { t, lang } = useLang();
-  const { phase, price, start, lev, dir, remaining, history, win, tie, points, feed } = state;
+  const { phase, price, start, end, lev, dir, remaining, history, win, tie, points, feed } = state;
   const isIdle = phase === 'idle';
   const isRunning = phase === 'running';
   const isResult = phase === 'result';
@@ -234,7 +234,7 @@ function Display({ state, actions }) {
               </div>
               <div className="stat">
                 <span className="stat-label">{t('result.end')}</span>
-                <span className="stat-val stat-val-gold" dir="ltr">{money(price)}</span>
+                <span className="stat-val stat-val-gold" dir="ltr">{money(end ?? price)}</span>
               </div>
             </div>
             <div className="result-actions">
