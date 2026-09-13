@@ -135,21 +135,28 @@ To use a broker feed instead (for example an MT5 bridge), add an entry to
 ## Game economy
 
 Everything below is tunable in `src/config.js` (links, PIN and video also via
-env vars, see `.env.example`).
+env vars, see `.env.example`). The rules fit in three lines on purpose:
 
-- **Coins.** Every player starts with 1,000. Each round stakes 100 × lever
-  (×1 = 100, ×2 = 200, ×5 = 500). A correct call wins the stake, a wrong call
-  loses it, an unchanged price (FLAT) returns it. Levers you cannot afford are
-  locked; below 100 coins the console shows "out of coins" and points to the
-  tasks screen.
-- **Streaks.** The 3rd and 4th consecutive win pay ×1.5, the 5th and beyond
-  ×2. A loss resets the streak. First win of each day adds +100.
-- **Record & levels.** The best balance ever reached is the player's record.
-  The leaderboard ranks by record (losing never drops your rank). Levels by
-  record: Rookie → Trader (2,000) → Pro (5,000) → Gold Chief (10,000).
-- **Badges.** High Roller (win at ×5), Hot Streak (5 in a row), Comeback
-  (new record right after being broke).
-- **Rate limit.** 60 rounds per hour per device.
+1. Up or down in 5 seconds. Call it right, win your stake; call it wrong, lose
+   it. Stake = 100 × lever (×1 = 100, ×2 = 200, ×5 = 500). An unchanged price
+   (FLAT) returns the stake.
+2. Wins in a row raise the **combo**: the 1st win pays ×1, the 2nd ×1.5, the
+   3rd ×2, the 4th and beyond ×3 (`ECON.combo`). A loss resets it; FLAT keeps
+   it. The combo meter is shown on the play screen and every win result says
+   what the next win pays.
+3. Below 100 coins the player is out. The first time, a one-time **free
+   refill** of 300 coins is offered on the spot (`ECON.freeRefill`); after
+   that the console points to the Coins (tasks) screen.
+
+Also: start balance 1,000; levers you cannot afford are locked; record = best
+balance ever, leaderboard ranks by record so losing never drops your rank;
+levels Rookie → Trader (2,000) → Pro (5,000) → Gold Chief (10,000); badges
+High Roller (win at ×5), Hot Streak (4 in a row), Comeback; 60 rounds/hour.
+
+Economy check (`scratchpad/econ-test.mjs` style simulation, 50/50 calls at
+×1): a player drifts up about +23 coins per round on average, i.e. roughly
+doubles in 40 rounds. Max single win is 500 × 3 = 1,500. To make it tighter
+use `combo: [1, 1.25, 1.5, 2]` (≈ +12 coins per round).
 
 ## Refill tasks
 

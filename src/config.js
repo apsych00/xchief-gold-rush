@@ -10,10 +10,15 @@ export const ECON = {
   stakeBase: 100, // stake = stakeBase × lever
   levers: [1, 2, 5],
   brokeBelow: 100, // below this the player cannot afford the smallest stake
-  streakMult: (streak) => (streak >= 5 ? 2 : streak >= 3 ? 1.5 : 1), // applied to the win that reaches `streak`
-  dailyFirstWinBonus: 100,
+  // Combo: consecutive wins raise the payout multiplier. Index = wins in a
+  // row BEFORE this round (0 = first win). A loss resets to the start.
+  combo: [1, 1.5, 2, 3],
+  freeRefill: 300, // one-time instant refill the first time a player goes broke
   maxRoundsPerHour: 60,
 };
+
+export const comboMult = (streak) => ECON.combo[Math.min(streak, ECON.combo.length - 1)];
+export const COMBO_MAX = ECON.combo[ECON.combo.length - 1];
 
 // Level titles by best-ever balance (record).
 export const LEVELS = [

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ECON, TASKS } from './config.js';
+import { comboMult, ECON, TASKS } from './config.js';
 import { startPriceFeed } from './priceFeed.js';
-import { loadProfile, saveProfile, todayKey } from './profile.js';
+import { loadProfile, saveProfile } from './profile.js';
 
 export const ROUND_SECONDS = 5;
 export const LEVERS = ECON.levers;
@@ -40,7 +40,7 @@ const initialGame = {
   others: OTHERS,
   feed: { mode: 'connecting', source: null, symbol: null, quiet: false },
   // last settled round
-  result: null, // { outcome:'win'|'lose'|'flat', stake, delta, mult, dailyBonus, streak, badge }
+  result: null, // { outcome:'win'|'lose'|'flat', stake, delta, mult, streak, badge }
   toast: null, // { id, text } transient notice
 };
 
@@ -117,21 +117,20 @@ export function useGame() {
     let next = { ...p, rounds: p.rounds + 1 };
     let result;
     if (tie) {
-      result = { outcome: 'flat', stake, delta: 0, mult: 1, dailyBonus: 0, streak: p.streak, badge: null };
+      // Flat keeps the combo but does not grow it.
+      result = { outcome: 'flat', stake, delta: 0, mult: comboMult(p.streak), streak: p.streak, badge: null };
     } else if (win) {
+      const mult = comboMult(p.streak); // multiplier earned by the wins before this one
       const streak = p.streak + 1;
-      const mult = ECON.streakMult(streak);
       const gain = Math.round(stake * mult);
-      const today = todayKey();
-      const dailyBonus = p.lastWinDay !== today ? ECON.dailyFirstWinBonus : 0;
-      const coins = p.coins + gain + dailyBonus;
+      const coins = p.coins + gain;
       const badges = [...p.badges];
       let badge = null;
       if (cur.lev === 5 && !badges.includes('high_roller')) {
         badges.push('high_roller');
         badge = 'high_roller';
       }
-      if (streak >= 5 && !badges.includes('hot_streak')) {
+      if (streak >= 4 && !badges.includes('hot_streak')) {
         badges.push('hot_streak');
         badge = 'hot_streak';
       }
@@ -146,13 +145,12 @@ export function useGame() {
         streak,
         bestStreak: Math.max(p.bestStreak, streak),
         wins: p.wins + 1,
-        lastWinDay: today,
         badges,
       };
-      result = { outcome: 'win', stake, delta: gain + dailyBonus, mult, dailyBonus, streak, badge };
+      result = { outcome: 'win', stake, delta: gain, mult, streak, badge };
     } else {
       next = { ...next, coins: Math.max(0, p.coins - stake), streak: 0 };
-      result = { outcome: 'lose', stake, delta: -stake, mult: 1, dailyBonus: 0, streak: 0, badge: null };
+      result = { outcome: 'lose', stake, delta: -stake, mult: 1, streak: 0, badge: null };
     }
     profileRef.current = next;
     setProfile(next);
@@ -222,15 +220,29 @@ export function useGame() {
       const last = p.taskClaims[taskId];
       if (last && (!task.repeatMs || Date.now() - last < task.repeatMs)) return false;
       const coins = p.coins + task.reward;
-      setProfile({ ...p, coins, record: Math.max(p.record, coins), taskClaims: { ...p.taskClaims, [taskId]: Date.now() } });
+      const next = { ...p, coins, record: Math.max(p.record, coins), taskClaims: { ...p.taskClaims, [taskId]: Date.now() } };
+      profileRef.current = next;
+      setProfile(next);
       toast(`+${task.reward}`);
       return true;
     },
     [toast],
   );
 
+  const freeRefill = useCallback(() => {
+    const p = profileRef.current;
+    if (p.freeRefillUsed || p.coins >= ECON.brokeBelow) return false;
+    const coins = p.coins + ECON.freeRefill;
+    const next = { ...p, coins, record: Math.max(p.record, coins), freeRefillUsed: true };
+    profileRef.current = next;
+    setProfile(next);
+    toast(`+${ECON.freeRefill}`);
+    return true;
+  }, [toast]);
+
   const actions = {
     go: (screen) => patch({ screen }),
+    freeRefill,
     startGame: () => patch({ screen: 'game' }),
     goHome: () => {
       stopTimer();

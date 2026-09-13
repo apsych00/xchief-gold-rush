@@ -10,7 +10,7 @@ export function defaultProfile() {
     bestStreak: 0,
     rounds: 0,
     wins: 0,
-    lastWinDay: null, // 'YYYY-MM-DD' of the last day a first-win bonus was paid
+    freeRefillUsed: false,
     taskClaims: {}, // task id -> last claim timestamp (ms)
     roundTimes: [], // timestamps of recent rounds, for the hourly cap
     badges: [], // 'high_roller' | 'hot_streak' | 'comeback'

@@ -62,14 +62,14 @@ button:focus:not(:focus-visible) { outline: none; }
   display: flex;
   justify-content: center;
   background: #000;
-  overflow: hidden;
+  overflow: clip;
 }
 .phone {
   width: 100%;
   max-width: 430px;
   height: 100%;
   position: relative;
-  overflow: hidden;
+  overflow: clip;
   display: flex;
   flex-direction: column;
   padding-top: var(--safe-t);
@@ -197,6 +197,31 @@ button:focus:not(:focus-visible) { outline: none; }
 }
 .btn-start:active { transform: scale(0.97); box-shadow: 0 4px 12px rgba(53, 227, 111, 0.3); }
 .home-note { font: 500 12px var(--fa); color: rgba(255, 255, 255, 0.55); text-align: center; }
+.home-rules { font: 500 clamp(11px, 1.6vh, 13px)/1.5 var(--fa); color: rgba(255, 255, 255, 0.7); text-align: center; text-wrap: pretty; max-width: 320px; }
+.stat-v-combo { font-family: var(--en); }
+
+/* ---------- combo meter ---------- */
+
+.combo {
+  display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 6px 10px 6px 12px; border-radius: 14px;
+  background: rgba(0, 0, 0, 0.4); border: 1.5px solid rgba(255, 255, 255, 0.12); transition: border-color 0.3s;
+}
+.combo-on { border-color: rgba(53, 227, 111, 0.5); }
+.combo-max { border-color: rgba(233, 182, 42, 0.7); box-shadow: 0 0 18px rgba(233, 182, 42, 0.25); }
+.combo-label { font: 700 10px var(--en); letter-spacing: 1.5px; color: rgba(255, 255, 255, 0.55); text-transform: uppercase; }
+.combo-pips { display: flex; gap: 4px; }
+.combo-pip {
+  min-width: 34px; height: 20px; padding: 0 6px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  font: 700 10px var(--en); color: rgba(255, 255, 255, 0.35); background: rgba(255, 255, 255, 0.06); transition: background 0.3s, color 0.3s, box-shadow 0.3s;
+}
+.combo-pip-on { color: #03140a; background: linear-gradient(180deg, var(--green), #21c95c); box-shadow: 0 0 10px rgba(53, 227, 111, 0.5); }
+.combo-max .combo-pip-on { background: linear-gradient(180deg, #ffd75e, var(--gold)); box-shadow: 0 0 10px rgba(233, 182, 42, 0.6); }
+.combo-mult { font: 800 15px var(--en); color: #fff; min-width: 34px; text-align: right; }
+.combo-on .combo-mult { color: var(--green); }
+.combo-max .combo-mult { color: var(--gold); }
+.combo-compact { margin-top: 2px; padding: 4px 8px 4px 10px; animation: gr-rise 0.5s ease-out 0.9s both; }
+.combo-compact .combo-label { display: none; }
+.result-next { font: 700 12px var(--fa); color: var(--gold); animation: gr-rise 0.5s ease-out 0.85s both; }
 
 /* ---------- game console ---------- */
 
@@ -206,7 +231,9 @@ button:focus:not(:focus-visible) { outline: none; }
   flex: 1; min-height: 0; margin: 4px 12px 0; border-radius: 26px; background: #0b0b0b;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7), inset 0 0 0 2px #1e1e1e; padding: 9px;
 }
-.display-inner { position: relative; height: 100%; border-radius: 19px; overflow: hidden; background: radial-gradient(ellipse at 50% 45%, #0f1f16 0%, #050807 55%, #000 100%); }
+/* overflow: clip (not hidden) so focus/scrollIntoView can never scroll the
+   display and shift the panes; the rays layer overhangs by design. */
+.display-inner { position: relative; height: 100%; border-radius: 19px; overflow: clip; background: radial-gradient(ellipse at 50% 45%, #0f1f16 0%, #050807 55%, #000 100%); }
 .display-rays {
   position: absolute; inset: -40%;
   background: repeating-conic-gradient(from 0deg, rgba(53, 227, 111, 0.16) 0deg 1.2deg, transparent 1.2deg 20deg);
@@ -223,7 +250,7 @@ button:focus:not(:focus-visible) { outline: none; }
 .pane { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; }
 .pane-idle { justify-content: center; gap: clamp(4px, 1vh, 10px); padding: 50px 16px 16px; }
 .pane-running { padding: 50px 14px 12px; }
-.pane-result { justify-content: center; gap: clamp(2px, 0.7vh, 6px); padding: 46px 14px 12px; overflow: hidden; }
+.pane-result { justify-content: center; gap: clamp(2px, 0.6vh, 5px); padding: 44px 14px 10px; overflow: clip; }
 
 .ticker { font: 500 12px var(--en); letter-spacing: 4px; color: var(--gold); }
 .price-big { font: 700 clamp(30px, 5.2vh, 44px)/1 var(--en); }
@@ -260,12 +287,12 @@ button:focus:not(:focus-visible) { outline: none; }
 }
 .locked-note { font: 500 12px var(--fa); color: #bdbdbd; text-align: center; }
 
-.coin-grid { --px: clamp(4px, 0.75vh, 6px); display: grid; grid-template-columns: repeat(11, var(--px)); grid-auto-rows: var(--px); animation: gr-pop 0.6s ease-out; }
+.coin-grid { --px: clamp(3px, 0.65vh, 5px); display: grid; grid-template-columns: repeat(11, var(--px)); grid-auto-rows: var(--px); animation: gr-pop 0.6s ease-out; }
 .win-row { display: flex; align-items: flex-start; gap: 8px; animation: gr-pop 0.7s ease-out 0.1s both; }
-.win-word { font: 900 clamp(56px, 11vh, 96px)/1 var(--en); letter-spacing: -3px; text-shadow: 0 0 40px rgba(53, 227, 111, 0.35); }
+.win-word { font: 900 clamp(52px, 9.5vh, 84px)/1 var(--en); letter-spacing: -3px; text-shadow: 0 0 40px rgba(53, 227, 111, 0.35); }
 .win-mult { font: 700 clamp(22px, 3.6vh, 32px)/1 var(--en); color: var(--gold); margin-top: 6px; }
 .result-line { font: 700 clamp(15px, 2.1vh, 18px) var(--fa); animation: gr-rise 0.5s ease-out 0.4s both; }
-.result-points { font: 900 clamp(28px, 4.6vh, 40px)/1.2 var(--fa); color: var(--green); text-shadow: 0 0 24px rgba(53, 227, 111, 0.5); animation: gr-rise 0.5s ease-out 0.6s both; }
+.result-points { font: 900 clamp(26px, 4.2vh, 36px)/1.2 var(--fa); color: var(--green); text-shadow: 0 0 24px rgba(53, 227, 111, 0.5); animation: gr-rise 0.5s ease-out 0.6s both; }
 .result-points-neg { color: var(--red); text-shadow: 0 0 24px rgba(255, 92, 92, 0.4); font-size: clamp(24px, 3.8vh, 32px); }
 .result-sub { font: 500 12px/1.5 var(--fa); color: #bdbdbd; text-align: center; animation: gr-rise 0.5s ease-out 0.8s both; }
 .miss-word { font: 900 clamp(48px, 8.5vh, 72px)/1 var(--en); color: rgba(255, 255, 255, 0.85); letter-spacing: -2px; animation: gr-pop 0.6s ease-out; }
@@ -288,7 +315,7 @@ button:focus:not(:focus-visible) { outline: none; }
 
 .body {
   position: relative; flex: none; height: calc(290px * var(--s)); margin-top: -6px;
-  transition: background 0.8s ease; box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.6); overflow: hidden;
+  transition: background 0.8s ease; box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.6); overflow: clip;
   padding-bottom: var(--safe-b);
 }
 .body-gold { background: linear-gradient(180deg, #f2c23a, var(--gold) 40%, #c9931a); }

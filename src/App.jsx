@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ECON, levelFor, nextLevel } from './config.js';
+import { COMBO_MAX, comboMult, ECON, levelFor, nextLevel } from './config.js';
 import { ENABLED_LANGS, LANG_KEY, LangContext, makeT, money, num, readStoredLang, useLang } from './i18n.js';
 import UpdateBanner from './UpdateBanner.jsx';
 import LeadCapture from './LeadCapture.jsx';
@@ -136,11 +136,14 @@ function Home({ profile, actions }) {
         </div>
         <div className="stat-card">
           <div className="stat-k">{t('streak')}</div>
-          <div className="stat-v">{profile.streak > 0 ? '🔥 ' : ''}{num(profile.streak, lang)}</div>
+          <div className="stat-v stat-v-combo" dir="ltr">
+            {profile.streak > 0 ? '🔥 ' : ''}×{num(comboMult(profile.streak), lang)}
+          </div>
         </div>
       </div>
       <div className="home-cta">
         <button type="button" className="btn-start" onClick={actions.startGame}>{t('home.start')}</button>
+        <div className="home-rules">{t('home.rules', { max: num(COMBO_MAX, lang) })}</div>
         <div className="home-note">
           {t('home.note', { base: num(ECON.stakeBase, lang) })}
           {' · '}
@@ -163,6 +166,26 @@ function Chart({ history, start, color }) {
       <line x1="0" y1="40" x2="300" y2="40" stroke="rgba(255,255,255,.25)" strokeDasharray="4 6" strokeWidth="1.5" />
       <polyline points={pts} fill="none" stroke={color} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
     </svg>
+  );
+}
+
+/** Combo meter: one pip per multiplier step, lit up to the current streak. */
+function ComboBar({ streak, compact = false }) {
+  const { t, lang } = useLang();
+  const mult = comboMult(streak);
+  const steps = ECON.combo.length; // pips = number of multiplier levels
+  const lit = Math.min(streak, steps - 1);
+  const atMax = streak >= steps - 1;
+  return (
+    <div className={`combo ${compact ? 'combo-compact' : ''} ${streak > 0 ? 'combo-on' : ''} ${atMax ? 'combo-max' : ''}`} dir="ltr" aria-label={`${t('combo.label')} ×${mult}`}>
+      <span className="combo-label">{t('combo.label')}</span>
+      <span className="combo-pips" aria-hidden="true">
+        {ECON.combo.slice(1).map((m, i) => (
+          <span key={m} className={`combo-pip ${i < lit ? 'combo-pip-on' : ''}`}>×{num(m, lang)}</span>
+        ))}
+      </span>
+      <span className="combo-mult">×{num(mult, lang)}</span>
+    </div>
   );
 }
 
@@ -191,6 +214,8 @@ function Display({ state, profile, actions }) {
   const digit = isRunning ? Math.max(1, Math.ceil(remaining)) : 0;
   const stake = stakeFor(lev);
   const isNewRecord = isResult && result?.outcome === 'win' && profile.coins === profile.record && profile.record > ECON.startCoins;
+  const curMult = comboMult(profile.streak); // multiplier the NEXT win will pay
+  const potential = Math.round(stake * curMult);
 
   return (
     <div className="display">
@@ -212,8 +237,9 @@ function Display({ state, profile, actions }) {
             <div className="idle-title">{t('game.after')}</div>
             <div className="idle-help">{t('game.help')}</div>
             <div className="lev-pill">
-              {t('game.stake')} <b>{num(stake, lang)}</b> {t('coins')} · {t('game.win')} <b className="txt-green">+{num(stake, lang)}</b>
+              {t('game.stake')} <b>{num(stake, lang)}</b> {t('coins')} · {t('game.win')} <b className="txt-green">+{num(potential, lang)}</b>
             </div>
+            <ComboBar streak={profile.streak} />
           </div>
         )}
 
@@ -228,6 +254,7 @@ function Display({ state, profile, actions }) {
             <div key={digit} className="countdown" dir="ltr" aria-live="polite">{digit}</div>
             <div className="locked-note">
               {t('game.locked')} · {dir === 'up' ? t('game.up') : t('game.down')} · {t('game.stake')} {num(stake, lang)}
+              {curMult > 1 ? ` · ×${num(curMult, lang)}` : ''}
             </div>
           </div>
         )}
@@ -247,10 +274,14 @@ function Display({ state, profile, actions }) {
                 <div className="result-points">{t('result.winDelta', { n: num(result.delta, lang) })}</div>
                 <div className="result-sub">
                   {result.mult > 1
-                    ? t('result.streakTag', { n: num(result.streak, lang), mult: num(result.mult, lang) })
+                    ? t('result.streakTag', { n: num(result.streak, lang), stake: num(result.stake, lang), mult: num(result.mult, lang) })
                     : t('result.winSub', { stake: num(result.stake, lang), mult: num(1, lang) })}
-                  {result.dailyBonus ? ` · ${t('result.daily', { n: num(result.dailyBonus, lang) })}` : ''}
                   {result.badge ? ` · ${t(`result.badge.${result.badge}`)}` : ''}
+                </div>
+                <div className="result-next">
+                  {profile.streak >= ECON.combo.length - 1
+                    ? t('result.maxCombo', { mult: num(COMBO_MAX, lang) })
+                    : t('result.nextCombo', { mult: num(comboMult(profile.streak), lang) })}
                 </div>
               </>
             )}
@@ -280,7 +311,7 @@ function Display({ state, profile, actions }) {
               </div>
             </div>
             <div className="result-actions">
-              {profile.coins >= ECON.brokeBelow ? (
+              {profile.coins >= ECON.brokeBelow || !profile.freeRefillUsed ? (
                 <button type="button" className="btn-again" onClick={actions.playAgain}>{t('result.again')}</button>
               ) : (
                 <button type="button" className="btn-again" onClick={actions.goTasks}>{t('result.tasks')}</button>
@@ -386,7 +417,16 @@ function Console({ state, profile, actions, trackRef }) {
           </button>
           <div className="body-hint" aria-live="polite">{hint}</div>
 
-          {broke && (
+          {broke && !profile.freeRefillUsed && (
+            <div className="broke">
+              <div className="broke-title">{t('game.freeTitle')}</div>
+              <div className="broke-sub">{t('game.freeSub')}</div>
+              <button type="button" className="btn-primary" onClick={actions.freeRefill}>
+                {t('game.freeCta', { n: num(ECON.freeRefill, lang) })}
+              </button>
+            </div>
+          )}
+          {broke && profile.freeRefillUsed && (
             <div className="broke">
               <div className="broke-title">{t('game.brokeTitle')}</div>
               <div className="broke-sub">{t('game.brokeSub')}</div>
