@@ -47,7 +47,7 @@ is served at `https://<domain>/af/`.
 `public/logo.svg` is the official xChief wordmark (from xchief.com) with the
 dark strokes recoloured white for the dark UI; `public/logo-dark.svg` is the
 untouched original for light backgrounds. `src/Logo.jsx` renders it in the top
-bar and falls back to `public/logo.png` (if you add one) or a small inline SVG.
+bar; if the SVG is missing it tries `public/logo.png`, then a small inline SVG.
 `public/favicon.svg` is the X-mark tab icon.
 
 ## Languages

@@ -4,13 +4,15 @@
  * `public/logo.svg` is the official logo (from xchief.com) with the dark
  * strokes recoloured white for the dark UI; `public/logo-dark.svg` is the
  * untouched original for light backgrounds. If `public/logo.png` exists it
- * takes precedence, and if no file loads at all a small inline SVG keeps the
+ * is only tried if the SVG is missing, and if no file loads at all a small inline SVG keeps the
  * brand visible.
  */
 import { useState } from 'react';
 
 const GREEN = '#06D700';
-const CANDIDATES = ['/logo.png', '/logo.svg'];
+// The official SVG ships with the app; a PNG is only tried if the SVG is
+// missing, so production never logs a 404 probing for an optional file.
+const CANDIDATES = ['/logo.svg', '/logo.png'];
 
 export function LogoMark({ size = 28, color = 'currentColor' }) {
   return (
