@@ -1,6 +1,6 @@
 # xChief Gold Rush
 
-Persian-language mobile mini-game implemented from the Claude Design file
+Mobile mini-game implemented from the Claude Design file
 `xChief Gold Rush App.dc.html`. Predict whether gold (XAUUSD) goes up or down in
 the next 5 seconds, pick a points lever (×1 / ×2 / ×5), and climb the leaderboard.
 
@@ -23,6 +23,25 @@ static bundle to `dist/`, which can be hosted on any static file server.
 - `src/styles.css` — all styling, translated from the design's inline styles.
 - `api/lead.js` — Vercel serverless endpoint that receives leads.
 
+## Afghanistan landing (`/af/`)
+
+`af/index.html` is a second Vite entry (see `vite.config.js`) that renders the
+welcome-bonus landing page for Afghan traders, implemented from the Figma Make
+design "Redesign with Real Images" in both its mobile and desktop layouts:
+
+- `src/af/Landing.jsx` — sections (nav, hero, steps, features, FAQ, final CTA) and
+  the fixed registration bars (full-width mobile bar / 80 px desktop bar). Copy
+  lives in the `STEPS`, `FEATURES` and `FAQS` arrays at the top of the file.
+- `src/af/landing.css` — plain CSS translated from the design's Tailwind theme
+  (background `#0f1115`, card `#181b21`, primary emerald `#10b981`, Vazirmatn).
+- `public/af/` — hero images (desktop 1672×941, mobile 941×1672, re-encoded from
+  the design's PNGs as JPEG) and `presenter.jpg`, a 4:3 crop of the presenter
+  photo used in the features section.
+
+Every CTA points to `VITE_AF_REGISTER_URL` (defaults to the campaign link from the
+design). After `npm run build` the page is at `dist/af/index.html`, so on Vercel it
+is served at `https://<domain>/af/`.
+
 ## Branding
 
 `public/logo.svg` is the official xChief wordmark (from xchief.com) with the
@@ -33,8 +52,26 @@ bar and falls back to `public/logo.png` (if you add one) or a small inline SVG.
 
 ## Languages
 
-Persian (RTL, Persian digits) is the default. The pill next to the logo toggles
-English (LTR, Latin digits). The choice is remembered in `localStorage`.
+The UI ships **English only** for now (`ENABLED_LANGS = ['en']` in
+`src/i18n.js`). The Persian strings are kept in the same file; to re-enable
+the language pill and RTL layout set `ENABLED_LANGS = ['fa', 'en']` and, if
+Persian should be the default, `DEFAULT_LANG = 'fa'`.
+
+## Updates in Telegram / Instagram in-app browsers
+
+In-app browsers cache the app shell hard and have no reload button, so
+visitors who opened an old link kept seeing the old build. Three layers fix
+this:
+
+- `vercel.json` sends `no-store` for `/`, `index.html`, `version.json` and the
+  manifest, and long-lived `immutable` caching only for hashed `/assets/*`.
+- Every build gets an id (`__BUILD_ID__`, from the Vercel commit SHA) and
+  writes `dist/version.json`. `src/UpdateBanner.jsx` polls that file every
+  minute and on tab focus; when the deployed id differs it shows "A new
+  version of the game is ready · Update", which reloads with a cache-busting
+  query.
+- When sharing the link in Telegram, append a query such as `?v=2` after each
+  deploy so Telegram's link preview cache is bypassed as well.
 
 ## Lead capture
 

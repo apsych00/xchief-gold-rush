@@ -125,6 +125,20 @@ button:focus:not(:focus-visible) { outline: none; }
   animation: gr-toast 2.6s ease-out both;
 }
 
+/* ---------- update banner ---------- */
+
+.update-banner {
+  position: absolute; left: 12px; right: 12px; top: calc(var(--safe-t) + 8px); z-index: 40;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px 10px 14px; border-radius: 14px;
+  background: rgba(16, 21, 18, 0.97); border: 1.5px solid rgba(53, 227, 111, 0.5);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6); font: 600 13px var(--fa); animation: gr-rise 0.4s ease-out;
+}
+.update-btn {
+  height: 34px; padding: 0 14px; border: 0; border-radius: 17px; flex: none;
+  background: linear-gradient(180deg, var(--green), #21c95c); color: #03140a; font: 800 13px var(--fa); cursor: pointer;
+}
+
 /* ---------- screens shared ---------- */
 
 .screen-head { flex: none; padding: 2px 20px 8px; }

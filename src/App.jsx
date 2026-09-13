@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ECON, levelFor, nextLevel } from './config.js';
-import { LANG_KEY, LangContext, makeT, money, num, readStoredLang, useLang } from './i18n.js';
+import { ENABLED_LANGS, LANG_KEY, LangContext, makeT, money, num, readStoredLang, useLang } from './i18n.js';
+import UpdateBanner from './UpdateBanner.jsx';
 import LeadCapture from './LeadCapture.jsx';
 import Logo from './Logo.jsx';
 import Tasks from './Tasks.jsx';
@@ -75,15 +76,17 @@ function TopBar({ profile }) {
     <header className="topbar">
       <div className="topbar-start">
         <div className="logo" dir="ltr"><Logo height={26} /></div>
-        <button
-          type="button"
-          className="lang-btn"
-          onClick={() => setLang(lang === 'fa' ? 'en' : 'fa')}
-          aria-label={lang === 'fa' ? 'Switch to English' : 'تغییر به فارسی'}
-          lang={lang === 'fa' ? 'en' : 'fa'}
-        >
-          {t('langToggle')}
-        </button>
+        {ENABLED_LANGS.length > 1 && (
+          <button
+            type="button"
+            className="lang-btn"
+            onClick={() => setLang(lang === 'fa' ? 'en' : 'fa')}
+            aria-label={lang === 'fa' ? 'Switch to English' : 'تغییر به فارسی'}
+            lang={lang === 'fa' ? 'en' : 'fa'}
+          >
+            {t('langToggle')}
+          </button>
+        )}
       </div>
       <div className="balance-chip" aria-live="polite">
         <CoinDot />
@@ -514,6 +517,7 @@ export default function App() {
           {screen === 'tasks' && <Tasks profile={profile} onClaim={actions.claimTask} onToast={(txt) => actions.toast?.(txt)} />}
           {screen !== 'game' && <Nav screen={screen} actions={actions} />}
           <Toast toast={state.toast} />
+          <UpdateBanner />
         </div>
       </div>
     </LangContext.Provider>

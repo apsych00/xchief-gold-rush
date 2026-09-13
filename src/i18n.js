@@ -1,5 +1,9 @@
 import { createContext, useContext } from 'react';
 
+// Persian strings are kept below for a later release, but the UI currently
+// ships English only: the toggle is hidden and the stored choice is ignored.
+export const ENABLED_LANGS = ['en'];
+export const DEFAULT_LANG = 'en';
 export const LANGS = ['fa', 'en'];
 export const LANG_KEY = 'xchief.lang';
 
@@ -117,6 +121,7 @@ const dict = {
       lbSub: 'ایمیلت رو بزن تا رتبه‌ت ثبت بشه',
     },
     toast: { limit: 'سقف ۶۰ دور در ساعت؛ کمی استراحت کن', coins: '{n}+ سکه' },
+    update: { text: 'نسخهٔ جدید بازی آماده‌ست', cta: 'به‌روزرسانی' },
   },
   en: {
     dir: 'ltr',
@@ -231,6 +236,7 @@ const dict = {
       lbSub: 'Add your email to lock in your rank',
     },
     toast: { limit: '60 rounds per hour max. Take a breather', coins: '+{n} coins' },
+    update: { text: 'A new version of the game is ready', cta: 'Update' },
   },
 };
 
@@ -260,14 +266,15 @@ export function makeT(lang) {
 }
 
 export function readStoredLang() {
+  if (ENABLED_LANGS.length < 2) return DEFAULT_LANG;
   try {
     const v = localStorage.getItem(LANG_KEY);
-    if (LANGS.includes(v)) return v;
+    if (ENABLED_LANGS.includes(v)) return v;
   } catch {
     /* storage unavailable */
   }
-  return 'fa';
+  return DEFAULT_LANG;
 }
 
-export const LangContext = createContext({ lang: 'fa', t: makeT('fa'), setLang: () => {} });
+export const LangContext = createContext({ lang: DEFAULT_LANG, t: makeT(DEFAULT_LANG), setLang: () => {} });
 export const useLang = () => useContext(LangContext);
