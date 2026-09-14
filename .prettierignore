@@ -1,0 +1,6 @@
+dist
+node_modules
+relay/node_modules
+package-lock.json
+relay/package-lock.json
+public/af

@@ -3,7 +3,7 @@
  * tune lives here; links, PIN and video can also be set through env vars
  * (see .env.example) without touching code.
  */
-const env = (import.meta.env || {});
+const env = import.meta.env || {};
 
 export const ECON = {
   startCoins: 1000, // welcome balance

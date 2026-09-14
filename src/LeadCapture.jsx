@@ -69,7 +69,9 @@ export default function LeadCapture({ source, balance, variant = 'card', title, 
 
   return (
     <section className={`lead lead-${variant}`} aria-labelledby={`lead-title-${source}`}>
-      <div id={`lead-title-${source}`} className="lead-title">{title || t('lead.title')}</div>
+      <div id={`lead-title-${source}`} className="lead-title">
+        {title || t('lead.title')}
+      </div>
       <div className="lead-sub">{subtitle || t('lead.sub')}</div>
       <form className="lead-form" onSubmit={onSubmit} noValidate autoComplete="on">
         <input

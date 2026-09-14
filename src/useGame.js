@@ -76,7 +76,10 @@ export function useGame() {
       clearTimeout(toastTimer.current);
       const id = Date.now();
       patch({ toast: { id, text } });
-      toastTimer.current = setTimeout(() => setState((s) => (s.toast && s.toast.id === id ? { ...s, toast: null } : s)), ms);
+      toastTimer.current = setTimeout(
+        () => setState((s) => (s.toast && s.toast.id === id ? { ...s, toast: null } : s)),
+        ms,
+      );
     },
     [patch],
   );
@@ -191,7 +194,11 @@ export function useGame() {
           settle(dir, price);
           return;
         }
-        setState((c) => ({ ...c, remaining: ROUND_SECONDS - elapsed, history: [...c.history, price].slice(-MAX_HISTORY) }));
+        setState((c) => ({
+          ...c,
+          remaining: ROUND_SECONDS - elapsed,
+          history: [...c.history, price].slice(-MAX_HISTORY),
+        }));
       }, TICK_MS);
     },
     [patch, settle, stopTimer, toast],
@@ -220,7 +227,12 @@ export function useGame() {
       const last = p.taskClaims[taskId];
       if (last && (!task.repeatMs || Date.now() - last < task.repeatMs)) return false;
       const coins = p.coins + task.reward;
-      const next = { ...p, coins, record: Math.max(p.record, coins), taskClaims: { ...p.taskClaims, [taskId]: Date.now() } };
+      const next = {
+        ...p,
+        coins,
+        record: Math.max(p.record, coins),
+        taskClaims: { ...p.taskClaims, [taskId]: Date.now() },
+      };
       profileRef.current = next;
       setProfile(next);
       toast(`+${task.reward}`);

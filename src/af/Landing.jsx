@@ -105,7 +105,11 @@ const STEPS = [
   { Icon: UsersIcon, title: 'مرحله اول', text: 'یک حساب رایگان در بروکر ایکس‌چیف بسازید.' },
   { Icon: ShieldCheckIcon, title: 'مرحله دوم', text: 'حساب خود را با تذکره یا کارت ملی تأیید کنید.' },
   { Icon: WalletIcon, title: 'مرحله سوم', text: 'حساب خود را به دالر شارژ کنید؛ هرچه واریز بیشتر، هدیه بیشتر.' },
-  { Icon: CircleCheckIcon, title: 'مرحله چهارم', text: 'در صفحه واریز، حتماً گزینه "Enroll Welcome Bonus" را تیک بزنید.' },
+  {
+    Icon: CircleCheckIcon,
+    title: 'مرحله چهارم',
+    text: 'در صفحه واریز، حتماً گزینه "Enroll Welcome Bonus" را تیک بزنید.',
+  },
   { Icon: TrendingUpIcon, title: 'مرحله پنجم', text: 'با سرمایه دو برابر معامله کنید.' },
 ];
 
@@ -156,7 +160,7 @@ function Nav() {
 function Hero({ heroRef }) {
   return (
     <section className="af-hero" ref={heroRef}>
-      <img className="af-hero-img af-hero-img-desktop" src={HERO_DESKTOP} alt="" fetchpriority="high" />
+      <img className="af-hero-img af-hero-img-desktop" src={HERO_DESKTOP} alt="" fetchPriority="high" />
       <div
         className="af-hero-img af-hero-img-mobile"
         role="img"
@@ -172,8 +176,12 @@ function Hero({ heroRef }) {
           <p className="af-hero-sub">ویژه معامله‌گران افغانستان</p>
           {/* desktop only: the sticky bar takes over once the hero scrolls away */}
           <div className="af-hero-cta">
-            <a href={REGISTER_URL} className="af-btn-red af-btn-red-desktop">ثبت‌نام رایگان</a>
-            <a href="#conditions" className="af-terms-link af-terms-link-hero">مشاهده شرایط</a>
+            <a href={REGISTER_URL} className="af-btn-red af-btn-red-desktop">
+              ثبت‌نام رایگان
+            </a>
+            <a href="#conditions" className="af-terms-link af-terms-link-hero">
+              مشاهده شرایط
+            </a>
           </div>
         </div>
       </div>
@@ -187,12 +195,16 @@ function Steps() {
       <div className="af-container">
         <header className="af-section-head">
           <h2 className="af-h2">مراحل دریافت سرمایه دو برابری</h2>
-          <p className="af-lead">فقط با چند قدم ساده، هدیه ۱۰۰ درصدی خود را دریافت کنید و با حاشیه امنیت بالاتری معامله کنید.</p>
+          <p className="af-lead">
+            فقط با چند قدم ساده، هدیه ۱۰۰ درصدی خود را دریافت کنید و با حاشیه امنیت بالاتری معامله کنید.
+          </p>
         </header>
         <ol className="af-steps-grid">
           {STEPS.map(({ Icon, title, text }, i) => (
             <li key={title} className="af-step">
-              <div className="af-step-icon"><Icon width={24} height={24} /></div>
+              <div className="af-step-icon">
+                <Icon width={24} height={24} />
+              </div>
               <h3 className="af-step-title">{title}</h3>
               <p className="af-step-text">{text}</p>
               {i < STEPS.length - 1 && <span className="af-step-line" aria-hidden="true" />}
@@ -211,7 +223,8 @@ function Features() {
         <div className="af-features-text">
           <h2 className="af-h2 af-h2-tight">این فرصت ویژه فقط برای معامله‌گران افغانستان است</h2>
           <p className="af-lead af-lead-start">
-            با قدرت دو برابر وارد بازارهای جهانی شوید. بروکر ایکس‌چیف با ارائه پلتفرم‌های پیشرفته، اسپرد رقابتی و پشتیبانی اختصاصی، بهترین شرایط را برای موفقیت شما فراهم کرده است.
+            با قدرت دو برابر وارد بازارهای جهانی شوید. بروکر ایکس‌چیف با ارائه پلتفرم‌های پیشرفته، اسپرد رقابتی و
+            پشتیبانی اختصاصی، بهترین شرایط را برای موفقیت شما فراهم کرده است.
           </p>
           <ul className="af-feature-list">
             {FEATURES.map((f) => (
@@ -282,9 +295,14 @@ function Footer() {
     <footer className="af-footer">
       <div className="af-container af-footer-inner">
         <div className="af-footer-box">
-          <div className="af-footer-gift"><GiftIcon width={32} height={32} /></div>
+          <div className="af-footer-gift">
+            <GiftIcon width={32} height={32} />
+          </div>
           <h2 className="af-h2">آماده‌ی شروع هستید؟</h2>
-          <p className="af-lead">همین حالا حساب خود را افتتاح کنید و با دریافت هدیه ۵۰۰ دالری، مسیر موفقیت در بازارهای مالی را با قدرت بیشتری آغاز کنید.</p>
+          <p className="af-lead">
+            همین حالا حساب خود را افتتاح کنید و با دریافت هدیه ۵۰۰ دالری، مسیر موفقیت در بازارهای مالی را با قدرت بیشتری
+            آغاز کنید.
+          </p>
           <div className="af-footer-cta">
             <a href={REGISTER_URL} className="af-btn-primary">
               <span>شروع ثبت‌نام و دریافت هدیه</span>
@@ -303,14 +321,22 @@ function RegistrationBars({ desktopVisible }) {
     <>
       <div className="af-bar af-bar-mobile">
         <div className="af-bar-mobile-inner">
-          <a href={REGISTER_URL} className="af-btn-red">ثبت‌نام رایگان</a>
-          <a href="#conditions" className="af-terms-link af-terms-link-mobile">مشاهده شرایط</a>
+          <a href={REGISTER_URL} className="af-btn-red">
+            ثبت‌نام رایگان
+          </a>
+          <a href="#conditions" className="af-terms-link af-terms-link-mobile">
+            مشاهده شرایط
+          </a>
         </div>
       </div>
       <div className={`af-bar af-bar-desktop${desktopVisible ? ' is-visible' : ''}`} aria-hidden={!desktopVisible}>
         <div className="af-container af-bar-desktop-inner">
-          <a href={REGISTER_URL} className="af-btn-red af-btn-red-desktop" tabIndex={desktopVisible ? 0 : -1}>ثبت‌نام رایگان</a>
-          <a href="#conditions" className="af-terms-link" tabIndex={desktopVisible ? 0 : -1}>مشاهده شرایط</a>
+          <a href={REGISTER_URL} className="af-btn-red af-btn-red-desktop" tabIndex={desktopVisible ? 0 : -1}>
+            ثبت‌نام رایگان
+          </a>
+          <a href="#conditions" className="af-terms-link" tabIndex={desktopVisible ? 0 : -1}>
+            مشاهده شرایط
+          </a>
           <p className="af-bar-offer">تا ۵۰۰ دلار اعتبار معاملاتی هدیه</p>
         </div>
       </div>

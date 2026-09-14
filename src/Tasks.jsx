@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { PROMO_VIDEO_SECONDS, PROMO_VIDEO_URL, SHARE_URL, STAFF_PIN, TASKS, TASK_WAIT_MS, VERIFY_MODE } from './config.js';
+import {
+  PROMO_VIDEO_SECONDS,
+  PROMO_VIDEO_URL,
+  SHARE_URL,
+  STAFF_PIN,
+  TASKS,
+  TASK_WAIT_MS,
+  VERIFY_MODE,
+} from './config.js';
 import { num, useLang } from './i18n.js';
 import LeadCapture, { readLead } from './LeadCapture.jsx';
 import Logo from './Logo.jsx';
@@ -31,7 +39,9 @@ function PinModal({ onOk, onCancel }) {
     <div className="modal-backdrop" role="dialog" aria-modal="true">
       <form className="modal" onSubmit={submit}>
         <div className="modal-title">{t('tasks.pinTitle')}</div>
-        <div className="modal-sub">{wrong ? <span className="lead-error">{t('tasks.pinWrong')}</span> : t('tasks.pinSub')}</div>
+        <div className="modal-sub">
+          {wrong ? <span className="lead-error">{t('tasks.pinWrong')}</span> : t('tasks.pinSub')}
+        </div>
         <input
           ref={ref}
           className="pin-input"
@@ -44,8 +54,12 @@ function PinModal({ onOk, onCancel }) {
           aria-label={t('tasks.pinSub')}
         />
         <div className="modal-actions">
-          <button type="button" className="btn-ghost" onClick={onCancel}>{t('tasks.cancel')}</button>
-          <button type="submit" className="btn-primary" disabled={pin.length < 4}>{t('tasks.pinOk')}</button>
+          <button type="button" className="btn-ghost" onClick={onCancel}>
+            {t('tasks.cancel')}
+          </button>
+          <button type="submit" className="btn-primary" disabled={pin.length < 4}>
+            {t('tasks.pinOk')}
+          </button>
         </div>
       </form>
     </div>
@@ -74,12 +88,18 @@ function VideoModal({ onDone, onCancel }) {
             <Logo height={44} />
             <div className="promo-tagline">{t('tasks.videoTitle')}</div>
             <div className="promo-sub">{t('tasks.videoSub')}</div>
-            <div className="promo-bar"><div className="promo-bar-fill" style={{ width: `${pct}%` }} /></div>
-            <div className="promo-count" dir="ltr">{left}s</div>
+            <div className="promo-bar">
+              <div className="promo-bar-fill" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="promo-count" dir="ltr">
+              {left}s
+            </div>
           </div>
         )}
         <div className="modal-actions">
-          <button type="button" className="btn-ghost" onClick={onCancel}>{t('tasks.cancel')}</button>
+          <button type="button" className="btn-ghost" onClick={onCancel}>
+            {t('tasks.cancel')}
+          </button>
         </div>
       </div>
     </div>
@@ -134,7 +154,10 @@ export default function Tasks({ profile, onClaim, onToast }) {
       if (navigator.share) {
         navigator.share({ text }).catch(() => {});
       } else {
-        navigator.clipboard?.writeText(text).then(() => onToast(t('tasks.copied'))).catch(() => {});
+        navigator.clipboard
+          ?.writeText(text)
+          .then(() => onToast(t('tasks.copied')))
+          .catch(() => {});
       }
     } else if (task.url) {
       window.open(task.url, '_blank', 'noopener');
@@ -173,7 +196,9 @@ export default function Tasks({ profile, onClaim, onToast }) {
           const done = st.kind === 'claimed';
           return (
             <div key={task.id} className={`task ${task.featured ? 'task-featured' : ''} ${done ? 'task-done' : ''}`}>
-              <div className="task-icon" aria-hidden="true">{task.icon}</div>
+              <div className="task-icon" aria-hidden="true">
+                {task.icon}
+              </div>
               <div className="task-body">
                 <div className="task-title">{t(`${item}.title`)}</div>
                 <div className="task-desc">{t(`${item}.desc`)}</div>
@@ -182,10 +207,18 @@ export default function Tasks({ profile, onClaim, onToast }) {
                 )}
               </div>
               <div className="task-side">
-                <div className="task-reward" dir="ltr">{t('tasks.reward', { n: num(task.reward, lang) })}</div>
+                <div className="task-reward" dir="ltr">
+                  {t('tasks.reward', { n: num(task.reward, lang) })}
+                </div>
                 {st.kind === 'claimed' && <div className="task-state">{t('tasks.claimed')}</div>}
-                {st.kind === 'cooldown' && <div className="task-state">{t('tasks.again', { t: fmtCountdown(st.left, lang) })}</div>}
-                {st.kind === 'waiting' && <button type="button" className="task-btn" disabled>{t('tasks.waiting', { s: num(Math.ceil(st.left / 1000), lang) })}</button>}
+                {st.kind === 'cooldown' && (
+                  <div className="task-state">{t('tasks.again', { t: fmtCountdown(st.left, lang) })}</div>
+                )}
+                {st.kind === 'waiting' && (
+                  <button type="button" className="task-btn" disabled>
+                    {t('tasks.waiting', { s: num(Math.ceil(st.left / 1000), lang) })}
+                  </button>
+                )}
                 {st.kind === 'ready' && (
                   <button type="button" className="task-btn task-btn-ready" onClick={() => finish(task)}>
                     {VERIFY_MODE === 'pin' ? t('tasks.verify') : t('tasks.done')}
@@ -197,7 +230,9 @@ export default function Tasks({ profile, onClaim, onToast }) {
                   </button>
                 )}
                 {st.kind === 'available' && task.kind === 'email' && !emailOpen && (
-                  <button type="button" className="task-btn" onClick={() => begin(task)}>{t('tasks.start')}</button>
+                  <button type="button" className="task-btn" onClick={() => begin(task)}>
+                    {t('tasks.start')}
+                  </button>
                 )}
               </div>
             </div>

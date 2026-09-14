@@ -28,7 +28,9 @@ export default async function handler(req, res) {
   }
 
   const body = readBody(req);
-  const email = String(body.email || '').trim().toLowerCase();
+  const email = String(body.email || '')
+    .trim()
+    .toLowerCase();
   if (!EMAIL_RE.test(email) || email.length > 254) {
     return res.status(400).json({ ok: false, error: 'invalid_email' });
   }

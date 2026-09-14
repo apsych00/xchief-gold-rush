@@ -259,11 +259,16 @@ const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
 export function num(n, lang) {
   const s = Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
   if (lang !== 'fa') return s;
-  return s.replace(/\d/g, (d) => FA_DIGITS[d]).replace(/,/g, '٬').replace(/\./g, '٫');
+  return s
+    .replace(/\d/g, (d) => FA_DIGITS[d])
+    .replace(/,/g, '٬')
+    .replace(/\./g, '٫');
 }
 
 export function money(v) {
-  return Number(v).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return Number(v)
+    .toFixed(2)
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
 
 function interpolate(str, vars) {

@@ -134,7 +134,9 @@ function onTick(src, parsed) {
     console.log(`[relay] now publishing ${src.symbol} from ${label}`);
     broadcast(statusMessage());
   }
-  broadcast(JSON.stringify({ type: 'price', symbol: state.symbol, source: state.source, price: state.price, t: state.t }));
+  broadcast(
+    JSON.stringify({ type: 'price', symbol: state.symbol, source: state.source, price: state.price, t: state.t }),
+  );
 }
 
 // --------------------------------------------------------------- upstream --
@@ -221,7 +223,9 @@ wss.on('connection', (client) => {
     client.isAlive = true;
   });
   client.on('error', () => {});
-  client.send(JSON.stringify({ type: 'hello', symbol: state.symbol, source: state.source, price: state.price, t: state.t }));
+  client.send(
+    JSON.stringify({ type: 'hello', symbol: state.symbol, source: state.source, price: state.price, t: state.t }),
+  );
 });
 
 setInterval(() => {

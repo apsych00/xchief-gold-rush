@@ -1,27 +1,63 @@
 # xChief Gold Rush
 
-Mobile mini-game implemented from the Claude Design file
-`xChief Gold Rush App.dc.html`. Predict whether gold (XAUUSD) goes up or down in
-the next 5 seconds, pick a points lever (×1 / ×2 / ×5), and climb the leaderboard.
+[![CI](https://github.com/apsych00/xchief-gold-rush/actions/workflows/ci.yml/badge.svg)](https://github.com/apsych00/xchief-gold-rush/actions/workflows/ci.yml)
+[![Live](https://img.shields.io/badge/live-xchief--gold--rush.vercel.app-06D700)](https://xchief-gold-rush.vercel.app)
+
+A 5-second gold prediction game for the xChief booth at **Forex Expo Dubai,
+22–23 September 2026** (Dubai World Trade Centre) and for visitors' own phones.
+Players call whether the live XAU/USD price goes up or down, stake coins with a
+×1 / ×2 / ×5 lever, build a combo with consecutive wins, climb a leaderboard and
+refill coins by completing marketing tasks (follow, review, open a demo account).
+
+- **Live:** https://xchief-gold-rush.vercel.app (auto-deploys from `main`)
+- **Stack:** React 18 + Vite 6, plain CSS, Vercel (static + one serverless
+  function), optional Node WebSocket relay for the price feed.
+- **Origin:** implemented from the Claude Design file `xChief Gold Rush App.dc.html`,
+  then extended with the economy, tasks, live prices and app-shell layout below.
+
+## Repository map
+
+| Path                           | What                                                                                                          |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `src/App.jsx`                  | Screens: top bar, Home, game Console (display + lever body), Coins/Tasks, Leaderboard, bottom Nav             |
+| `src/useGame.js`               | Game state, 5-second round, settlement, profile updates                                                       |
+| `src/config.js`                | **All tunables**: economy, combo table, levels, tasks, links, PIN                                             |
+| `src/priceFeed.js`             | Live gold price: relay → Finnhub XAU/USD → OKX/Binance/Kraken PAXG → REST → demo, plus the quiet-market layer |
+| `src/Tasks.jsx`                | Refill tasks screen, staff-PIN and video modals                                                               |
+| `src/LeadCapture.jsx`          | One-field email capture                                                                                       |
+| `src/UpdateBanner.jsx`         | "New version ready" banner for in-app browsers                                                                |
+| `src/i18n.js`                  | English strings (Persian kept for later), number formatting                                                   |
+| `src/profile.js`               | Per-device profile persistence (`localStorage`)                                                               |
+| `src/styles.css`               | All styling, fixed non-scrolling app shell                                                                    |
+| `api/lead.js`                  | Vercel serverless endpoint that receives leads                                                                |
+| `relay/`                       | Standalone price relay (Node + `ws`), with Fly.io / Render / Docker configs                                   |
+| `af/`, `src/af/`, `public/af/` | Separate Afghanistan welcome-bonus landing served at `/af/`                                                   |
+| `test/`                        | Economy rule tests (`npm test`)                                                                               |
 
 ## Run
 
 ```bash
 npm install
-npm run dev
+cp .env.example .env.local   # optional: relay URL, Finnhub key, task links, PIN
+npm run dev                  # http://localhost:5173
 ```
 
-Open the printed URL (default `http://localhost:5173`). `npm run build` writes a
-static bundle to `dist/`, which can be hosted on any static file server.
+`npm run build` writes `dist/` (plus `dist/version.json`) for any static host.
+Other scripts: `npm test`, `npm run lint`, `npm run format`, `npm run relay`.
+CI (GitHub Actions) runs lint, format check, tests and build on every push and
+pull request. See `CONTRIBUTING.md` for conventions.
 
-## Structure
+## Deployment
 
-- `src/App.jsx` — screens: top bar (logo, language switch, balance), Home, game Console (display + lever body), Leaderboard, bottom Nav.
-- `src/useGame.js` — game state and round logic (price random walk, 5-second timer, scoring).
-- `src/i18n.js` — Persian / English strings, number formatting, language context.
-- `src/LeadCapture.jsx` — one-field email capture (Home card + Leaderboard slim variant).
-- `src/styles.css` — all styling, translated from the design's inline styles.
-- `api/lead.js` — Vercel serverless endpoint that receives leads.
+- **App:** Vercel project `xchief-gold-rush`, production = `main`. Environment
+  variables are set in the Vercel dashboard (never committed); `.env.example`
+  documents them. `vercel.json` sets cache headers (see "Updates in in-app
+  browsers").
+- **Relay (multi-device play):** host `relay/` on Fly.io, Render or any VPS
+  (see `relay/README.md`), then set `VITE_RELAY_URL=wss://.../ws` on Vercel and
+  redeploy.
+- **Leads:** set `LEAD_WEBHOOK_URL` on Vercel to forward every email lead as
+  JSON to a sheet/CRM; otherwise leads are only in the function logs.
 
 ## Afghanistan landing (`/af/`)
 
@@ -88,8 +124,16 @@ Apps Script web app writing to a Sheet, Zapier/Make, a CRM or mailing-list
 webhook. The payload:
 
 ```json
-{ "email": "...", "source": "home|leaderboard", "lang": "fa|en", "balance": 2400,
-  "page": "/", "ua": "...", "country": "IR", "at": "2026-09-12T10:00:00.000Z" }
+{
+  "email": "...",
+  "source": "home|leaderboard",
+  "lang": "fa|en",
+  "balance": 2400,
+  "page": "/",
+  "ua": "...",
+  "country": "IR",
+  "at": "2026-09-12T10:00:00.000Z"
+}
 ```
 
 ## Live gold price
@@ -113,6 +157,7 @@ raced in parallel and ranked by priority:
 The first source to deliver a price wins; if a better-ranked source starts
 ticking within 12 s it takes over. If the active source drops, the race
 restarts automatically.
+
 - If no socket answers within 5 s, a REST poller (Binance, then gold-api.com
   XAU spot) takes over at 1 request/second.
 - If nothing answers within 9 s, prices are simulated and the badge reads
@@ -153,8 +198,7 @@ balance ever, leaderboard ranks by record so losing never drops your rank;
 levels Rookie → Trader (2,000) → Pro (5,000) → Gold Chief (10,000); badges
 High Roller (win at ×5), Hot Streak (4 in a row), Comeback; 60 rounds/hour.
 
-Economy check (`scratchpad/econ-test.mjs` style simulation, 50/50 calls at
-×1): a player drifts up about +23 coins per round on average, i.e. roughly
+Economy check (`test/economy.test.mjs`, 50/50 calls at ×1): a player drifts up about +23 coins per round on average, i.e. roughly
 doubles in 40 rounds. Max single win is 500 × 3 = 1,500. To make it tighter
 use `combo: [1, 1.25, 1.5, 2]` (≈ +12 coins per round).
 
@@ -180,3 +224,7 @@ the console's fixed-pixel lever art is scaled by a runtime factor computed
 from the frame size (`--s`), so it fits 360×640 Androids, tall iPhones and the
 desktop phone frame alike without scrolling. Only long lists (leaderboard,
 tasks) scroll inside their own panel.
+
+## License
+
+Proprietary. © 2026 xChief. See `LICENSE`.

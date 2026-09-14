@@ -38,28 +38,68 @@ const KNOB_TOP = { 1: 134, 2: 67, 5: 0 };
 
 function TrophyIcon({ stroke, size = 22 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={stroke}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.7V17c0 .6-.4 1-1 1.3L7 20h10l-2-1.7c-.6-.3-1-.7-1-1.3v-2.3M18 2H6v7a6 6 0 0 0 12 0V2z" />
     </svg>
   );
 }
 function HomeIcon({ stroke }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={stroke}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2z" />
     </svg>
   );
 }
 function GamepadIcon({ stroke }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={stroke}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M6 11h4M8 9v4M15 12h.01M18 10h.01M17.3 5H6.7a4 4 0 0 0-4 3.6L2 15.6A2.4 2.4 0 0 0 6.2 17.5l1.6-2h8.4l1.6 2a2.4 2.4 0 0 0 4.2-1.9l-.7-7A4 4 0 0 0 17.3 5z" />
     </svg>
   );
 }
 function GiftIcon({ stroke }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={stroke}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
     </svg>
   );
@@ -75,7 +115,9 @@ function TopBar({ profile }) {
   return (
     <header className="topbar">
       <div className="topbar-start">
-        <div className="logo" dir="ltr"><Logo height={26} /></div>
+        <div className="logo" dir="ltr">
+          <Logo height={26} />
+        </div>
         {ENABLED_LANGS.length > 1 && (
           <button
             type="button"
@@ -102,7 +144,11 @@ function Toast({ toast }) {
   let text = toast.text;
   if (text === 'limit') text = t('toast.limit');
   else if (/^\+\d+$/.test(text)) text = t('toast.coins', { n: num(Number(text.slice(1)), lang) });
-  return <div className="toast" role="status">{text}</div>;
+  return (
+    <div className="toast" role="status">
+      {text}
+    </div>
+  );
 }
 
 /* ---------- home ---------- */
@@ -120,18 +166,25 @@ function Home({ profile, actions }) {
         <div className="bar">
           <div className="bar-body" />
           <div className="bar-top" />
-          <div className="bar-label" dir="ltr">GOLD 999.9</div>
+          <div className="bar-label" dir="ltr">
+            GOLD 999.9
+          </div>
         </div>
       </div>
       <div className="stats">
         <div className="stat-card">
           <div className="stat-k">{t('record')}</div>
-          <div className="stat-v"><TrophyIcon stroke={GOLD} size={16} />{num(profile.record, lang)}</div>
+          <div className="stat-v">
+            <TrophyIcon stroke={GOLD} size={16} />
+            {num(profile.record, lang)}
+          </div>
         </div>
         <div className="stat-card">
           <div className="stat-k">{t(`level.${level.id}`)}</div>
           <div className="stat-v stat-v-small">
-            {next ? t('home.toNext', { n: num(next.min - profile.record, lang), level: t(`level.${next.id}`) }) : t('home.maxLevel')}
+            {next
+              ? t('home.toNext', { n: num(next.min - profile.record, lang), level: t(`level.${next.id}`) })
+              : t('home.maxLevel')}
           </div>
         </div>
         <div className="stat-card">
@@ -142,12 +195,16 @@ function Home({ profile, actions }) {
         </div>
       </div>
       <div className="home-cta">
-        <button type="button" className="btn-start" onClick={actions.startGame}>{t('home.start')}</button>
+        <button type="button" className="btn-start" onClick={actions.startGame}>
+          {t('home.start')}
+        </button>
         <div className="home-rules">{t('home.rules', { max: num(COMBO_MAX, lang) })}</div>
         <div className="home-note">
           {t('home.note', { base: num(ECON.stakeBase, lang) })}
           {' · '}
-          <button type="button" className="link-btn" onClick={actions.goTasks}>{t('home.more')}</button>
+          <button type="button" className="link-btn" onClick={actions.goTasks}>
+            {t('home.more')}
+          </button>
         </div>
       </div>
     </section>
@@ -164,7 +221,15 @@ function Chart({ history, start, color }) {
   return (
     <svg viewBox="0 0 300 80" className="chart" aria-hidden="true" preserveAspectRatio="none">
       <line x1="0" y1="40" x2="300" y2="40" stroke="rgba(255,255,255,.25)" strokeDasharray="4 6" strokeWidth="1.5" />
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={color}
+        strokeWidth="3"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        vectorEffect="non-scaling-stroke"
+      />
     </svg>
   );
 }
@@ -177,11 +242,17 @@ function ComboBar({ streak, compact = false }) {
   const lit = Math.min(streak, steps - 1);
   const atMax = streak >= steps - 1;
   return (
-    <div className={`combo ${compact ? 'combo-compact' : ''} ${streak > 0 ? 'combo-on' : ''} ${atMax ? 'combo-max' : ''}`} dir="ltr" aria-label={`${t('combo.label')} ×${mult}`}>
+    <div
+      className={`combo ${compact ? 'combo-compact' : ''} ${streak > 0 ? 'combo-on' : ''} ${atMax ? 'combo-max' : ''}`}
+      dir="ltr"
+      aria-label={`${t('combo.label')} ×${mult}`}
+    >
       <span className="combo-label">{t('combo.label')}</span>
       <span className="combo-pips" aria-hidden="true">
         {ECON.combo.slice(1).map((m, i) => (
-          <span key={m} className={`combo-pip ${i < lit ? 'combo-pip-on' : ''}`}>×{num(m, lang)}</span>
+          <span key={m} className={`combo-pip ${i < lit ? 'combo-pip-on' : ''}`}>
+            ×{num(m, lang)}
+          </span>
         ))}
       </span>
       <span className="combo-mult">×{num(mult, lang)}</span>
@@ -213,7 +284,8 @@ function Display({ state, profile, actions }) {
   const deltaColor = up ? GREEN : RED;
   const digit = isRunning ? Math.max(1, Math.ceil(remaining)) : 0;
   const stake = stakeFor(lev);
-  const isNewRecord = isResult && result?.outcome === 'win' && profile.coins === profile.record && profile.record > ECON.startCoins;
+  const isNewRecord =
+    isResult && result?.outcome === 'win' && profile.coins === profile.record && profile.record > ECON.startCoins;
   const curMult = comboMult(profile.streak); // multiplier the NEXT win will pay
   const potential = Math.round(stake * curMult);
 
@@ -222,22 +294,33 @@ function Display({ state, profile, actions }) {
       <div className="display-inner">
         <div className="display-rays" aria-hidden="true" />
         <div className="display-vignette" aria-hidden="true" />
-        <button type="button" className="btn-home" onClick={actions.goHome}>{t('game.home')}</button>
-        <div className="feed-corner"><FeedBadge feed={feed} /></div>
+        <button type="button" className="btn-home" onClick={actions.goHome}>
+          {t('game.home')}
+        </button>
+        <div className="feed-corner">
+          <FeedBadge feed={feed} />
+        </div>
 
         {isIdle && (
           <div className="pane pane-idle">
-            <div className="ticker" dir="ltr">GOLD · XAUUSD</div>
+            <div className="ticker" dir="ltr">
+              GOLD · XAUUSD
+            </div>
             <div className={hasPrice ? 'price-big' : 'price-big price-waiting'} dir="ltr" aria-live="polite">
               {hasPrice ? money(price) : '— — —'}
             </div>
             <div className="feed-note">
-              {!hasPrice ? t('feed.waiting') : feed.quiet ? t('feed.noteQuiet') : t('feed.note', { symbol: feed.symbol || 'PAXG/USD' })}
+              {!hasPrice
+                ? t('feed.waiting')
+                : feed.quiet
+                  ? t('feed.noteQuiet')
+                  : t('feed.note', { symbol: feed.symbol || 'PAXG/USD' })}
             </div>
             <div className="idle-title">{t('game.after')}</div>
             <div className="idle-help">{t('game.help')}</div>
             <div className="lev-pill">
-              {t('game.stake')} <b>{num(stake, lang)}</b> {t('coins')} · {t('game.win')} <b className="txt-green">+{num(potential, lang)}</b>
+              {t('game.stake')} <b>{num(stake, lang)}</b> {t('coins')} · {t('game.win')}{' '}
+              <b className="txt-green">+{num(potential, lang)}</b>
             </div>
             <ComboBar streak={profile.streak} />
           </div>
@@ -245,13 +328,19 @@ function Display({ state, profile, actions }) {
 
         {isRunning && (
           <div className="pane pane-running">
-            <div className="ticker ticker-sm" dir="ltr">GOLD · XAUUSD</div>
+            <div className="ticker ticker-sm" dir="ltr">
+              GOLD · XAUUSD
+            </div>
             <div className="price-row" dir="ltr">
               <span className="price-mid">{money(price ?? start)}</span>
-              <span className="price-delta" style={{ color: deltaColor }}>{(up ? '▲ +' : '▼ ') + delta.toFixed(2)}</span>
+              <span className="price-delta" style={{ color: deltaColor }}>
+                {(up ? '▲ +' : '▼ ') + delta.toFixed(2)}
+              </span>
             </div>
             <Chart history={history} start={start} color={deltaColor} />
-            <div key={digit} className="countdown" dir="ltr" aria-live="polite">{digit}</div>
+            <div key={digit} className="countdown" dir="ltr" aria-live="polite">
+              {digit}
+            </div>
             <div className="locked-note">
               {t('game.locked')} · {dir === 'up' ? t('game.up') : t('game.down')} · {t('game.stake')} {num(stake, lang)}
               {curMult > 1 ? ` · ×${num(curMult, lang)}` : ''}
@@ -264,7 +353,9 @@ function Display({ state, profile, actions }) {
             {result.outcome === 'win' && (
               <>
                 <div className="coin-grid" aria-hidden="true">
-                  {COIN_PX.map((c, i) => <div key={i} style={{ background: c }} />)}
+                  {COIN_PX.map((c, i) => (
+                    <div key={i} style={{ background: c }} />
+                  ))}
                 </div>
                 <div className="win-row" dir="ltr">
                   <span className="win-word">WIN</span>
@@ -274,7 +365,11 @@ function Display({ state, profile, actions }) {
                 <div className="result-points">{t('result.winDelta', { n: num(result.delta, lang) })}</div>
                 <div className="result-sub">
                   {result.mult > 1
-                    ? t('result.streakTag', { n: num(result.streak, lang), stake: num(result.stake, lang), mult: num(result.mult, lang) })
+                    ? t('result.streakTag', {
+                        n: num(result.streak, lang),
+                        stake: num(result.stake, lang),
+                        mult: num(result.mult, lang),
+                      })
                     : t('result.winSub', { stake: num(result.stake, lang), mult: num(1, lang) })}
                   {result.badge ? ` · ${t(`result.badge.${result.badge}`)}` : ''}
                 </div>
@@ -287,36 +382,52 @@ function Display({ state, profile, actions }) {
             )}
             {result.outcome === 'flat' && (
               <>
-                <div className="miss-word tie-word" dir="ltr">FLAT</div>
+                <div className="miss-word tie-word" dir="ltr">
+                  FLAT
+                </div>
                 <div className="result-line miss-line">{t('result.tieTitle')}</div>
                 <div className="result-sub miss-sub">{t('result.tieSub')}</div>
               </>
             )}
             {result.outcome === 'lose' && (
               <>
-                <div className="miss-word" dir="ltr">MISS</div>
+                <div className="miss-word" dir="ltr">
+                  MISS
+                </div>
                 <div className="result-line miss-line">{t('result.missTitle')}</div>
-                <div className="result-points result-points-neg">{t('result.missDelta', { n: num(result.stake, lang) })}</div>
+                <div className="result-points result-points-neg">
+                  {t('result.missDelta', { n: num(result.stake, lang) })}
+                </div>
                 <div className="result-sub miss-sub">{t('result.missSub')}</div>
               </>
             )}
             <div className="result-stats">
               <div className="stat">
                 <span className="stat-label">{t('result.start')}</span>
-                <span className="stat-val" dir="ltr">{money(start ?? price)}</span>
+                <span className="stat-val" dir="ltr">
+                  {money(start ?? price)}
+                </span>
               </div>
               <div className="stat">
                 <span className="stat-label">{t('result.end')}</span>
-                <span className="stat-val stat-val-gold" dir="ltr">{money(end ?? price)}</span>
+                <span className="stat-val stat-val-gold" dir="ltr">
+                  {money(end ?? price)}
+                </span>
               </div>
             </div>
             <div className="result-actions">
               {profile.coins >= ECON.brokeBelow || !profile.freeRefillUsed ? (
-                <button type="button" className="btn-again" onClick={actions.playAgain}>{t('result.again')}</button>
+                <button type="button" className="btn-again" onClick={actions.playAgain}>
+                  {t('result.again')}
+                </button>
               ) : (
-                <button type="button" className="btn-again" onClick={actions.goTasks}>{t('result.tasks')}</button>
+                <button type="button" className="btn-again" onClick={actions.goTasks}>
+                  {t('result.tasks')}
+                </button>
               )}
-              <button type="button" className="btn-lb" onClick={actions.goLeaderboard}>{t('result.lb')}</button>
+              <button type="button" className="btn-lb" onClick={actions.goLeaderboard}>
+                {t('result.lb')}
+              </button>
             </div>
           </div>
         )}
@@ -340,7 +451,16 @@ function Console({ state, profile, actions, trackRef }) {
   const bodyClass = isResult ? (win ? 'body body-win' : 'body body-lose') : 'body body-gold';
   const levLabelColor = onGold ? (lev === 5 ? '#fff' : 'rgba(0,0,0,.7)') : '#fff';
   const canAfford = (m) => stakeFor(m) <= profile.coins;
-  const tickColor = (m) => (!canAfford(m) ? (onGold ? 'rgba(0,0,0,.25)' : 'rgba(255,255,255,.2)') : lev === m ? '#fff' : onGold ? 'rgba(0,0,0,.5)' : 'rgba(255,255,255,.4)');
+  const tickColor = (m) =>
+    !canAfford(m)
+      ? onGold
+        ? 'rgba(0,0,0,.25)'
+        : 'rgba(255,255,255,.2)'
+      : lev === m
+        ? '#fff'
+        : onGold
+          ? 'rgba(0,0,0,.5)'
+          : 'rgba(255,255,255,.4)';
 
   let hint;
   if (broke) hint = t('body.cantAfford');
@@ -366,10 +486,16 @@ function Console({ state, profile, actions, trackRef }) {
           <div className="body-sheen" aria-hidden="true" />
           <div className="lev-label" style={{ color: levLabelColor }}>
             <span>{t('body.lever')}</span>
-            <span className="lev-label-x" dir="ltr">×{lev}</span>
-            <span className="lev-stake" dir="ltr">= {num(stakeFor(lev), lang)}</span>
+            <span className="lev-label-x" dir="ltr">
+              ×{lev}
+            </span>
+            <span className="lev-stake" dir="ltr">
+              = {num(stakeFor(lev), lang)}
+            </span>
             <span className="lev-lock" style={{ opacity: locked ? 1 : 0 }} aria-hidden="true">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M7 11V7a5 5 0 0 1 10 0v4M5 11h14v10H5z" /></svg>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M7 11V7a5 5 0 0 1 10 0v4M5 11h14v10H5z" />
+              </svg>
             </span>
           </div>
 
@@ -391,7 +517,9 @@ function Console({ state, profile, actions, trackRef }) {
             onKeyDown={onKey}
           >
             <div className="slider-track" />
-            <div className="slider-knob" style={{ top: KNOB_TOP[lev] }} dir="ltr">×{lev}</div>
+            <div className="slider-knob" style={{ top: KNOB_TOP[lev] }} dir="ltr">
+              ×{lev}
+            </div>
           </div>
           {[5, 2, 1].map((m) => (
             <button
@@ -409,13 +537,27 @@ function Console({ state, profile, actions, trackRef }) {
             </button>
           ))}
 
-          <button type="button" className="btn-dir btn-down" onClick={actions.pickDown} disabled={locked || noPrice || broke} style={{ opacity: (locked && dir !== 'down') || noPrice || broke ? 0.45 : 1 }}>
+          <button
+            type="button"
+            className="btn-dir btn-down"
+            onClick={actions.pickDown}
+            disabled={locked || noPrice || broke}
+            style={{ opacity: (locked && dir !== 'down') || noPrice || broke ? 0.45 : 1 }}
+          >
             {t('game.down')}
           </button>
-          <button type="button" className="btn-dir btn-up" onClick={actions.pickUp} disabled={locked || noPrice || broke} style={{ opacity: (locked && dir !== 'up') || noPrice || broke ? 0.45 : 1 }}>
+          <button
+            type="button"
+            className="btn-dir btn-up"
+            onClick={actions.pickUp}
+            disabled={locked || noPrice || broke}
+            style={{ opacity: (locked && dir !== 'up') || noPrice || broke ? 0.45 : 1 }}
+          >
             {t('game.up')}
           </button>
-          <div className="body-hint" aria-live="polite">{hint}</div>
+          <div className="body-hint" aria-live="polite">
+            {hint}
+          </div>
 
           {broke && !profile.freeRefillUsed && (
             <div className="broke">
@@ -430,7 +572,9 @@ function Console({ state, profile, actions, trackRef }) {
             <div className="broke">
               <div className="broke-title">{t('game.brokeTitle')}</div>
               <div className="broke-sub">{t('game.brokeSub')}</div>
-              <button type="button" className="btn-primary" onClick={actions.goTasks}>{t('game.brokeCta')}</button>
+              <button type="button" className="btn-primary" onClick={actions.goTasks}>
+                {t('game.brokeCta')}
+              </button>
             </div>
           )}
         </div>
@@ -449,7 +593,9 @@ function Leaderboard({ others, profile }) {
   return (
     <section className="lb">
       <div className="screen-head">
-        <div className="screen-title"><TrophyIcon stroke={GOLD} size={24} /> {t('lb.title')}</div>
+        <div className="screen-title">
+          <TrophyIcon stroke={GOLD} size={24} /> {t('lb.title')}
+        </div>
         <div className="screen-sub">{t('lb.byRecord')}</div>
       </div>
       <div className="lb-list">
@@ -469,7 +615,13 @@ function Leaderboard({ others, profile }) {
           );
         })}
       </div>
-      <LeadCapture source="leaderboard" balance={profile.coins} variant="slim" title={t('lead.lbTitle')} subtitle={t('lead.lbSub')} />
+      <LeadCapture
+        source="leaderboard"
+        balance={profile.coins}
+        variant="slim"
+        title={t('lead.lbTitle')}
+        subtitle={t('lead.lbSub')}
+      />
     </section>
   );
 }
@@ -489,7 +641,14 @@ function Nav({ screen, actions }) {
       {items.map(({ id, label, Icon, go }) => {
         const active = screen === id;
         return (
-          <button key={id} type="button" className="nav-btn" aria-current={active ? 'page' : undefined} style={{ color: active ? '#fff' : DIM }} onClick={go}>
+          <button
+            key={id}
+            type="button"
+            className="nav-btn"
+            aria-current={active ? 'page' : undefined}
+            style={{ color: active ? '#fff' : DIM }}
+            onClick={go}
+          >
             <Icon stroke={active ? GREEN : DIM} />
             {label}
           </button>
@@ -554,7 +713,9 @@ export default function App() {
           {screen === 'home' && <Home profile={profile} actions={actions} />}
           {screen === 'game' && <Console state={state} profile={profile} actions={actions} trackRef={trackRef} />}
           {screen === 'lb' && <Leaderboard others={state.others} profile={profile} />}
-          {screen === 'tasks' && <Tasks profile={profile} onClaim={actions.claimTask} onToast={(txt) => actions.toast?.(txt)} />}
+          {screen === 'tasks' && (
+            <Tasks profile={profile} onClaim={actions.claimTask} onToast={(txt) => actions.toast?.(txt)} />
+          )}
           {screen !== 'game' && <Nav screen={screen} actions={actions} />}
           <Toast toast={state.toast} />
           <UpdateBanner />

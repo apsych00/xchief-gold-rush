@@ -55,7 +55,9 @@ export default function UpdateBanner() {
   return (
     <div className="update-banner" role="status">
       <span>{t('update.text')}</span>
-      <button type="button" className="update-btn" onClick={reloadFresh}>{t('update.cta')}</button>
+      <button type="button" className="update-btn" onClick={reloadFresh}>
+        {t('update.cta')}
+      </button>
     </div>
   );
 }
