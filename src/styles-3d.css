@@ -1,0 +1,414 @@
+/* =====================================================================
+   3D surface layer, loaded after styles.css.
+   Glossy gold / emerald bevels in the language of the brand art (gold
+   bars, coins, lit emerald podium): every tappable element gets a raised
+   body, a bottom edge and a press-down state; cards get a soft lift.
+   ===================================================================== */
+
+:root {
+  --gold-hi: #fff1a8;
+  --gold-1: #ffd75e;
+  --gold-2: #e9b62a;
+  --gold-3: #b7800f;
+  --gold-edge: #7a5308;
+  --em-hi: #a8ffc2;
+  --em-1: #5cf58a;
+  --em-2: #21c95c;
+  --em-3: #128a3c;
+  --em-edge: #0a5a26;
+  --ink-hi: #3a3f3b;
+  --ink-1: #23272a;
+  --ink-2: #121416;
+  --ink-edge: #000;
+}
+
+/* ---------- hero art (replaces the CSS gold bar) ---------- */
+
+.hero-art {
+  position: relative;
+  width: 100%;
+  height: auto;
+  animation: gr-bob 3.6s ease-in-out infinite;
+  filter: drop-shadow(0 18px 22px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 18px rgba(233, 182, 42, 0.25));
+}
+.hero-glow {
+  inset: 8%;
+  background: radial-gradient(circle, rgba(233, 182, 42, 0.32), rgba(53, 227, 111, 0.08) 55%, transparent 72%);
+}
+
+/* ---------- primary emerald buttons ---------- */
+
+.btn-start,
+.btn-primary,
+.lead-btn,
+.task-btn-ready,
+.update-btn {
+  position: relative;
+  border: 0;
+  color: #03140a;
+  background: linear-gradient(180deg, var(--em-hi) 0%, var(--em-1) 28%, var(--em-2) 62%, var(--em-3) 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.22),
+    0 5px 0 var(--em-edge),
+    0 12px 22px rgba(0, 0, 0, 0.55),
+    0 0 26px rgba(53, 227, 111, 0.35);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.08s ease,
+    filter 0.15s;
+}
+.btn-start::after,
+.btn-primary::after,
+.lead-btn::after,
+.task-btn-ready::after,
+.update-btn::after {
+  content: '';
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  top: 6%;
+  height: 40%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+.btn-start:hover,
+.btn-primary:hover:not(:disabled),
+.lead-btn:hover,
+.task-btn-ready:hover,
+.update-btn:hover {
+  filter: brightness(1.06);
+}
+.btn-start:active,
+.btn-primary:active:not(:disabled),
+.lead-btn:active,
+.task-btn-ready:active:not(:disabled),
+.update-btn:active {
+  transform: translateY(4px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.25),
+    0 1px 0 var(--em-edge),
+    0 4px 10px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(53, 227, 111, 0.5);
+}
+.btn-primary:disabled {
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.3);
+  filter: saturate(0.4);
+}
+
+/* ---------- gold buttons: "Next round", task Open/Start ---------- */
+
+.btn-again,
+.task-btn {
+  position: relative;
+  border: 0;
+  color: #2a1c02;
+  background: linear-gradient(180deg, var(--gold-hi) 0%, var(--gold-1) 30%, var(--gold-2) 64%, var(--gold-3) 100%);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.22),
+    0 5px 0 var(--gold-edge),
+    0 10px 20px rgba(0, 0, 0, 0.55),
+    0 0 22px rgba(233, 182, 42, 0.3);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.08s ease;
+}
+.btn-again:active,
+.task-btn:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.25),
+    0 1px 0 var(--gold-edge),
+    0 3px 8px rgba(0, 0, 0, 0.5);
+}
+.task-btn:disabled {
+  background: linear-gradient(180deg, #3a3d3a, #232624);
+  color: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 3px 0 #0b0c0b;
+  text-shadow: none;
+}
+
+/* ---------- dark glass buttons: Leaderboard, ghost, Home, lang ---------- */
+
+.btn-lb,
+.btn-ghost,
+.btn-home,
+.lang-btn {
+  position: relative;
+  background: linear-gradient(180deg, var(--ink-hi), var(--ink-1) 55%, var(--ink-2));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 4px 0 var(--ink-edge),
+    0 8px 18px rgba(0, 0, 0, 0.5);
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.08s ease;
+}
+.btn-lb {
+  border-color: rgba(53, 227, 111, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 4px 0 var(--ink-edge),
+    0 8px 18px rgba(0, 0, 0, 0.5),
+    0 0 16px rgba(53, 227, 111, 0.25);
+}
+.btn-lb:active,
+.btn-ghost:active,
+.btn-home:active,
+.lang-btn:active {
+  transform: translateY(3px);
+  background: linear-gradient(180deg, var(--ink-1), var(--ink-2));
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 1px 0 var(--ink-edge),
+    0 3px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------- balance chip as a gold coin ---------- */
+
+.balance-chip {
+  background: linear-gradient(180deg, #2b2f2c, #151816);
+  border: 1px solid rgba(233, 182, 42, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 3px 0 #0a0b0a,
+    0 6px 14px rgba(0, 0, 0, 0.5),
+    0 0 14px rgba(233, 182, 42, 0.18);
+}
+.coin-dot {
+  width: 18px;
+  height: 18px;
+  background: radial-gradient(circle at 35% 28%, #fff7c2 0%, var(--gold-1) 22%, var(--gold-2) 55%, var(--gold-3) 100%);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 244, 190, 0.55),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.35),
+    0 2px 4px rgba(0, 0, 0, 0.6),
+    0 0 8px rgba(233, 182, 42, 0.45);
+}
+.balance-text {
+  color: var(--gold-hi);
+  text-shadow: 0 0 10px rgba(233, 182, 42, 0.45);
+}
+
+/* ---------- cards: stats, tasks, rows, lead, combo, lever pill ---------- */
+
+.stat-card,
+.task,
+.lb-row,
+.lead,
+.combo,
+.lev-pill,
+.stat {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 3px 0 rgba(0, 0, 0, 0.45),
+    0 8px 18px rgba(0, 0, 0, 0.35);
+}
+.task-featured {
+  background: linear-gradient(180deg, rgba(53, 227, 111, 0.18), rgba(53, 227, 111, 0.06));
+  border-color: rgba(53, 227, 111, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 3px 0 rgba(0, 0, 0, 0.45),
+    0 8px 18px rgba(0, 0, 0, 0.35),
+    0 0 18px rgba(53, 227, 111, 0.25);
+}
+.lb-row-me {
+  background: linear-gradient(180deg, rgba(53, 227, 111, 0.26), rgba(53, 227, 111, 0.1));
+  border-color: var(--green);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 3px 0 rgba(0, 0, 0, 0.45),
+    0 0 22px rgba(53, 227, 111, 0.4);
+}
+.task-icon {
+  background: linear-gradient(180deg, var(--gold-1), var(--gold-3));
+  color: #2a1c02;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.25),
+    0 3px 0 var(--gold-edge),
+    0 5px 10px rgba(0, 0, 0, 0.5);
+}
+.combo-pip-on {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 2px 0 var(--em-edge),
+    0 0 10px rgba(53, 227, 111, 0.5);
+}
+.combo-max .combo-pip-on {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 2px 0 var(--gold-edge),
+    0 0 10px rgba(233, 182, 42, 0.6);
+}
+
+/* ---------- console display bezel ---------- */
+
+.display {
+  background: linear-gradient(180deg, #171917, #090a09);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 0 0 2px #232623,
+    0 4px 0 #000,
+    0 18px 40px rgba(0, 0, 0, 0.75);
+}
+
+/* ---------- lever: chrome rail, gold ball ---------- */
+
+.slider-track {
+  background: linear-gradient(90deg, #0c0c0c, #2c2c2c 45%, #4a4a4a 55%, #101010);
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.9),
+    0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.slider-knob {
+  color: #2a1c02;
+  background: radial-gradient(circle at 36% 30%, #fff7c2 0%, var(--gold-1) 25%, var(--gold-2) 60%, var(--gold-3) 100%);
+  box-shadow:
+    inset 0 -3px 4px rgba(0, 0, 0, 0.35),
+    inset 0 2px 2px rgba(255, 255, 255, 0.55),
+    0 6px 0 var(--gold-edge),
+    0 10px 14px rgba(0, 0, 0, 0.55);
+}
+
+/* ---------- direction buttons: glossy dark pucks with a lit rim ---------- */
+
+.btn-dir {
+  background: radial-gradient(circle at 50% 30%, #3a3e3b, #1a1d1b 55%, #0a0b0a);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.btn-dir::before {
+  content: '';
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  top: 8%;
+  height: 36%;
+  border-radius: 50% 50% 48% 48% / 60% 60% 40% 40%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+.btn-down {
+  box-shadow:
+    inset 0 -6px 12px rgba(0, 0, 0, 0.75),
+    inset 0 3px 6px rgba(255, 255, 255, 0.1),
+    0 0 0 2px rgba(255, 92, 92, 0.35),
+    0 12px 0 #050505,
+    0 18px 26px rgba(0, 0, 0, 0.6),
+    0 0 26px rgba(255, 92, 92, 0.35);
+}
+.btn-up {
+  box-shadow:
+    inset 0 -6px 12px rgba(0, 0, 0, 0.75),
+    inset 0 3px 6px rgba(255, 255, 255, 0.1),
+    0 0 0 2px rgba(53, 227, 111, 0.45),
+    0 12px 0 #050505,
+    0 18px 26px rgba(0, 0, 0, 0.6),
+    0 0 26px rgba(53, 227, 111, 0.4);
+}
+.btn-down:active:not(:disabled) {
+  transform: translateY(8px);
+  box-shadow:
+    inset 0 -2px 6px rgba(0, 0, 0, 0.7),
+    0 0 0 2px rgba(255, 92, 92, 0.5),
+    0 4px 0 #050505,
+    0 6px 12px rgba(0, 0, 0, 0.6),
+    0 0 44px var(--red);
+}
+.btn-up:active:not(:disabled) {
+  transform: translateY(8px);
+  box-shadow:
+    inset 0 -2px 6px rgba(0, 0, 0, 0.7),
+    0 0 0 2px rgba(53, 227, 111, 0.6),
+    0 4px 0 #050505,
+    0 6px 12px rgba(0, 0, 0, 0.6),
+    0 0 44px var(--green);
+}
+.tick:not(:disabled) {
+  background: rgba(0, 0, 0, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 2px 0 rgba(0, 0, 0, 0.35);
+}
+.tick[aria-pressed='true']:not(:disabled) {
+  background: linear-gradient(180deg, var(--ink-hi), var(--ink-2));
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 2px 0 #000,
+    0 4px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* ---------- bottom nav as the emerald podium ---------- */
+
+.nav {
+  position: relative;
+  background: linear-gradient(180deg, #1c2620 0%, #0f1613 55%, #080c0a 100%);
+  border: 1px solid rgba(53, 227, 111, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(53, 227, 111, 0.35),
+    0 5px 0 #062a12,
+    0 12px 26px rgba(0, 0, 0, 0.7),
+    0 0 20px rgba(53, 227, 111, 0.15);
+}
+.nav-btn[aria-current='page'] {
+  background: linear-gradient(180deg, rgba(53, 227, 111, 0.22), rgba(53, 227, 111, 0.06));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 0 0 1px rgba(53, 227, 111, 0.3);
+}
+.nav-btn:active {
+  transform: translateY(2px) scale(0.97);
+}
+
+/* ---------- glass surfaces: feed badge, toast, modal, banner ---------- */
+
+.feed-badge,
+.toast,
+.modal,
+.update-banner {
+  background: linear-gradient(180deg, rgba(28, 33, 30, 0.97), rgba(12, 15, 13, 0.97));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 4px 0 rgba(0, 0, 0, 0.6),
+    0 14px 30px rgba(0, 0, 0, 0.6);
+}
+.pin-input,
+.lead-input {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+/* result buttons sit inside a tight pane: slimmer edges there */
+.result-actions .btn-again {
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.22),
+    0 4px 0 var(--gold-edge),
+    0 8px 16px rgba(0, 0, 0, 0.5);
+}
+.result-actions .btn-lb {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 4px 0 var(--ink-edge),
+    0 8px 16px rgba(0, 0, 0, 0.5),
+    0 0 14px rgba(53, 227, 111, 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-art,
+  .hero-ring {
+    animation: none;
+  }
+}

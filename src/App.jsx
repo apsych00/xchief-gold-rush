@@ -167,13 +167,14 @@ function Home({ profile, actions }) {
       <div className="hero" aria-hidden="true">
         <div className="hero-ring" />
         <div className="hero-glow" />
-        <div className="bar">
-          <div className="bar-body" />
-          <div className="bar-top" />
-          <div className="bar-label" dir="ltr">
-            GOLD 999.9
-          </div>
-        </div>
+        <img
+          className="hero-art"
+          src="/hero-gold.webp"
+          srcSet="/hero-gold.webp 640w, /hero-gold@2x.webp 1024w"
+          sizes="(max-width: 430px) 60vw, 260px"
+          alt=""
+          draggable={false}
+        />
       </div>
       <div className="stats">
         <div className="stat-card">

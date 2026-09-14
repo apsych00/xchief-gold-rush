@@ -1717,3 +1717,30 @@ button:focus:not(:focus-visible) {
 .pane-result-lead .lead-result {
   animation-delay: 0.5s;
 }
+
+/* short displays: tighten the result stack so actions never leave the panel */
+@media (max-height: 700px) {
+  .pane-result {
+    padding-top: 40px;
+    gap: 2px;
+  }
+  .pane-result .coin-grid {
+    --px: 3px;
+  }
+  .pane-result .win-word {
+    font-size: 48px;
+  }
+  .pane-result .result-points {
+    font-size: 24px;
+  }
+  .pane-result .result-stats {
+    margin-top: 4px;
+  }
+  .pane-result .result-actions {
+    margin-top: 2px;
+  }
+  .pane-result .result-actions .btn-again,
+  .pane-result .result-actions .btn-lb {
+    height: 40px;
+  }
+}
