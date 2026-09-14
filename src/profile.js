@@ -11,6 +11,7 @@ export function defaultProfile() {
     rounds: 0,
     wins: 0,
     freeRefillUsed: false,
+    prompts: {}, // prompt id -> timestamp it was shown ('email_win', 'email_lb', 'signup_broke', 'signup_trader')
     taskClaims: {}, // task id -> last claim timestamp (ms)
     roundTimes: [], // timestamps of recent rounds, for the hourly cap
     badges: [], // 'high_roller' | 'hot_streak' | 'comeback'

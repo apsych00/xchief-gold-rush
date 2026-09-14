@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { COMBO_MAX, comboMult, ECON, levelFor, nextLevel } from './config.js';
+import { COMBO_MAX, comboMult, ECON, levelFor, nextLevel, SIGNUP_PROMPT_LEVEL, TASKS } from './config.js';
 import { ENABLED_LANGS, LANG_KEY, LangContext, makeT, money, num, readStoredLang, useLang } from './i18n.js';
 import UpdateBanner from './UpdateBanner.jsx';
 import LeadCapture from './LeadCapture.jsx';
+import { readLead, readSignup } from './leads.js';
+import SignupForm from './SignupForm.jsx';
 import Logo from './Logo.jsx';
 import Tasks from './Tasks.jsx';
+
+const SIGNUP_REWARD = TASKS.find((t) => t.id === 'signup')?.reward ?? 1000;
 import { LEVERS, maxAffordableLever, stakeFor, useGame } from './useGame.js';
 
 const GREEN = '#35E36F';
@@ -288,6 +292,16 @@ function Display({ state, profile, actions }) {
     isResult && result?.outcome === 'win' && profile.coins === profile.record && profile.record > ECON.startCoins;
   const curMult = comboMult(profile.streak); // multiplier the NEXT win will pay
   const potential = Math.round(stake * curMult);
+  // Ask for the email once, right after the first win: the player now has a
+  // score worth saving. Never shown again after it has been answered/skipped.
+  const emailPrompt = isResult && !readLead() && !profile.prompts.email_win && profile.wins >= 1;
+  // Once shown it counts as asked, even if the player just moves on.
+  const markPromptRef = useRef(actions.markPrompt);
+  markPromptRef.current = actions.markPrompt;
+  useEffect(() => {
+    if (!emailPrompt) return undefined;
+    return () => markPromptRef.current('email_win');
+  }, [emailPrompt]);
 
   return (
     <div className="display">
@@ -349,7 +363,7 @@ function Display({ state, profile, actions }) {
         )}
 
         {isResult && result && (
-          <div className="pane pane-result">
+          <div className={`pane pane-result ${emailPrompt ? 'pane-result-lead' : ''}`}>
             {result.outcome === 'win' && (
               <>
                 <div className="coin-grid" aria-hidden="true">
@@ -401,6 +415,17 @@ function Display({ state, profile, actions }) {
                 <div className="result-sub miss-sub">{t('result.missSub')}</div>
               </>
             )}
+            {result.outcome === 'win' && emailPrompt && (
+              <LeadCapture
+                source="first-win"
+                balance={profile.coins}
+                variant="result"
+                title={t('lead.winTitle')}
+                subtitle={t('lead.winSub')}
+                onDone={() => actions.markPrompt('email_win')}
+                onDismiss={() => actions.markPrompt('email_win')}
+              />
+            )}
             <div className="result-stats">
               <div className="stat">
                 <span className="stat-label">{t('result.start')}</span>
@@ -447,6 +472,27 @@ function Console({ state, profile, actions, trackRef }) {
   const win = isResult && result?.outcome === 'win';
   const broke = isIdle && maxAffordableLever(profile.coins) === null;
   const onGold = !isResult;
+  const signupDone = !!readSignup();
+  const [signupFor, setSignupFor] = useState(null); // 'signup_broke' | 'signup_trader' | null
+
+  // Offer the signup once when the player first reaches the Trader level:
+  // a proud moment for a good player who never goes broke.
+  const emailAsked = !!readLead() || !!profile.prompts.email_win;
+  const traderPrompt =
+    isResult &&
+    result?.outcome === 'win' &&
+    emailAsked && // never stack on the first-win email prompt
+    !signupDone &&
+    !profile.prompts.signup_trader &&
+    levelFor(profile.record).id === SIGNUP_PROMPT_LEVEL;
+  useEffect(() => {
+    if (traderPrompt && !signupFor) setSignupFor('signup_trader');
+  }, [traderPrompt, signupFor]);
+
+  const closeSignup = () => {
+    if (signupFor) actions.markPrompt(signupFor);
+    setSignupFor(null);
+  };
 
   const bodyClass = isResult ? (win ? 'body body-win' : 'body body-lose') : 'body body-gold';
   const levLabelColor = onGold ? (lev === 5 ? '#fff' : 'rgba(0,0,0,.7)') : '#fff';
@@ -559,7 +605,25 @@ function Console({ state, profile, actions, trackRef }) {
             {hint}
           </div>
 
-          {broke && !profile.freeRefillUsed && (
+          {broke && !signupDone && (
+            <div className="broke">
+              <div className="broke-title">{t('signup.brokeTitle')}</div>
+              <div className="broke-sub">{t('signup.brokeSub', { n: num(SIGNUP_REWARD, lang) })}</div>
+              <button type="button" className="btn-primary" onClick={() => setSignupFor('signup_broke')}>
+                {t('signup.cta', { n: num(SIGNUP_REWARD, lang) })}
+              </button>
+              {!profile.freeRefillUsed ? (
+                <button type="button" className="link-btn broke-alt" onClick={actions.freeRefill}>
+                  {t('signup.brokeAlt', { n: num(ECON.freeRefill, lang) })}
+                </button>
+              ) : (
+                <button type="button" className="link-btn broke-alt" onClick={actions.goTasks}>
+                  {t('signup.brokeAltUsed')}
+                </button>
+              )}
+            </div>
+          )}
+          {broke && signupDone && !profile.freeRefillUsed && (
             <div className="broke">
               <div className="broke-title">{t('game.freeTitle')}</div>
               <div className="broke-sub">{t('game.freeSub')}</div>
@@ -568,7 +632,7 @@ function Console({ state, profile, actions, trackRef }) {
               </button>
             </div>
           )}
-          {broke && profile.freeRefillUsed && (
+          {broke && signupDone && profile.freeRefillUsed && (
             <div className="broke">
               <div className="broke-title">{t('game.brokeTitle')}</div>
               <div className="broke-sub">{t('game.brokeSub')}</div>
@@ -579,6 +643,18 @@ function Console({ state, profile, actions, trackRef }) {
           )}
         </div>
       </div>
+      {signupFor && (
+        <SignupForm
+          source={signupFor}
+          balance={profile.coins}
+          reward={num(SIGNUP_REWARD, lang)}
+          onDone={() => {
+            actions.markPrompt(signupFor);
+            actions.claimTask('signup');
+          }}
+          onCancel={closeSignup}
+        />
+      )}
     </section>
   );
 }
@@ -590,6 +666,7 @@ function Leaderboard({ others, profile }) {
   const you = t('lb.you');
   const entries = [...others.map((o) => ({ ...o, me: false })), { name: you, s: profile.record, me: true }];
   const sorted = [...entries].sort((a, b) => b.s - a.s);
+  const myRank = sorted.findIndex((a) => a.me);
   return (
     <section className="lb">
       <div className="screen-head">
@@ -615,13 +692,15 @@ function Leaderboard({ others, profile }) {
           );
         })}
       </div>
-      <LeadCapture
-        source="leaderboard"
-        balance={profile.coins}
-        variant="slim"
-        title={t('lead.lbTitle')}
-        subtitle={t('lead.lbSub')}
-      />
+      {myRank < 10 && !readLead() && (
+        <LeadCapture
+          source="leaderboard"
+          balance={profile.coins}
+          variant="slim"
+          title={t('lead.lbTitle')}
+          subtitle={t('lead.lbSub')}
+        />
+      )}
     </section>
   );
 }

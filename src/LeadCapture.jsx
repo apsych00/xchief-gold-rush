@@ -1,40 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLang } from './i18n.js';
+import { readLead, submitLead } from './leads.js';
 
-export const LEAD_KEY = 'xchief.lead';
-
-export function readLead() {
-  try {
-    const raw = localStorage.getItem(LEAD_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Persists the lead locally first (instant), then ships it to the API without
- * blocking the UI. `keepalive` lets the request finish even if the tab closes.
- */
-export function submitLead(payload) {
-  try {
-    localStorage.setItem(LEAD_KEY, JSON.stringify({ ...payload, at: Date.now() }));
-  } catch {
-    /* storage unavailable */
-  }
-  fetch('/api/lead', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-    keepalive: true,
-  }).catch(() => {});
-}
+export { readLead, submitLead } from './leads.js';
 
 /**
  * One-field email capture. Uses a real <form> with the standard email
  * attributes so browsers and password managers autofill it in one tap.
+ *
+ * variant: 'card' (default) | 'slim' | 'inline' | 'result'
+ * onDone / onDismiss: optional callbacks for the prompt flows.
  */
-export default function LeadCapture({ source, balance, variant = 'card', title, subtitle }) {
+export default function LeadCapture({
+  source,
+  balance,
+  variant = 'card',
+  title,
+  subtitle,
+  onDone,
+  onDismiss,
+  dismissLabel,
+}) {
   const { t, lang } = useLang();
   const [done, setDone] = useState(() => !!readLead());
   const [error, setError] = useState('');
@@ -65,6 +51,7 @@ export default function LeadCapture({ source, balance, variant = 'card', title, 
     }
     submitLead({ email, source, balance, lang, page: window.location.pathname });
     setDone(true);
+    onDone?.();
   };
 
   return (
@@ -104,6 +91,11 @@ export default function LeadCapture({ source, balance, variant = 'card', title, 
       </form>
       <div className="lead-foot" aria-live="polite">
         {error ? <span className="lead-error">{error}</span> : t('lead.privacy')}
+        {onDismiss && (
+          <button type="button" className="lead-skip" onClick={onDismiss}>
+            {dismissLabel || t('lead.skip')}
+          </button>
+        )}
       </div>
     </section>
   );

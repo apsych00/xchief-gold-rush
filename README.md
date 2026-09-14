@@ -109,31 +109,38 @@ this:
 - When sharing the link in Telegram, append a query such as `?v=2` after each
   deploy so Telegram's link preview cache is bypassed as well.
 
-## Lead capture
+## Leads: email and xChief signup
 
-The email form is a real `<form>` with `type="email"`, `name="email"`,
-`autocomplete="email"` and `inputmode="email"`, so browsers and password
-managers offer one-tap autofill. Submission is instant: the lead is saved to
-`localStorage` first (the form flips to "Saved"), then POSTed to `/api/lead`
-with `keepalive` so it survives a tab close.
+Two leads are collected, each asked at the moment the player has something to
+protect, and each automatic prompt is shown **at most once per device**
+(`profile.prompts`); after that both stay available on the Coins tab.
+
+| Lead                                   | Asked when                                                                                                                                                                                            | Reward       |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| **Email** (one field)                  | Right after the **first win**, inline on the WIN result ("Save this score"); again on the leaderboard only if the player is in the **top 10** and has no lead yet; else the "Save your email" task    | +200 coins   |
+| **xChief signup** (name, email, phone) | When the player goes **broke** (primary button; "or claim 300 free coins" is the small alternative), or the first time they reach the **Trader** level; else the featured first task on the Coins tab | +1,000 coins |
+
+There is no webhook from xChief to confirm a real account, so the reward is
+paid for the in-game form (which we can verify) and the real registration
+page (`VITE_LINK_DEMO`) is then opened in a new tab with name, email and phone
+prefilled as query parameters plus `utm_source=gold-rush`. The signup also
+counts as an email lead. No lead prompt is shown on the Home screen or during
+a round.
+
+Both forms are real `<form>`s with the standard `autocomplete` attributes so
+browsers and password managers fill them in one tap. Submission is instant:
+the lead is saved to `localStorage` first, then POSTed to `/api/lead` with
+`keepalive` so it survives a tab close.
 
 On the server every lead is logged (Vercel → project → Logs, filter `[lead]`).
-To also push leads somewhere durable, set the environment variable
-`LEAD_WEBHOOK_URL` on Vercel to any HTTPS endpoint that accepts JSON: a Google
-Apps Script web app writing to a Sheet, Zapier/Make, a CRM or mailing-list
-webhook. The payload:
+Set `LEAD_WEBHOOK_URL` on Vercel to forward each lead as JSON to a Google
+Apps Script / Zapier / Make / CRM endpoint (optionally with
+`LEAD_WEBHOOK_SECRET`, sent as `X-Lead-Secret`). Payloads:
 
 ```json
-{
-  "email": "...",
-  "source": "home|leaderboard",
-  "lang": "fa|en",
-  "balance": 2400,
-  "page": "/",
-  "ua": "...",
-  "country": "IR",
-  "at": "2026-09-12T10:00:00.000Z"
-}
+{ "type": "email",  "email": "...", "source": "first-win|leaderboard|task", "lang": "en",
+  "balance": 1200, "page": "/", "ua": "...", "country": "AE", "at": "2026-09-14T10:00:00.000Z" }
+{ "type": "signup", "email": "...", "name": "...", "phone": "+971...", "source": "signup_broke|signup_trader|task", ... }
 ```
 
 ## Live gold price
@@ -207,8 +214,8 @@ use `combo: [1, 1.25, 1.5, 2]` (≈ +12 coins per round).
 The "Coins" tab lists one-time tasks that pay coins so a broke player can come
 back: 15 s promo video (+100, repeatable every 5 min), email (+200), Instagram
 / Telegram / YouTube follow (+300 each), story share (+300 daily), reviews on
-Trustpilot / Google / Forex Peace Army (+500 each) and opening an xChief demo
-account (+1,000, featured last as the "fast way back").
+Trustpilot / Google / Forex Peace Army (+500 each). The xChief signup form
+(+1,000) is the featured first row; see "Leads" above.
 
 Link tasks open the target in a new tab; the "Done" button unlocks after 15 s.
 With `VITE_TASK_VERIFY=pin` (expo mode) booth staff must also enter

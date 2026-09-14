@@ -9,8 +9,10 @@ import {
   VERIFY_MODE,
 } from './config.js';
 import { num, useLang } from './i18n.js';
-import LeadCapture, { readLead } from './LeadCapture.jsx';
+import LeadCapture from './LeadCapture.jsx';
+import { readLead, readSignup } from './leads.js';
 import Logo from './Logo.jsx';
+import SignupForm from './SignupForm.jsx';
 
 function fmtCountdown(ms, lang) {
   const s = Math.max(0, Math.ceil(ms / 1000));
@@ -113,17 +115,23 @@ export default function Tasks({ profile, onClaim, onToast }) {
   const [pinFor, setPinFor] = useState(null);
   const [videoOpen, setVideoOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
+  const [signupOpen, setSignupOpen] = useState(false);
   const leadSaved = !!readLead();
+  const signupSaved = !!readSignup();
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(id);
   }, []);
 
-  // Email task auto-claims once a lead exists.
+  // Email and signup tasks auto-claim once the matching lead exists
+  // (they may have been captured from a prompt elsewhere in the game).
   useEffect(() => {
     if (leadSaved && !profile.taskClaims.email) onClaim('email');
   }, [leadSaved, profile.taskClaims.email, onClaim]);
+  useEffect(() => {
+    if (signupSaved && !profile.taskClaims.signup) onClaim('signup');
+  }, [signupSaved, profile.taskClaims.signup, onClaim]);
 
   const statusOf = (task) => {
     const last = profile.taskClaims[task.id];
@@ -147,6 +155,10 @@ export default function Tasks({ profile, onClaim, onToast }) {
     }
     if (task.kind === 'email') {
       setEmailOpen(true);
+      return;
+    }
+    if (task.kind === 'signup') {
+      setSignupOpen(true);
       return;
     }
     if (task.kind === 'share') {
@@ -205,6 +217,15 @@ export default function Tasks({ profile, onClaim, onToast }) {
                 {task.kind === 'email' && emailOpen && !leadSaved && (
                   <LeadCapture source="task" balance={profile.coins} variant="inline" />
                 )}
+                {task.kind === 'signup' && signupOpen && !signupSaved && (
+                  <SignupForm
+                    source="task"
+                    balance={profile.coins}
+                    reward={num(task.reward, lang)}
+                    variant="inline"
+                    onCancel={() => setSignupOpen(false)}
+                  />
+                )}
               </div>
               <div className="task-side">
                 <div className="task-reward" dir="ltr">
@@ -224,13 +245,18 @@ export default function Tasks({ profile, onClaim, onToast }) {
                     {VERIFY_MODE === 'pin' ? t('tasks.verify') : t('tasks.done')}
                   </button>
                 )}
-                {st.kind === 'available' && task.kind !== 'email' && (
+                {st.kind === 'available' && task.kind !== 'email' && task.kind !== 'signup' && (
                   <button type="button" className="task-btn" onClick={() => begin(task)}>
                     {task.kind === 'link' ? t('tasks.open') : t('tasks.start')}
                   </button>
                 )}
                 {st.kind === 'available' && task.kind === 'email' && !emailOpen && (
                   <button type="button" className="task-btn" onClick={() => begin(task)}>
+                    {t('tasks.start')}
+                  </button>
+                )}
+                {st.kind === 'available' && task.kind === 'signup' && !signupOpen && (
+                  <button type="button" className="task-btn task-btn-ready" onClick={() => begin(task)}>
                     {t('tasks.start')}
                   </button>
                 )}

@@ -252,9 +252,19 @@ export function useGame() {
     return true;
   }, [toast]);
 
+  /** Record that an automatic prompt was shown so it is never repeated. */
+  const markPrompt = useCallback((id) => {
+    const p = profileRef.current;
+    if (p.prompts[id]) return;
+    const next = { ...p, prompts: { ...p.prompts, [id]: Date.now() } };
+    profileRef.current = next;
+    setProfile(next);
+  }, []);
+
   const actions = {
     go: (screen) => patch({ screen }),
     freeRefill,
+    markPrompt,
     startGame: () => patch({ screen: 'game' }),
     goHome: () => {
       stopTimer();

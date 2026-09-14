@@ -63,11 +63,15 @@ export const SHARE_URL = env.VITE_SHARE_URL || 'https://xchief-gold-rush.vercel.
 const DAY = 24 * 60 * 60 * 1000;
 
 /**
- * kind: 'video' | 'email' | 'link' | 'share'
+ * kind: 'signup' | 'video' | 'email' | 'link' | 'share'
  * repeatMs: undefined = one-time; number = can be claimed again after this long
- * Order matters: quick/cheap first, the big demo-account task last.
+ * Order matters: the signup (biggest reward, our main goal) first, then quick tasks.
  */
+export const SIGNUP_TASK_ID = 'signup';
+export const SIGNUP_PROMPT_LEVEL = 'trader'; // level whose first reach offers the signup
+
 export const TASKS = [
+  { id: 'signup', kind: 'signup', reward: 1000, icon: '◆', featured: true },
   { id: 'video', kind: 'video', reward: 100, repeatMs: 5 * 60 * 1000, icon: '▶' },
   { id: 'email', kind: 'email', reward: 200, icon: '✉' },
   { id: 'instagram', kind: 'link', reward: 300, url: LINKS.instagram, icon: '◎' },
@@ -77,7 +81,6 @@ export const TASKS = [
   { id: 'review_trustpilot', kind: 'link', reward: 500, url: LINKS.trustpilot, icon: '★' },
   { id: 'review_google', kind: 'link', reward: 500, url: LINKS.google, icon: '★' },
   { id: 'review_fpa', kind: 'link', reward: 500, url: LINKS.fpa, icon: '★' },
-  { id: 'demo', kind: 'link', reward: 1000, url: LINKS.demo, icon: '◆', featured: true },
 ];
 
 export const LINKS_PUBLIC = LINKS;

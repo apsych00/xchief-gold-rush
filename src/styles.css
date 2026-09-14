@@ -1572,3 +1572,148 @@ button:focus:not(:focus-visible) {
     padding: 8px 16px 4px;
   }
 }
+
+/* ---------- lead prompt on the win result ---------- */
+
+.lead-result {
+  max-width: 320px;
+  margin-top: 4px;
+  padding: 10px 12px 8px;
+  animation: gr-rise 0.5s ease-out 0.9s both;
+}
+.lead-result .lead-title {
+  font-size: 14px;
+}
+.lead-result .lead-sub {
+  margin-top: 1px;
+  font-size: 11px;
+}
+.lead-result .lead-form {
+  margin-top: 6px;
+}
+.lead-result .lead-input,
+.lead-result .lead-btn {
+  height: 38px;
+}
+.lead-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lead-skip {
+  border: 0;
+  background: none;
+  color: rgba(255, 255, 255, 0.55);
+  font: 600 11px var(--fa);
+  cursor: pointer;
+  padding: 4px 0;
+  white-space: nowrap;
+}
+.lead-skip:hover {
+  color: #fff;
+}
+
+/* ---------- signup form ---------- */
+
+.signup {
+  padding: 18px;
+}
+.signup-inline {
+  margin-top: 10px;
+  padding: 10px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.signup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.signup-head {
+  margin-bottom: 4px;
+}
+.signup-title {
+  font: 800 18px var(--fa);
+}
+.signup-inline .signup-title {
+  font-size: 14px;
+}
+.signup-sub {
+  margin-top: 3px;
+  font: 500 12px/1.5 var(--fa);
+  color: rgba(255, 255, 255, 0.6);
+}
+.signup-form .lead-input {
+  height: 44px;
+  width: 100%;
+}
+.signup-foot {
+  margin-top: 0;
+}
+.signup-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.signup-actions .btn-primary {
+  flex: 1;
+}
+.signup-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 6px 0 2px;
+}
+.signup-done-title {
+  font: 800 18px var(--fa);
+  color: var(--green);
+}
+.signup-done-sub {
+  font: 500 12px/1.5 var(--fa);
+  color: rgba(255, 255, 255, 0.65);
+}
+.signup-open {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  margin-top: 4px;
+}
+
+/* broke overlay: secondary "or ..." link under the primary button */
+.broke-alt {
+  margin-top: 8px;
+  font: 600 12px var(--fa);
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.broke .btn-primary {
+  min-width: 220px;
+}
+
+/* While the first-win email prompt is shown, keep the result compact so the
+   form and the actions still fit a 360×640 display. */
+.pane-result-lead {
+  gap: 2px;
+  padding-top: 40px;
+}
+.pane-result-lead .coin-grid,
+.pane-result-lead .result-stats,
+.pane-result-lead .result-next {
+  display: none;
+}
+.pane-result-lead .win-word {
+  font-size: clamp(40px, 7vh, 60px);
+}
+.pane-result-lead .result-points {
+  font-size: clamp(22px, 3.4vh, 30px);
+}
+.pane-result-lead .result-actions {
+  margin-top: 4px;
+}
+.pane-result-lead .lead-result {
+  animation-delay: 0.5s;
+}
