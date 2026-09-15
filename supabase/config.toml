@@ -422,3 +422,6 @@ verify_jwt = false
 verify_jwt = false
 [functions.otp-email]
 verify_jwt = false
+
+[functions.play-round]
+verify_jwt = false
