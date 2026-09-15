@@ -20,22 +20,21 @@ Deno.serve(async (req) => {
 
   const rawBody = await req.text();
 
-  if (SEND_EMAIL_HOOK_SECRET) {
-    // Supabase prefixes the secret as "v1,whsec_<base64>"; the Webhook class
-    // expects the "whsec_<base64>" form and does the base64 decode itself.
-    const secret = SEND_EMAIL_HOOK_SECRET.replace(/^v1,/, "");
-    const wh = new Webhook(secret);
-    try {
-      wh.verify(rawBody, {
-        "webhook-id": req.headers.get("webhook-id") ?? "",
-        "webhook-timestamp": req.headers.get("webhook-timestamp") ?? "",
-        "webhook-signature": req.headers.get("webhook-signature") ?? "",
-      });
-    } catch {
-      return jsonResponse(401, { error: "invalid_signature" });
-    }
-  } else {
-    console.warn("[otp-email] SEND_EMAIL_HOOK_SECRET not set, skipping signature verification");
+  // Fail closed: without a configured signing secret this endpoint could be used by anyone
+  // to send branded mail with a chosen code. Supabase prefixes the secret as
+  // "v1,whsec_<base64>"; the Webhook class expects the "whsec_<base64>" form.
+  if (!SEND_EMAIL_HOOK_SECRET) {
+    console.error("[otp-email] SEND_EMAIL_HOOK_SECRET is not set; refusing to run");
+    return jsonResponse(503, { error: "hook_not_configured" });
+  }
+  try {
+    new Webhook(SEND_EMAIL_HOOK_SECRET.replace(/^v1,/, "")).verify(rawBody, {
+      "webhook-id": req.headers.get("webhook-id") ?? "",
+      "webhook-timestamp": req.headers.get("webhook-timestamp") ?? "",
+      "webhook-signature": req.headers.get("webhook-signature") ?? "",
+    });
+  } catch {
+    return jsonResponse(401, { error: "invalid_signature" });
   }
 
   let payload: HookPayload;
