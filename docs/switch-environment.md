@@ -36,3 +36,7 @@ In the new project's dashboard:
 ## 4. Vercel
 
 Set the same `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_RELAY_URL` in the Vercel project's environment variables and redeploy.
+
+## Auth rate limits (set on production)
+
+Supabase's default auth email limit is far below campaign volume and returns `429 email rate limit exceeded` when hit. Set on the production project (Authentication -> Rate Limits, or the Management API `config/auth`): `rate_limit_email_sent` = 500 per hour (2,000 logins/day peaks well above the hourly average), `rate_limit_verify` = 1000, `rate_limit_anonymous_users` = 500 per hour. Dev is set to 200/300.
