@@ -525,6 +525,20 @@ button:focus:not(:focus-visible) {
 .combo-on {
   border-color: rgba(53, 227, 111, 0.5);
 }
+.combo-idle {
+  background: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  padding: 4px 0 0;
+  gap: 6px;
+  font: 600 12px var(--en);
+  color: rgba(255, 255, 255, 0.55);
+}
+.combo-idle .combo-mult {
+  font: 700 12px var(--en);
+  color: rgba(255, 255, 255, 0.75);
+  min-width: 0;
+}
 .combo-max {
   border-color: rgba(233, 182, 42, 0.7);
   box-shadow: 0 0 18px rgba(233, 182, 42, 0.25);
@@ -622,7 +636,7 @@ button:focus:not(:focus-visible) {
 .display-rays {
   position: absolute;
   inset: -40%;
-  background: repeating-conic-gradient(from 0deg, rgba(53, 227, 111, 0.16) 0deg 1.2deg, transparent 1.2deg 20deg);
+  background: repeating-conic-gradient(from 0deg, rgba(53, 227, 111, 0.05) 0deg 1.2deg, transparent 1.2deg 20deg);
   animation: gr-spin 22s linear infinite;
   -webkit-mask: radial-gradient(circle, transparent 8%, #000 40%, transparent 75%);
   mask: radial-gradient(circle, transparent 8%, #000 40%, transparent 75%);
@@ -683,16 +697,16 @@ button:focus:not(:focus-visible) {
 }
 .feed-note {
   font: 500 11px var(--fa);
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.62);
   text-align: center;
 }
 .idle-title {
   margin-top: clamp(4px, 1.4vh, 14px);
-  font: 800 clamp(22px, 3.6vh, 30px) var(--fa);
+  font: 800 clamp(20px, 3.2vh, 26px) var(--fa);
 }
 .idle-help {
   font: 500 clamp(12px, 1.7vh, 14px)/1.5 var(--fa);
-  color: #bdbdbd;
+  color: #d6d6d6;
   text-align: center;
   text-wrap: pretty;
 }
@@ -796,7 +810,7 @@ button:focus:not(:focus-visible) {
 }
 .locked-note {
   font: 500 12px var(--fa);
-  color: #bdbdbd;
+  color: #d6d6d6;
   text-align: center;
 }
 
@@ -840,7 +854,7 @@ button:focus:not(:focus-visible) {
 }
 .result-sub {
   font: 500 12px/1.5 var(--fa);
-  color: #bdbdbd;
+  color: #d6d6d6;
   text-align: center;
   animation: gr-rise 0.5s ease-out 0.8s both;
 }
@@ -935,7 +949,7 @@ button:focus:not(:focus-visible) {
   padding-bottom: var(--safe-b);
 }
 .body-gold {
-  background: linear-gradient(180deg, #f2c23a, var(--gold) 40%, #c9931a);
+  background: linear-gradient(180deg, #e9c65a, #b58a27);
 }
 .body-win {
   background: linear-gradient(180deg, var(--green), #22c25b 45%, #159a46);
@@ -953,10 +967,7 @@ button:focus:not(:focus-visible) {
   transform-origin: top center;
 }
 .body-sheen {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 30%, rgba(0, 0, 0, 0.18) 100%);
-  pointer-events: none;
+  display: none;
 }
 
 .lev-label {
@@ -1028,8 +1039,8 @@ button:focus:not(:focus-visible) {
 .tick {
   position: absolute;
   left: 50%;
-  margin-left: 32px;
-  width: 32px;
+  margin-left: 34px;
+  width: 36px;
   height: 32px;
   padding: 0;
   border: 0;
@@ -1042,7 +1053,7 @@ button:focus:not(:focus-visible) {
   justify-content: center;
 }
 .tick:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.12);
+  opacity: 0.85;
 }
 .tick:disabled {
   cursor: default;

@@ -246,6 +246,14 @@ function ComboBar({ streak, compact = false }) {
   const steps = ECON.combo.length; // pips = number of multiplier levels
   const lit = Math.min(streak, steps - 1);
   const atMax = streak >= steps - 1;
+  if (streak === 0) {
+    return (
+      <div className="combo combo-idle" dir="ltr" aria-label={`${t('combo.idle')} ×${mult}`}>
+        <span>{t('combo.idle')} ·</span>
+        <span className="combo-mult">×{num(mult, lang)}</span>
+      </div>
+    );
+  }
   return (
     <div
       className={`combo ${compact ? 'combo-compact' : ''} ${streak > 0 ? 'combo-on' : ''} ${atMax ? 'combo-max' : ''}`}
@@ -512,7 +520,7 @@ function Console({ state, profile, actions, trackRef }) {
   let hint;
   if (broke) hint = t('body.cantAfford');
   else if (isIdle && noPrice) hint = t('feed.waiting');
-  else if (isIdle) hint = t('body.hintIdle');
+  else if (isIdle) hint = '';
   else if (isRunning) hint = t('body.hintRunning');
   else if (win) hint = t('body.hintWin', { bal: num(profile.coins, lang) });
   else hint = t('body.hintLose');
