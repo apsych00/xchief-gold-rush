@@ -23,6 +23,18 @@ const ENV = readEnv();
 // Read the Supabase session's access token from localStorage the way an end user's
 // browser would hold it after the client authenticated.
 async function accessToken(page) {
+  // The anonymous sign-in finishes shortly after the first paint; wait for the session
+  // to be persisted rather than reading localStorage on the first tick.
+  const deadline = Date.now() + 10000;
+  let token = await readToken(page);
+  while (!token && Date.now() < deadline) {
+    await page.waitForTimeout(250);
+    token = await readToken(page);
+  }
+  return token;
+}
+
+async function readToken(page) {
   return page.evaluate(() => {
     const key = Object.keys(localStorage).find((k) => k.startsWith('sb-') && k.endsWith('-auth-token'));
     if (!key) return null;
@@ -101,6 +113,7 @@ test.describe('player-visible promises', () => {
   test('2. reloading mid-round still records exactly one settled round (no free retry)', async ({ page }) => {
     await startGame(page);
     const before = await getMe(page);
+    console.log('[test2] before: user', String(before.id).slice(0, 8), 'rounds', before.rounds);
 
     await page.click('.btn-up');
     await expect(page.locator('.countdown')).toBeVisible({ timeout: 3000 });
@@ -114,6 +127,8 @@ test.describe('player-visible promises', () => {
       await page.waitForTimeout(1000);
       after = await getMe(page);
     }
+    console.log('[test2] after: user', String(after.id).slice(0, 8), 'rounds', after.rounds);
+    expect(after.id, 'the reload must resume the same player, not create a new one').toBe(before.id);
     expect(after.rounds, 'a round interrupted by a reload must still count as exactly 1 round').toBe(before.rounds + 1);
   });
 
