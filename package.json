@@ -17,7 +17,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test test/economy.test.mjs",
-    "test:unit": "node --test test/economy.test.mjs test/economy-server.test.mjs",
+    "test:unit": "node --test \"test/unit/*.test.mjs\"",
     "test:db": "supabase test db",
     "test:e2e": "playwright test",
     "test:all": "npm run test:unit && npm run test:db",
