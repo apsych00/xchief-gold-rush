@@ -1,5 +1,6 @@
 // Shared helpers for xChief Gold Rush edge functions.
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { checkQuote } from "./price-check.ts";
 
 export const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -28,18 +29,11 @@ export async function readRelayPrice(url: string): Promise<RelayPrice> {
     throw new Error("feed_stale");
   }
   const data = await res.json();
-  const price = data?.price;
-  const t = data?.t;
-  if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) {
+  const quote = checkQuote(data, Date.now(), 3000);
+  if (!quote.ok) {
     throw new Error("feed_stale");
   }
-  if (typeof t !== "number" || !Number.isFinite(t)) {
-    throw new Error("feed_stale");
-  }
-  if (Date.now() - t > 3000) {
-    throw new Error("feed_stale");
-  }
-  return { price, t };
+  return { price: quote.price, t: quote.t };
 }
 
 // Service-role client: bypasses RLS, used for the write paths that own the

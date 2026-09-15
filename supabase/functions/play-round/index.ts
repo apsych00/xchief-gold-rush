@@ -2,33 +2,13 @@
 // open for the server-owned 5s clock, then settle. The client never reports
 // its own result - this function is the only place a round is decided.
 import { anonClient, corsHeaders, jsonResponse, readRelayPrice, serviceClient, sleep } from "../_shared/mod.ts";
+import { mapPgError } from "../_shared/errors.ts";
 
 const RELAY_PRICE_URL = Deno.env.get("RELAY_PRICE_URL") ?? "";
 const ROUND_WAIT_MS = 5000;
 
 const VALID_DIRS = ["up", "down"];
 const VALID_LEVERS = [1, 2, 5];
-
-// Postgres exceptions raised inside the RPCs surface as plain messages on
-// error.message (and often duplicated in error.details). Map the known codes
-// to the HTTP status the spec calls for; anything else is a 500.
-const ERROR_STATUS: Record<string, number> = {
-  insufficient_coins: 409,
-  rate_limited: 429,
-  round_in_flight: 409,
-  bad_dir: 400,
-  bad_lever: 400,
-  bad_price: 400,
-  round_not_open: 409,
-};
-
-function mapPgError(err: { message?: string } | null | undefined): { status: number; code: string } | null {
-  const msg = err?.message ?? "";
-  for (const code of Object.keys(ERROR_STATUS)) {
-    if (msg.includes(code)) return { status: ERROR_STATUS[code], code };
-  }
-  return null;
-}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {

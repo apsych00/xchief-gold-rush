@@ -2,27 +2,12 @@
 // server-owned 5s clock and price discipline as play-round; coins are
 // cosmetic here, the kiosk is unranked and only cares about the win streak.
 import { corsHeaders, jsonResponse, readRelayPrice, serviceClient, sleep } from "../_shared/mod.ts";
+import { mapPgError } from "../_shared/errors.ts";
 
 const RELAY_PRICE_URL = Deno.env.get("RELAY_PRICE_URL") ?? "";
 const ROUND_WAIT_MS = 5000;
 
 const VALID_DIRS = ["up", "down"];
-
-const ERROR_STATUS: Record<string, number> = {
-  kiosk_unauthorized: 401,
-  round_in_flight: 409,
-  bad_dir: 400,
-  bad_price: 400,
-  round_not_open: 409,
-};
-
-function mapPgError(err: { message?: string } | null | undefined): { status: number; code: string } | null {
-  const msg = err?.message ?? "";
-  for (const code of Object.keys(ERROR_STATUS)) {
-    if (msg.includes(code)) return { status: ERROR_STATUS[code], code };
-  }
-  return null;
-}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
