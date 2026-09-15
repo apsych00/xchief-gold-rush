@@ -2,12 +2,20 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { comboMult, ECON, TASKS } from './config.js';
 import { startPriceFeed } from './priceFeed.js';
 import { loadProfile, saveProfile } from './profile.js';
+import { enabled as apiEnabled } from './api/client.js';
+import * as api from './api/game.js';
+import { ensureSession } from './api/session.js';
+import { getKioskSecret, playKioskRound } from './api/kiosk.js';
 
 export const ROUND_SECONDS = 5;
 export const LEVERS = ECON.levers;
 const TICK_MS = 60;
 const MAX_HISTORY = 90;
 const HOUR = 60 * 60 * 1000;
+
+// Read once: a kiosk's launch URL is fixed, so its secret never changes mid-session.
+const KIOSK_SECRET = getKioskSecret();
+const IS_KIOSK = apiEnabled && !!KIOSK_SECRET;
 
 const OTHERS = [
   { name: 'GoldHunter', s: 3600 },
@@ -40,7 +48,7 @@ const initialGame = {
   others: OTHERS,
   feed: { mode: 'connecting', source: null, symbol: null, quiet: false },
   // last settled round
-  result: null, // { outcome:'win'|'lose'|'flat', stake, delta, mult, streak, badge }
+  result: null, // { outcome:'win'|'lose'|'flat', stake, delta, mult, streak, badge, coupon? }
   toast: null, // { id, text } transient notice
 };
 
@@ -63,6 +71,39 @@ export function useGame() {
   stateRef.current = state;
 
   useEffect(() => saveProfile(profile), [profile]);
+
+  // Hydrate from the server once on load: sign in anonymously (or resume the
+  // existing session) then pull the real balance/streak/record. Kiosk mode
+  // has no session of its own - its identity is the bearer secret checked on
+  // every round - so it skips this and stays cosmetic-local.
+  useEffect(() => {
+    if (!apiEnabled || IS_KIOSK) return undefined;
+    let cancelled = false;
+    ensureSession()
+      .then(() => api.getMe())
+      .then((row) => {
+        if (cancelled) return;
+        const next = {
+          ...profileRef.current,
+          coins: row.coins,
+          record: row.record,
+          streak: row.streak,
+          bestStreak: row.best_streak,
+          wins: row.wins,
+          rounds: row.rounds,
+          freeRefillUsed: row.free_refill_used,
+          displayName: row.display_name,
+        };
+        profileRef.current = next;
+        setProfile(next);
+      })
+      .catch((err) => {
+        console.error('[api] session bootstrap failed', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const stopTimer = useCallback(() => {
     if (timer.current) clearInterval(timer.current);
@@ -168,6 +209,72 @@ export function useGame() {
     }));
   }, []);
 
+  // Applies a server verdict (web or kiosk) in place of the local settle().
+  // Kiosk coins/lever are cosmetic (the spec: "coins/levers are ignored for
+  // kiosk"), so a kiosk win/lose still runs the local combo math on top of
+  // the server-decided outcome and streak.
+  const applyVerdict = useCallback((isKiosk, verdict) => {
+    const cur = stateRef.current;
+    const p = profileRef.current;
+    let next = { ...p, rounds: p.rounds + 1 };
+    let result;
+    let endPrice;
+    if (isKiosk) {
+      endPrice = priceRef.current ?? cur.start;
+      const stake = stakeFor(levRef.current);
+      if (verdict.outcome === 'win') {
+        const mult = comboMult(p.streak);
+        const gain = Math.round(stake * mult);
+        const coins = p.coins + gain;
+        next = {
+          ...next,
+          coins,
+          record: Math.max(p.record, coins),
+          streak: verdict.streak,
+          bestStreak: Math.max(p.bestStreak, verdict.streak),
+          wins: p.wins + 1,
+        };
+        result = { outcome: 'win', stake, delta: gain, mult, streak: verdict.streak, badge: null, coupon: verdict.coupon || null };
+      } else if (verdict.outcome === 'lose') {
+        next = { ...next, coins: Math.max(0, p.coins - stake), streak: 0 };
+        result = { outcome: 'lose', stake, delta: -stake, mult: 1, streak: 0, badge: null, coupon: null };
+      } else {
+        result = { outcome: 'flat', stake, delta: 0, mult: comboMult(p.streak), streak: p.streak, badge: null, coupon: null };
+      }
+    } else {
+      endPrice = verdict.end_price;
+      next = {
+        ...next,
+        coins: verdict.coins,
+        record: verdict.record,
+        streak: verdict.streak,
+        bestStreak: Math.max(p.bestStreak, verdict.streak),
+        wins: verdict.outcome === 'win' ? p.wins + 1 : p.wins,
+      };
+      result = {
+        outcome: verdict.outcome,
+        stake: stakeFor(levRef.current),
+        delta: verdict.delta,
+        mult: verdict.mult,
+        streak: verdict.streak,
+        badge: null,
+        coupon: null,
+      };
+    }
+    profileRef.current = next;
+    setProfile(next);
+    phaseRef.current = 'result';
+    setState((s) => ({
+      ...s,
+      phase: 'result',
+      price: endPrice,
+      end: endPrice,
+      remaining: 0,
+      history: [...s.history, endPrice],
+      result,
+    }));
+  }, []);
+
   const startRound = useCallback(
     (dir) => {
       if (phaseRef.current !== 'idle') return;
@@ -190,8 +297,14 @@ export function useGame() {
         const elapsed = (performance.now() - t0) / 1000;
         const price = priceRef.current ?? start;
         if (elapsed >= ROUND_SECONDS) {
-          stopTimer();
-          settle(dir, price);
+          if (!apiEnabled) {
+            stopTimer();
+            settle(dir, price);
+          } else {
+            // The countdown is purely visual once apiEnabled: it holds here
+            // until the server verdict below arrives.
+            setState((c) => ({ ...c, remaining: 0, history: [...c.history, price].slice(-MAX_HISTORY) }));
+          }
           return;
         }
         setState((c) => ({
@@ -200,8 +313,24 @@ export function useGame() {
           history: [...c.history, price].slice(-MAX_HISTORY),
         }));
       }, TICK_MS);
+
+      if (apiEnabled) {
+        const lever = levRef.current;
+        const call = IS_KIOSK ? playKioskRound(dir) : api.playRound(dir, lever);
+        call
+          .then((verdict) => {
+            stopTimer();
+            applyVerdict(IS_KIOSK, verdict);
+          })
+          .catch((err) => {
+            stopTimer();
+            phaseRef.current = 'idle';
+            toast(err?.code === 'feed_stale' ? 'feed' : err?.code || 'error');
+            patch({ phase: 'idle', dir: null, start: null, end: null, history: [], result: null });
+          });
+      }
     },
-    [patch, settle, stopTimer, toast],
+    [applyVerdict, patch, settle, stopTimer, toast],
   );
 
   const setLevFromEvent = useCallback(
@@ -221,6 +350,24 @@ export function useGame() {
 
   const claimTask = useCallback(
     (taskId) => {
+      if (apiEnabled && !IS_KIOSK) {
+        api
+          .claimTask(taskId)
+          .then((res) => {
+            const p = profileRef.current;
+            const next = {
+              ...p,
+              coins: res.coins,
+              record: Math.max(p.record, res.coins),
+              taskClaims: { ...p.taskClaims, [taskId]: Date.now() },
+            };
+            profileRef.current = next;
+            setProfile(next);
+            toast(`+${res.reward}`);
+          })
+          .catch((err) => toast(err?.code || 'error'));
+        return true;
+      }
       const task = TASKS.find((t) => t.id === taskId);
       if (!task) return false;
       const p = profileRef.current;
@@ -242,6 +389,19 @@ export function useGame() {
   );
 
   const freeRefill = useCallback(() => {
+    if (apiEnabled && !IS_KIOSK) {
+      api
+        .freeRefill()
+        .then((res) => {
+          const p = profileRef.current;
+          const next = { ...p, coins: res.coins, record: Math.max(p.record, res.coins), freeRefillUsed: true };
+          profileRef.current = next;
+          setProfile(next);
+          toast(`+${res.reward}`);
+        })
+        .catch((err) => toast(err?.code || 'error'));
+      return true;
+    }
     const p = profileRef.current;
     if (p.freeRefillUsed || p.coins >= ECON.brokeBelow) return false;
     const coins = p.coins + ECON.freeRefill;
@@ -251,6 +411,21 @@ export function useGame() {
     toast(`+${ECON.freeRefill}`);
     return true;
   }, [toast]);
+
+  // The public top-10; refetched each time the leaderboard screen opens so it
+  // reflects the latest server state. Excludes the current player's own row
+  // (identified by display_name) since the screen appends "you" itself.
+  const refreshLeaderboard = useCallback(() => {
+    if (!apiEnabled || IS_KIOSK) return;
+    api
+      .getLeaderboard()
+      .then((rows) => {
+        const me = profileRef.current.displayName;
+        const mapped = rows.filter((r) => r.display_name !== me).map((r) => ({ name: r.display_name, s: r.record }));
+        setState((s) => ({ ...s, others: mapped }));
+      })
+      .catch((err) => console.error('[api] leaderboard fetch failed', err));
+  }, []);
 
   /** Record that an automatic prompt was shown so it is never repeated. */
   const markPrompt = useCallback((id) => {
@@ -270,7 +445,10 @@ export function useGame() {
       stopTimer();
       patch({ screen: 'home', ...reset });
     },
-    goLeaderboard: () => patch({ screen: 'lb' }),
+    goLeaderboard: () => {
+      refreshLeaderboard();
+      patch({ screen: 'lb' });
+    },
     goTasks: () => {
       stopTimer();
       patch({ screen: 'tasks', ...reset });
