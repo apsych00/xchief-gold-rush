@@ -39,6 +39,7 @@ orca orchestration task-list --brief --json        # the board
 
 - Every ticket runs in its own worktree branched off the local main checkout. Nothing is edited on main directly except by me at merge time.
 - Every ticket ships with tests. Lint + tests must pass before merge.
+- **Tests are written blind.** The test author is never the implementer, and receives only `docs/test-contract.md` (what the system promises), never the implementation. A tester who has to peek at the code to write a test has found a gap in the contract - fix the contract instead. Every new suite gets a red-team pass (`test-red-team` skill): would it fail if the system were wrong?
 - I verify builder claims independently (re-run tests, read the diff). A `worker_done` is a claim, not a result.
 - Machine-local files (`.env`, `settings.local.json`, `supabase/.temp`) never get committed.
 - Budget: OpenCode Go for cheap parallel work (model per task via `opencode.json`); Sonnet builder for solid work; Opus only when it needs real beef.

@@ -22,7 +22,10 @@ rules that catch people out:
 - **The server decides every outcome; the client never reports its own result.** If a change
   would let the client influence its outcome, coins, or coupon eligibility, it is wrong.
 - **Never commit.** Leave the work in the tree and report with evidence.
-- **Never write your own acceptance tests.** No agent tests its own work; a separate ticket does.
+- **Never write your own acceptance tests.** No agent tests its own work; a separate ticket does,
+  written blind from `docs/test-contract.md` by an agent that has not seen the implementation.
+  If you are the test author, do not open `supabase/migrations/`, `supabase/functions/`, or
+  `src/api/`; a gap in the contract is reported, not worked around by peeking.
 - **Run gates unpiped and read the exit code.** Piping to `head` or `tail` swallows it.
 - **Machine-local files never move:** `.env`, `settings.local.json`, `supabase/.temp`.
 - **The client UI belongs to the marketing lead and is in flux.** Backend touches it only through
