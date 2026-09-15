@@ -1,6 +1,7 @@
 // Supabase Auth "Send Email" hook. Verifies the webhook signature, then hands
 // the OTP to Elastic Mail. Never logs the token.
 import { Webhook } from "npm:standardwebhooks@1";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { jsonResponse } from "../_shared/mod.ts";
 
 const SEND_EMAIL_HOOK_SECRET = Deno.env.get("SEND_EMAIL_HOOK_SECRET") ?? "";
@@ -48,6 +49,18 @@ Deno.serve(async (req) => {
   const token = payload?.email_data?.token;
   if (!email || !token) {
     return jsonResponse(400, { error: "bad_request" });
+  }
+
+  // No mail provider configured (dev): capture the code server-side instead of sending.
+  // Production always has ELASTIC_API_KEY set, so this branch never runs there.
+  if (!ELASTIC_API_KEY) {
+    const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
+      auth: { persistSession: false },
+    });
+    const { error } = await db.from("dev_otps").insert({ email, token });
+    if (error) return jsonResponse(500, { error: "dev_otp_store_failed" });
+    console.warn("[otp-email] no ELASTIC_API_KEY: code captured in dev_otps (dev mode)");
+    return jsonResponse(200, {});
   }
 
   const form = new URLSearchParams({

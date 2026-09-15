@@ -16,4 +16,11 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // Start the app if nothing is listening; reuse a dev server you already have running.
+  webServer: {
+    command: 'npm run dev -- --port 5173 --strictPort',
+    url: BASE_URL,
+    reuseExistingServer: true,
+    timeout: 60_000,
+  },
 });
