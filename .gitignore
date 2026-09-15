@@ -7,3 +7,18 @@ dist
 
 # local reference images
 image_*.png
+
+# local knowledge-graph output
+graphify-out
+
+# supabase local state
+supabase/.temp
+
+# playwright
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
+
+# per-machine Claude Code permissions
+.claude/settings.local.json
