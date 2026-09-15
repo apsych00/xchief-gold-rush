@@ -22,3 +22,6 @@ supabase/.temp
 
 # per-machine Claude Code permissions
 .claude/settings.local.json
+
+# demo kiosk launch URLs contain secrets
+demo/kiosks.json

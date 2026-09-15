@@ -106,9 +106,14 @@ test.describe('player-visible promises', () => {
     await expect(page.locator('.countdown')).toBeVisible({ timeout: 3000 });
     await page.waitForTimeout(1000);
     await page.reload();
-    await page.waitForTimeout(6000);
-
-    const after = await getMe(page);
+    // The server round takes ~8 s from the click (5 s clock + two price reads + settle).
+    // Reviewer note: the contract promises "never a free retry", not a settle deadline, so poll.
+    let after = await getMe(page);
+    const deadline = Date.now() + 15000;
+    while (after.rounds < before.rounds + 1 && Date.now() < deadline) {
+      await page.waitForTimeout(1000);
+      after = await getMe(page);
+    }
     expect(after.rounds, 'a round interrupted by a reload must still count as exactly 1 round').toBe(before.rounds + 1);
   });
 
