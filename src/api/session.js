@@ -12,15 +12,29 @@ function authError(error) {
   return err;
 }
 
-/** Signs in anonymously if there is no session yet. Returns the session, or null when the API is disabled. */
-export async function ensureSession() {
-  if (!enabled) return null;
-  const { data: getData, error: getErr } = await supabase.auth.getSession();
-  if (getErr) throw authError(getErr);
-  if (getData.session) return getData.session;
-  const { data, error } = await supabase.auth.signInAnonymously();
-  if (error) throw authError(error);
-  return data.session;
+let inflight = null;
+
+/**
+ * Signs in anonymously if there is no session yet. Returns the session, or null when the API
+ * is disabled. Single-flight: React StrictMode mounts the game hook twice in dev, and two
+ * concurrent calls would each see "no session" and mint two anonymous users, the second
+ * silently replacing the first (and its score).
+ */
+export function ensureSession() {
+  if (!enabled) return Promise.resolve(null);
+  if (!inflight) {
+    inflight = (async () => {
+      const { data: getData, error: getErr } = await supabase.auth.getSession();
+      if (getErr) throw authError(getErr);
+      if (getData.session) return getData.session;
+      const { data, error } = await supabase.auth.signInAnonymously();
+      if (error) throw authError(error);
+      return data.session;
+    })().finally(() => {
+      inflight = null;
+    });
+  }
+  return inflight;
 }
 
 /**
