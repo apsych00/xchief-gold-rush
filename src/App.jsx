@@ -416,6 +416,11 @@ function Display({ state, profile, actions }) {
                 <div className="result-sub miss-sub">{t('result.missSub')}</div>
               </>
             )}
+            {result.coupon && (
+              <div dir="ltr" style={{ marginTop: 8, fontWeight: 700 }}>
+                Code: {result.coupon}
+              </div>
+            )}
             {result.outcome === 'win' && emailPrompt && (
               <LeadCapture
                 source="first-win"
