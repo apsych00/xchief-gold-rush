@@ -5,7 +5,7 @@
 #   fly deploy
 # Relay URL will be wss://<app-name>.fly.dev/ws
 
-app = "xchief-gold-relay"
+app = "xchief-gold-relay-dev"
 primary_region = "fra"
 
 [build]
