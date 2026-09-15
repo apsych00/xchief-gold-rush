@@ -42,6 +42,7 @@ orca orchestration task-list --brief --json        # the board
 - **Tests are written blind.** The test author is never the implementer, and receives only `docs/test-contract.md` (what the system promises), never the implementation. A tester who has to peek at the code to write a test has found a gap in the contract - fix the contract instead. Every new suite gets a red-team pass (`test-red-team` skill): would it fail if the system were wrong?
 - I verify builder claims independently (re-run tests, read the diff). A `worker_done` is a claim, not a result.
 - Machine-local files (`.env`, `settings.local.json`, `supabase/.temp`) never get committed.
+- **Workers never receive `.env`.** It holds the Supabase access token, the DB password, and the Elastic key; anything a worker reads with a file tool is sent to that model's provider. Workers get `.env.public` (Supabase URL + anon key + relay URL - all public by design) and nothing else. Any operation needing a real secret (deploy, secrets set, ops scripts against the Management API) is run by me from the main checkout. Incident 2026-09-15: one OpenCode worker read `.env`; all three secrets were rotated.
 - Budget: OpenCode Go for cheap parallel work (model per task via `opencode.json`); Sonnet builder for solid work; Opus only when it needs real beef.
 - The client UI is the marketing lead's and is in flux. Backend touches the client through **one thin module** (`src/api/`) so visual changes never collide with the backend.
 

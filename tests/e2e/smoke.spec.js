@@ -8,7 +8,7 @@ test('home screen renders the game', async ({ page }) => {
 
   await expect(page).toHaveTitle(/xChief Gold Rush/);
   await expect(page.locator('.hero-art')).toBeVisible();
-  await expect(page.getByText('XAUUSD').first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /start the challenge/i })).toBeVisible();
 });
 
 // TODO: flows to add once the Supabase backend (local stack or a deployed dev project) is

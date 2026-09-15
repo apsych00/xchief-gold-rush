@@ -28,6 +28,9 @@ rules that catch people out:
   `src/api/`; a gap in the contract is reported, not worked around by peeking.
 - **Run gates unpiped and read the exit code.** Piping to `head` or `tail` swallows it.
 - **Machine-local files never move:** `.env`, `settings.local.json`, `supabase/.temp`.
+- **Never open `.env`.** It holds real secrets and anything you read goes to your model provider. If a
+  ticket needs Supabase access, use `.env.public` (public URL + anon key) and nothing else; if a
+  ticket seems to need a real secret, stop and report - the orchestrator runs that step.
 - **The client UI belongs to the marketing lead and is in flux.** Backend touches it only through
   `src/api/`; do not restructure or restyle components.
 - **A question you cannot answer from the ticket and the spec is a defect in the ticket, not
