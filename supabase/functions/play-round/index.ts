@@ -68,27 +68,30 @@ Deno.serve(async (req) => {
   }
   const roundId = openData?.round_id;
 
-  // The server owns this clock. Do not tie this to req.signal - a client
-  // disconnect must not dodge the round settling.
-  await sleep(ROUND_WAIT_MS);
-
-  let endPrice: number;
-  try {
-    endPrice = (await readRelayPrice(RELAY_PRICE_URL)).price;
-  } catch {
-    await db.rpc("void_round", { p_round: roundId });
-    return jsonResponse(503, { error: "feed_stale" });
-  }
-
-  const { data: settleData, error: settleErr } = await db.rpc("settle_round", {
-    p_round: roundId,
-    p_end_price: endPrice,
-  });
-  if (settleErr) {
-    const mapped = mapPgError(settleErr);
-    if (mapped) return jsonResponse(mapped.status, { error: mapped.code });
-    return jsonResponse(500, { error: "settle_round_failed" });
-  }
-
-  return jsonResponse(200, settleData);
+  // The server owns this clock. The wait-and-settle is registered with the runtime as
+  // background work so it runs to completion even if the client disconnects mid-round:
+  // a reload or a dropped connection can never dodge a loss.
+  const settle = (async () => {
+    await sleep(ROUND_WAIT_MS);
+    let endPrice: number;
+    try {
+      endPrice = (await readRelayPrice(RELAY_PRICE_URL)).price;
+    } catch {
+      await db.rpc("void_round", { p_round: roundId });
+      return jsonResponse(503, { error: "feed_stale" });
+    }
+    const { data: settleData, error: settleErr } = await db.rpc("settle_round", {
+      p_round: roundId,
+      p_end_price: endPrice,
+    });
+    if (settleErr) {
+      const mapped = mapPgError(settleErr);
+      if (mapped) return jsonResponse(mapped.status, { error: mapped.code });
+      return jsonResponse(500, { error: "settle_round_failed" });
+    }
+    return jsonResponse(200, settleData);
+  })();
+  // deno-lint-ignore no-explicit-any
+  (globalThis as any).EdgeRuntime?.waitUntil?.(settle);
+  return await settle;
 });

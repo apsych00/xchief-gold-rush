@@ -58,26 +58,28 @@ Deno.serve(async (req) => {
   }
   const roundId = openData?.round_id;
 
-  // Server-owned clock; do not tie this to req.signal.
-  await sleep(ROUND_WAIT_MS);
-
-  let endPrice: number;
-  try {
-    endPrice = (await readRelayPrice(RELAY_PRICE_URL)).price;
-  } catch {
-    await db.rpc("void_round", { p_round: roundId });
-    return jsonResponse(503, { error: "feed_stale" });
-  }
-
-  const { data: settleData, error: settleErr } = await db.rpc("settle_kiosk_round", {
-    p_round: roundId,
-    p_end_price: endPrice,
-  });
-  if (settleErr) {
-    const mapped = mapPgError(settleErr);
-    if (mapped) return jsonResponse(mapped.status, { error: mapped.code });
-    return jsonResponse(500, { error: "settle_round_failed" });
-  }
-
-  return jsonResponse(200, settleData);
+  // Server-owned clock, registered as background work so a disconnect cannot dodge settlement.
+  const settle = (async () => {
+    await sleep(ROUND_WAIT_MS);
+    let endPrice: number;
+    try {
+      endPrice = (await readRelayPrice(RELAY_PRICE_URL)).price;
+    } catch {
+      await db.rpc("void_round", { p_round: roundId });
+      return jsonResponse(503, { error: "feed_stale" });
+    }
+    const { data: settleData, error: settleErr } = await db.rpc("settle_kiosk_round", {
+      p_round: roundId,
+      p_end_price: endPrice,
+    });
+    if (settleErr) {
+      const mapped = mapPgError(settleErr);
+      if (mapped) return jsonResponse(mapped.status, { error: mapped.code });
+      return jsonResponse(500, { error: "settle_round_failed" });
+    }
+    return jsonResponse(200, settleData);
+  })();
+  // deno-lint-ignore no-explicit-any
+  (globalThis as any).EdgeRuntime?.waitUntil?.(settle);
+  return await settle;
 });

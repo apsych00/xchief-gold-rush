@@ -23,6 +23,10 @@ npx supabase secrets set --env-file .env   # ELASTIC_API_KEY, OTP_SENDER, RELAY_
 
 Then load the real coupon codes and kiosk with the seed script.
 
+## Login codes without an email provider (dev)
+
+When the `otp-email` function has no `ELASTIC_API_KEY`, it stores each code in `public.dev_otps` (service-role only) instead of sending mail. Read the newest code for an address with `npm run otp:peek -- <email>` (needs `SUPABASE_PROJECT_REF` + `SUPABASE_ACCESS_TOKEN` in the environment). Production always has the key set, so the table stays empty there. The dev project's hook is already enabled with a signing secret; the same two settings are done on production in step 3.
+
 ## 3. Two dashboard settings (the only manual part)
 
 In the new project's dashboard:

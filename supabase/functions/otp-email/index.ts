@@ -9,8 +9,8 @@ const ELASTIC_API_KEY = Deno.env.get("ELASTIC_API_KEY") ?? "";
 const OTP_SENDER = Deno.env.get("OTP_SENDER") ?? "";
 
 interface HookPayload {
-  user: { email: string };
-  email_data: { token: string };
+  user: { email?: string; new_email?: string };
+  email_data: { token?: string; token_new?: string; new_email?: string; email_action_type?: string };
 }
 
 Deno.serve(async (req) => {
@@ -45,8 +45,11 @@ Deno.serve(async (req) => {
     return jsonResponse(400, { error: "bad_request" });
   }
 
-  const email = payload?.user?.email;
-  const token = payload?.email_data?.token;
+  // An email change (an anonymous player linking an address) carries the code for the NEW
+  // address as token_new and the address itself as new_email; a plain login uses token/email.
+  const ed = (payload?.email_data ?? {}) as Record<string, string | undefined>;
+  const email = ed.new_email || payload?.user?.email || (payload?.user as Record<string, string | undefined>)?.new_email;
+  const token = ed.token_new || ed.token;
   if (!email || !token) {
     return jsonResponse(400, { error: "bad_request" });
   }
