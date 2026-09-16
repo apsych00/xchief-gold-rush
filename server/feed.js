@@ -212,6 +212,7 @@ export function createFeed({ finnhubToken, onTick, now = Date.now } = {}) {
     retryTimers.clear();
     for (const [id, ws] of sockets) {
       ws.removeAllListeners();
+      ws.on('error', () => {}); // close() on a CONNECTING socket emits error; never let it crash the process
       try {
         ws.close();
       } catch {
