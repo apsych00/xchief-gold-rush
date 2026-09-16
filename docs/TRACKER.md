@@ -10,7 +10,7 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | Layer | Done | Open | Read |
 |---|---|---|---|
 | L1 game on the box | 7 / 7 | 0 | complete, load-tested (100 sockets, p95 settle 5024 ms), rehearsed through compose + Caddy |
-| L1.5 client experience | 12 / 15 | C8 no-codes modal (building), C4b animation, Q1 rest | the booth and the web flows are built and verified end to end |
+| L1.5 client experience | 13 / 16 | C9 WIN reveal (proposed), C4b animation, Q1 rest | the booth and the web flows are built and verified end to end |
 | OPS | 2 / 2 | 0 | deploy scripts built; first real run happens on the box |
 | FEED | 3 / 5 | MetaApi blocked on admin; Docker bridge in review | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 | L2 hardening | 2 / 17 | S2-S16 | order set; nothing started |
@@ -33,7 +33,8 @@ Play it now: compose stack at http://localhost:8080 (kiosk `/?k=dev-kiosk-secret
 | C5 | L1.5 | Tasks and gifts server-owned: `tasks` frame, reward on claim and refill | Sonnet | done | 172 pgTAP, 33 integration, 12 E2E; merged `966068b` | |
 | C6 | L1.5 | Web verdict pane driven only by `round_settled` | Sonnet | done | loss line reads the server's delta; merged `a54eeff` | stake in the frame (gap G2) |
 | C7 | L1.5 | Broke on the web: refill, tasks, verify email; never a dead end | Sonnet | done | the signup-bonus dead end fixed; broke E2E; merged `a54eeff` | |
-| C8 | L1.5 | Kiosk with no prize codes left: server refuses new rounds, full-screen modal asks the visitor to tell the booth staff, recovers when codes are loaded | Sonnet (cb, Orca) | building | copy in the ticket; `kiosk_session` gains `codes_left` | verify, merge |
+| C8 | L1.5 | Kiosk with no prize codes left: server refuses new rounds, full-screen modal asks the visitor to tell the booth staff, recovers when codes are loaded | Sonnet (cb) | done | 176 pgTAP, 36 integration, kiosk + streak E2E 8/8 on my run; `reports/c8/no-codes.png`; merged | |
+| C9 | L1.5 | WIN reveal: masked code with a glowing Reveal button and confetti; reveal is a server call that returns the code and starts the 30 s photograph window; an unrevealed coupon returns to the pool after the reveal window | | proposed | two decisions with the owner: coupon reserved at win and released if never revealed; reveal window 10-15 s then the existing 30 s | dispatch on approval |
 | Q1 | L1.5 | Blind E2E over every scenario | gpt-5.6-luna (B14) | partly | five-win streak covered by B14; web flows covered by the player-promises and web-identity specs written with the tickets | blind pass for the rest after C4b |
 | B14 | L1.5 | Blind five-win streak tests, kiosk and web | gpt-5.6-luna | done | coupon row, session_over, exhausted pool, WIN modal E2E; merged `e4efdd0` | |
 | B16 | L1.5 | E2E regression after the profile merge | Sonnet + orchestrator | done | kiosk crashed on the avatar's missing action; 13/13 E2E; merged `92bd000` | |
