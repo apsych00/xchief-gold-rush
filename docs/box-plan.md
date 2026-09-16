@@ -47,6 +47,7 @@ Short version of `box-spec.md` plus the review's fixes, for sign-off. Layer 1 on
 | 4 | `server/otp.js` + login frames | Integration: request/verify, dev capture, score kept |
 | 5 | Client: `src/api/` on the socket, `priceFeed.js` server mode, kiosk verdict from server | E2E: first assertion is "server mode"; then the four player promises |
 | 6 | `docker-compose.yml`, `Caddyfile`, deploy doc for a non-engineer, `gen-kiosk` ported | `docker compose up` on a clean VM serves the game over TLS |
+| 6b | Squash: `db/schema.sql` as one clean file replacing the numbered migrations (no users yet, so no migration history to preserve); all pgTAP suites must pass unchanged against it | Same 85+ assertions green |
 | 7 | Acceptance run: 5 kiosks + 4 web for 10 minutes, then a 100-socket load run | Zero errors, verdicts on the countdown, flats rare |
 
 Tickets 1 and 2 start together; 3 needs 1 and 2; 4 and 5 need 3; 6 needs 5; 7 needs 6. Layer 2 (S1-S16 in `box-spec.md`) starts only after 7 passes.
