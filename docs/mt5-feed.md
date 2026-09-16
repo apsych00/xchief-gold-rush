@@ -50,7 +50,7 @@ Also compare "as felt": run the kiosk on each source for a minute and watch the 
 
 The plumbing (`server/feed.js` priority 0, `server/feed-mt5.js` adapter, unit tests, `demo/feed-compare.mjs`) is already in place and ships without MT5 active - `mt5` simply does not appear as a source until it is configured. Turning it on is a config change, not a code change:
 
-1. Install the SDK on the box: `npm install metaapi.cloud-sdk`. It is deliberately **not** a `package.json` dependency (its tree is large and old-pinned - socket.io v2, crypto-browserify, native bufferutil/utf-8-validate bindings); `server/feed-mt5.js` loads it with a dynamic `import()` only when an mt5 source actually connects, so every other source keeps working on a box that skips this step.
+1. The SDK is already in the server image (`server/Dockerfile` installs `metaapi.cloud-sdk` at build time; it is deliberately not a `package.json` dependency because its tree is large and old-pinned, and `server/feed-mt5.js` loads it lazily). Nothing to install.
 2. Set three values in the box's `.env` (see `.env.box.example`), straight into the box, never in chat or committed:
    - `METAAPI_TOKEN` - the MetaApi.cloud account token.
    - `METAAPI_ACCOUNT_ID` - the MetaApi account id carrying the xChief investor (read-only) MT5 login.

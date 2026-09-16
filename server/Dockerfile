@@ -11,6 +11,10 @@ WORKDIR /app
 # win32 prunes wasm-fallback optional deps that `npm install --no-audit --no-fund` then misses here.)
 COPY package.json package-lock.json ./
 RUN npm install --omit=dev --no-audit --no-fund
+# The MetaApi SDK for the MT5 price source (docs/mt5-feed.md). Deliberately not in
+# package.json (large, old-pinned tree); baked into the image so hooking MT5 up is only the
+# three METAAPI_* values in .env.box and a restart. Loaded lazily by server/feed-mt5.js.
+RUN npm install --omit=dev --no-save --no-audit --no-fund metaapi.cloud-sdk
 
 COPY server/ ./server/
 COPY db/ ./db/

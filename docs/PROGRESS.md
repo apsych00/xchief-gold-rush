@@ -2,6 +2,18 @@
 
 Updated by the orchestrator at every milestone. The table is the truth; the log is the history. Branch: `dev` (pushed to `AIT-ERP/xChief-Gold-Rush`).
 
+## Handover 2026-09-16 (switching to the CBX account)
+
+Everything merged is on `dev` (AIT-ERP) and on `main` at the marketing lead's remote `apsych`. Resume from the CBX account with `claude --resume 9b226395-e1fd-4b17-87bd-fb963e44f76c` in this checkout; the session transcript and memory were copied there.
+
+Next, in order:
+1. **MT5 try-out.** Credentials are in hand. Put `METAAPI_TOKEN`, `METAAPI_ACCOUNT_ID`, `METAAPI_SYMBOL` in `.env.box`, then `docker compose --env-file .env.box -f docker-compose.yml -f docker-compose.local.yml up -d --build server`; `/status` must list `mt5` connected. Then `demo/feed-compare.mjs` for 10 minutes against the bar in `mt5-feed.md` (stop the compose server first: one Finnhub socket per key).
+2. **C5, C6, C7** (tasks/gifts, win/lose feedback, broke path on the web), then **Q1** blind E2E, then **C4b** row animation.
+3. The marketing lead's new brief is carded in `tasks-marketing-lead.md` (Part B is ours: tournaments as data, paged leaderboard with own rank, device identity for rewards, then the reward types, then hardening).
+4. Layer 2 hardening per `box-architecture.md` 5b.
+
+Local stack is up on http://localhost:8080 from this exact `dev`; the kept test DB is `goldrush-box-keep` on 55432. Five locked worktree folders under `orca/workspaces/xchief-gold-rush` (box-*, d1-monitoring, s17-mt5) are unregistered from git and can be deleted after a reboot.
+
 ## Where to play it: now, locally
 
 The stack runs from the main checkout `D:\K Studio\projects\x-chief\repos\xchief-gold-rush` (branch `dev`):
@@ -47,7 +59,7 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 | C1 kiosk session on the server | **done** | 141 pgTAP, 20 integration, lint, unit; `kiosk_session` frame, `kiosk_reset`, 60 s idle sweep. Merged `c91d294`. |
 | C2 kiosk screens (attract, WIN, EXIT, abandon countdown, reconnect) | **done** | `src/KioskApp.jsx`, `src/useKioskFlow.js`; screenshots `reports/c2/`; E2E `tests/e2e/kiosk.spec.js` 4/4, full E2E 8 pass 1 skip; also fixed: kiosk verdict coins were computed client-side (now server's), kiosk play sends the lever. Merged `b03d468` + `ef9cf8f`. |
 | C3a session policy (30-day versioned token, sliding renewal, OTP re-login, revocation) | **done** | 146 pgTAP, 23 integration, 67 unit; merged fast-forward |
-| C3 + C4 web identity screen and live masked leaderboard | building | Sonnet builder, dispatched after C3a merged |
+| C3 + C4 OTP screen, masked identity in the header, sign out, live masked leaderboard | **done** | `src/Identity.jsx`, `mask_email()` in SQL, leaderboard push after every player settle (1 s throttle, web sockets only); screenshots `reports/c3-c4/`; 159 pgTAP, 26 integration, 67 unit, E2E 9/9. Merged `2efe3a6` + `339ae4e`. |
 | C5-C7 tasks, win/lose, broke on the web | queued | |
 | D1 monitoring | **done** | `/status` (200, counts + feed sources), `/ops` page (screenshot `reports/d1-ops.png`), `/logs` 401 without and 200 with the password, start alert seen in the server log; lint clean, 40 unit, 16 integration. Merged `4839072`. |
 | D2 one-command deploy + auto-deploy on push | **done** | `deploy/deploy.sh`, `deploy/autodeploy.sh`, `box-deploy.md`; commit `acc3b0d` |
@@ -75,6 +87,7 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 
 ## Log
 
+- 2026-09-16: C3+C4 merged (OTP screen, masked header, sign out, live masked leaderboard). Mask capped at four asterisks. MetaApi SDK baked into the server image. Handover to the CBX account.
 - 2026-09-16: C2 kiosk screens merged. Two flaky-by-design test setups fixed: the broke E2E now sets the pot in the database (the server pushes `kiosk_session` when it refuses a stake), integration files run one at a time, Playwright runs one worker. Client tasks for the marketing lead written: `tasks-marketing-lead.md` and `.fa.md`.
 - 2026-09-16: C3a session policy merged. Tokens carry expiry and version; a verified email entered on a new device logs into the existing player. `revoke_player_sessions` documented for the operator.
 - 2026-09-16: C1 (kiosk session on the server) and S17-prep (MT5 source, plug-and-play) merged. The local compose stack was recreated from scratch for the new kiosk columns. Review fix on S17: MT5 ticks are stamped with arrival time, not broker time, so staleness never trips on a broker timezone.
