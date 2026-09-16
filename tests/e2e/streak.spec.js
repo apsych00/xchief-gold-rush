@@ -1,0 +1,81 @@
+// Blind E2E for the five-win kiosk streak. Synthetic frames enter through the DEV-only socket
+// hook, while the assertions exercise the same client rendering path as server frames.
+import { expect, test } from '@playwright/test';
+
+const KIOSK_URL = '/?k=dev-kiosk-secret-0001';
+const COUPON = 'B14-EXACT-COUPON-1234';
+
+function settledFrame(streak, extra = {}) {
+  return {
+    type: 'round_settled',
+    round_id: `b14-round-${streak}`,
+    outcome: 'win',
+    delta: 100,
+    mult: streak >= 4 ? 3 : 2,
+    coins: 1000 + streak * 100,
+    streak,
+    coupon: null,
+    coupons_exhausted: false,
+    state: 'playing',
+    start_price: 2000,
+    end_price: 2001,
+    ...extra,
+  };
+}
+
+async function injectSettled(page, streak, extra = {}) {
+  await page.evaluate(
+    ({ frame, coins, state }) => {
+      window.__xchief.inject(frame);
+      window.__xchief.inject({ type: 'kiosk_session', coins, streak: frame.streak, state });
+    },
+    { frame: settledFrame(streak, extra), coins: 1000 + streak * 100, state: extra.state || 'playing' },
+  );
+}
+
+async function expectDisplayedStreak(page, streak) {
+  await expect
+    .poll(async () => (await page.locator('body').innerText()).replace(/\s+/g, ' '))
+    .toMatch(new RegExp(`(?:streak|wins?)\\D{0,12}${streak}(?:\\D|$)`, 'i'));
+}
+
+test.describe.serial('five-win kiosk streak', () => {
+  test.setTimeout(45000);
+
+  test('shows the exact coupon on one line and Claim resets to ATTRACT', async ({ page }) => {
+    await page.goto(KIOSK_URL);
+    await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
+    await page.locator('.btn-start').click();
+    await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 10000 });
+
+    for (const streak of [1, 2, 3, 4]) {
+      await injectSettled(page, streak);
+      await expectDisplayedStreak(page, streak);
+    }
+
+    await injectSettled(page, 5, { coupon: COUPON, state: 'won' });
+    await expect(page.getByText('You won!')).toBeVisible({ timeout: 5000 });
+    const code = page.getByText(COUPON, { exact: true });
+    await expect(code).toBeVisible();
+    await expect(code).toHaveText(COUPON);
+    await expect
+      .poll(() => code.evaluate((element) => element.getClientRects().length))
+      .toBe(1);
+    await expect(page.getByRole('button', { name: 'Claim' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Claim' }).click();
+    await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('does not hide the coupon modal before the 25-second contract window', async ({ page }) => {
+    await page.goto(KIOSK_URL);
+    await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
+    await page.locator('.btn-start').click();
+    await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 10000 });
+
+    await injectSettled(page, 5, { coupon: COUPON, state: 'won' });
+    await expect(page.getByText(COUPON, { exact: true })).toBeVisible({ timeout: 5000 });
+    await page.waitForTimeout(25000);
+    await expect(page.getByText(COUPON, { exact: true })).toBeVisible();
+  });
+});
