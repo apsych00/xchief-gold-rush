@@ -72,6 +72,9 @@ after(async () => {
 /** A fresh kiosk row for tests that need to control a session's starting state directly,
  * independent of the shared DEV_KIOSK_SECRET kiosk other tests in this file also drive. */
 async function createTestKiosk(label, secret) {
+  // A kept database is reused across runs: retire any earlier kiosk with this label first so
+  // exactly one active kiosk holds this secret and auth cannot land on a stale duplicate.
+  await pool.query("update public.kiosks set status = 'revoked' where label = $1 and status = 'active'", [label]);
   const { rows } = await pool.query(
     `insert into public.kiosks (label, secret_hash)
      values ($1, extensions.crypt($2, extensions.gen_salt('bf')))

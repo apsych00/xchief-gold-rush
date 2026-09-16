@@ -268,9 +268,9 @@ $$;
 --
 -- Local part length 1-2: only the first character survives ("a" -> "a***", "ab" -> "a***") -
 -- there is no room for a distinct last character. Length 3+: first and last character are
--- kept, with at least three asterisks between them even when the true middle is shorter
--- ("kay" -> "k***y"); a middle of three or more characters is shown at its real length
--- ("kayani" -> "k****i").
+-- kept, with at least three and at most four asterisks between them ("kay" -> "k***y",
+-- "kayani" -> "k****i", "kayhanazadi" -> "k****i"). The cap keeps a long address from pushing
+-- the score off a leaderboard row; the true length of the local part is not revealed.
 create function public.mask_email(p_email text)
 returns text language sql immutable as $$
   select case
@@ -281,7 +281,7 @@ returns text language sql immutable as $$
           then left(split_part(p_email, '@', 1), 1) || repeat('*', 3)
         else
           left(split_part(p_email, '@', 1), 1)
-          || repeat('*', greatest(length(split_part(p_email, '@', 1)) - 2, 3))
+          || repeat('*', least(greatest(length(split_part(p_email, '@', 1)) - 2, 3), 4))
           || right(split_part(p_email, '@', 1), 1)
       end)
       || '@' || split_part(p_email, '@', 2)

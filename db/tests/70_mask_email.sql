@@ -25,8 +25,8 @@ select is(
 select is(public.mask_email('k+lb@gmail.com'), 'k***b@gmail.com', 'a plus-address masks like any other local part');
 select is(
   public.mask_email('a+very-long-tag@example.com'),
-  'a*************g@example.com',
-  'a long plus-address keeps its true middle length'
+  'a****g@example.com',
+  'a long local part is capped at four asterisks so a row stays readable'
 );
 
 -- case is left exactly as given - masking never normalizes it ---------------------------------

@@ -125,13 +125,13 @@ function send(ws, frame) {
 
 /** Independent re-implementation of db/schema.sql's mask_email(), so this suite is not just
  * checking that the server agrees with itself: first and last character of the local part,
- * at least three asterisks between them, full domain (docs/layers.md C3, C4). */
+ * three to four asterisks between them, full domain (docs/layers.md C3, C4). */
 function maskEmail(email) {
   const at = email.indexOf('@');
   const local = email.slice(0, at);
   const domain = email.slice(at + 1);
   if (local.length <= 2) return `${local[0]}***@${domain}`;
-  const stars = '*'.repeat(Math.max(local.length - 2, 3));
+  const stars = '*'.repeat(Math.min(Math.max(local.length - 2, 3), 4));
   return `${local[0]}${stars}${local.at(-1)}@${domain}`;
 }
 

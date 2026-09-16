@@ -23,7 +23,7 @@ update public.players set record = 99999 where id = :'unconfirmed_id';
 set local role anon;
 
 select ok(
-  exists(select 1 from public.leaderboard() where display = 'l**********d@example.com' and record = 9999),
+  exists(select 1 from public.leaderboard() where display = 'l****d@example.com' and record = 9999),
   'a confirmed player with a record appears on the public leaderboard, masked email as display'
 );
 

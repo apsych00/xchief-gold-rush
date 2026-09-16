@@ -204,11 +204,4 @@ test.describe('player-visible promises', () => {
         : 'no email/signup prompt may appear in kiosk mode (no win was observed, so this is the weak pass)',
     ).toHaveCount(0);
   });
-
-  test('4. the OTP code input accepts an 8-digit code', async () => {
-    // No code-entry screen exists in the built client yet: SignupForm.jsx collects
-    // name/email/phone and LeadCapture.jsx a single email field; neither renders an
-    // 8-digit OTP input, so there is nothing to drive from the UI.
-    test.skip(true, 'no OTP code-entry screen exists in the client yet (signup is a name/email/phone lead form)');
-  });
 });
