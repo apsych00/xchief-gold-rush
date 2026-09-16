@@ -63,6 +63,8 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 
 ## Log
 
+- 2026-09-16: published price now carries gold's third decimal (was rounded to 2, collapsing real moves); live: 37 distinct moves at 3 dp vs 35 at 2 dp over 12 s. MT5 feed specced (`mt5-feed.md`) with a liveness harness (`demo/feed-compare.mjs`).
+
 - 2026-09-16 morning: layered spec, Opus review (4 Blockers, 10 Highs) folded into the plan before any code. Feed decision changed to one continuous series. MT5 feed card added.
 - 2026-09-16: tickets 1-6 built, verified, merged. Game playable locally on the box stack.
 - 2026-09-16: first hands-on: chart sluggish and flat - server had been started without FINNHUB_TOKEN. Restarted with the key: Finnhub connected.

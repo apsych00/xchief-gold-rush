@@ -38,7 +38,7 @@ test('first tick is published with offset 0, rounded to 3 decimals', () => {
   const h = harness({ finnhubToken: null });
   h.inject('okx', 4355.678, 0);
   assert.equal(h.ticks.length, 1);
-  assert.equal(h.ticks[0].price, 4355.68);
+  assert.equal(h.ticks[0].price, 4355.678);
   assert.equal(h.ticks[0].t, T0);
   assert.equal(h.ticks[0].quiet, false);
 });
