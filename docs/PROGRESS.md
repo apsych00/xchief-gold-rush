@@ -45,7 +45,7 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 | Ticket | Status | Evidence |
 |---|---|---|
 | C1 kiosk session on the server | **done** | 141 pgTAP, 20 integration, lint, unit; `kiosk_session` frame, `kiosk_reset`, 60 s idle sweep. Merged `c91d294`. |
-| C2 kiosk screens (attract, WIN, EXIT, abandon countdown) | building | Sonnet builder, dispatched after C1 merged |
+| C2 kiosk screens (attract, WIN, EXIT, abandon countdown, reconnect) | **done** | `src/KioskApp.jsx`, `src/useKioskFlow.js`; screenshots `reports/c2/`; E2E `tests/e2e/kiosk.spec.js` 4/4, full E2E 8 pass 1 skip; also fixed: kiosk verdict coins were computed client-side (now server's), kiosk play sends the lever. Merged `b03d468` + `ef9cf8f`. |
 | C3a session policy (30-day versioned token, sliding renewal, OTP re-login, revocation) | **done** | 146 pgTAP, 23 integration, 67 unit; merged fast-forward |
 | C3 + C4 web identity screen and live masked leaderboard | building | Sonnet builder, dispatched after C3a merged |
 | C5-C7 tasks, win/lose, broke on the web | queued | |
@@ -75,6 +75,7 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 
 ## Log
 
+- 2026-09-16: C2 kiosk screens merged. Two flaky-by-design test setups fixed: the broke E2E now sets the pot in the database (the server pushes `kiosk_session` when it refuses a stake), integration files run one at a time, Playwright runs one worker. Client tasks for the marketing lead written: `tasks-marketing-lead.md` and `.fa.md`.
 - 2026-09-16: C3a session policy merged. Tokens carry expiry and version; a verified email entered on a new device logs into the existing player. `revoke_player_sessions` documented for the operator.
 - 2026-09-16: C1 (kiosk session on the server) and S17-prep (MT5 source, plug-and-play) merged. The local compose stack was recreated from scratch for the new kiosk columns. Review fix on S17: MT5 ticks are stamped with arrival time, not broker time, so staleness never trips on a broker timezone.
 - 2026-09-16: D1 monitoring merged. Operator pages on the local stack: http://localhost:8080/ops and http://localhost:8080/logs (user `admin`, the password whose hash is in `.env.box`). Trap found by the builder: every `$` in the bcrypt hash must be doubled in `.env.box` or compose silently blanks it; documented in `.env.box.example` and the checklist.
