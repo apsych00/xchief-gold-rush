@@ -2,32 +2,37 @@
 # an alternative to the MetaApi source in server/feed-mt5.js. Off by default:
 # only built/started with `docker compose --profile mt5 up` (docker-compose.yml).
 #
-# Base: gmag11/metatrader5_vnc, a maintained image that already carries Wine,
-# a Windows-side Python under Wine, Xvfb + a VNC server, and boot scripts
-# that install and launch the MT5 terminal - building that from scratch here
-# would just re-derive the same image with more moving parts to keep patched.
-# NOT verified against a pulled copy of the tag in this worktree (no network
-# egress here to pull it, and no way to log in and inspect it) - the exact
-# path to the base image's own Windows Python and its supervisor script name
-# is the first thing to confirm against the real image before this is used
-# on the box; `docker build mt5/` below is the check for that.
-FROM gmag11/metatrader5_vnc:latest
+# Base: gmag11/metatrader5_vnc (a linuxserver.io s6-overlay v3 image, pinned
+# below by digest). Verified against a pulled copy of this exact digest
+# (docs/reports/b15-harden.md has the evidence): it carries Wine, KasmVNC,
+# and an openbox autostart (/defaults/autostart -> /Metatrader/start.sh) that
+# installs Mono, the MT5 terminal and a Windows-side Python into the Wine
+# prefix (/config/.wine) the first time the container's desktop session
+# comes up - at container *runtime*, not baked into these image layers.
+# Nothing MT5-related can be pip-installed here at build time as a result;
+# mt5/entrypoint.sh (this image's CMD) waits for that runtime install to
+# finish, then installs MetaTrader5 + websockets into the now-present Wine
+# Python exactly once (marker file under /config, the persisted volume) and
+# hands off to bridge.py.
+FROM gmag11/metatrader5_vnc@sha256:2fdff449cf70b74c242319828b6859592ab52dfb05690d9a989c75107dabf4c1
 
 WORKDIR /root
 
-# The MetaTrader5 pip package is Windows-only (ctypes into a DLL the running
-# terminal loads), so it has to go into the base image's Wine-side Python,
-# not any Linux-side one. `websockets` rides along for bridge.py's server.
-RUN wine python -m pip install --no-cache-dir MetaTrader5 websockets
-
 COPY mt5/bridge.py /root/bridge.py
+COPY mt5/entrypoint.sh /root/entrypoint.sh
+RUN chmod +x /root/entrypoint.sh
 
 ENV MT5_BRIDGE_PORT=8765
+ENV MT5_BRIDGE_HEALTH_PORT=8766
 EXPOSE 8765
+EXPOSE 8766
 
-# The base image's own entrypoint boots Xvfb, Wine and the terminal, then
-# execs its CMD; this replaces only the CMD so the bridge starts once that
-# boot sequence hands off. If the base image gates readiness behind its own
-# wait script, this CMD is the second thing to adjust after confirming the
-# base image's actual boot contract.
-CMD ["wine", "python", "/root/bridge.py"]
+# The base image's own ENTRYPOINT (/init, s6-overlay) is untouched: it still
+# brings up Xvfb/KasmVNC/openbox and, through openbox's autostart, the MT5
+# terminal install/login. This CMD runs as s6-overlay stage2's own foreground
+# child once the "top" bundle's services report up - confirmed against the
+# pulled image's /package/admin/s6-overlay-*/etc/s6-linux-init/skel/rc.init -
+# which also means if this process exits, s6 halts the whole container and
+# `restart: unless-stopped` brings it back from a cold boot. entrypoint.sh
+# never exits on a transient error for exactly that reason.
+CMD ["/root/entrypoint.sh"]

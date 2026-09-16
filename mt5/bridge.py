@@ -14,6 +14,8 @@ import json
 import logging
 import os
 import sys
+import time
+from datetime import datetime, timezone
 
 import websockets
 
@@ -24,6 +26,23 @@ POLL_MS = int(os.environ.get("MT5_POLL_MS", "75"))  # target 50-100 ms between p
 RECONNECT_MIN_S = 1
 RECONNECT_MAX_S = 30
 PORT = int(os.environ.get("MT5_BRIDGE_PORT", "8765"))
+HEALTH_PORT = int(os.environ.get("MT5_BRIDGE_HEALTH_PORT", "8766"))
+HEALTH_STALE_S = int(os.environ.get("MT5_HEALTH_STALE_S", "60"))
+
+
+def is_forex_market_hours(dt_utc):
+    """True when the forex market is conventionally open: Sun 22:00 UTC
+    (Sydney open) through Fri 22:00 UTC (New York close). Used only to decide
+    whether a tick gap is a real outage (market open, no ticks: unhealthy) or
+    expected silence (weekend: healthy regardless of tick age)."""
+    wd = dt_utc.weekday()  # Mon=0 .. Sun=6
+    if wd == 5:  # Saturday: always closed
+        return False
+    if wd == 6 and dt_utc.hour < 22:  # Sunday before the Sydney open
+        return False
+    if wd == 4 and dt_utc.hour >= 22:  # Friday after the New York close
+        return False
+    return True
 
 
 def make_tick_message(tick):
@@ -74,6 +93,7 @@ class Bridge:
         self.clients = set()
         self.connected = False
         self.last_tick = None
+        self.last_tick_at = None  # time.time() of the last successful poll (dup or not); drives /healthz
 
     async def broadcast(self, payload):
         if not self.clients:
@@ -88,6 +108,39 @@ class Bridge:
         log.info("terminal connected=%s", connected)
         await self.broadcast({"type": "status", "connected": connected})
 
+    def health_status(self, now=None):
+        """(ok, body) for /healthz: unhealthy only when the market is open and
+        no successful poll has landed in HEALTH_STALE_S - a quiet weekend
+        market is not a bridge failure."""
+        now = time.time() if now is None else now
+        dt_utc = datetime.fromtimestamp(now, tz=timezone.utc)
+        if not is_forex_market_hours(dt_utc):
+            return True, "ok: market closed"
+        if self.last_tick_at is None:
+            return False, "no tick received yet"
+        age = now - self.last_tick_at
+        if age > HEALTH_STALE_S:
+            return False, f"no tick for {age:.1f}s (market open)"
+        return True, f"ok: last tick {age:.1f}s ago"
+
+    async def health_handler(self, reader, writer):
+        try:
+            await reader.readline()  # request line only; headers are ignored
+            while True:
+                line = await reader.readline()
+                if not line or line in (b"\r\n", b"\n"):
+                    break
+            ok, body = self.health_status()
+            status = "200 OK" if ok else "503 Service Unavailable"
+            payload = body.encode()
+            writer.write(
+                f"HTTP/1.1 {status}\r\nContent-Type: text/plain\r\nContent-Length: {len(payload)}\r\nConnection: close\r\n\r\n".encode()
+                + payload
+            )
+            await writer.drain()
+        finally:
+            writer.close()
+
     async def poll_loop(self):
         attempt = 0
         while True:
@@ -101,13 +154,28 @@ class Bridge:
                 attempt = 0
                 await self.set_connected(True)
 
-            tick = self.mt5.symbol_info_tick(self.symbol)
+            try:
+                tick = self.mt5.symbol_info_tick(self.symbol)
+            except Exception as err:  # a Wine/DLL hiccup must degrade to a reconnect, not kill the process
+                log.warning("symbol_info_tick() raised: %s", err)
+                tick = None
+
             if tick is None:
                 log.warning("symbol_info_tick returned None; terminal likely dropped")
                 await self.set_connected(False)
-                self.mt5.shutdown()
+                try:
+                    self.mt5.shutdown()
+                except Exception as err:
+                    log.warning("shutdown() raised while recovering: %s", err)
+                # Backoff starts counting from the moment the terminal is judged lost, not only
+                # after the first failed connect_terminal() call - otherwise the very next
+                # iteration retries with no delay at all (a flaky-but-not-fully-down terminal
+                # can hot-loop initialize()/login()).
+                attempt = 0
+                await asyncio.sleep(RECONNECT_MIN_S)
                 continue
 
+            self.last_tick_at = time.time()
             cur = make_tick_message(tick)
             if not is_duplicate(self.last_tick, cur):
                 self.last_tick = cur
@@ -127,7 +195,10 @@ class Bridge:
     async def run(self):
         async with websockets.serve(self.handler, "0.0.0.0", self.port):
             log.info("bridge listening on :%d", self.port)
-            await self.poll_loop()
+            health_server = await asyncio.start_server(self.health_handler, "0.0.0.0", HEALTH_PORT)
+            log.info("healthz listening on :%d", HEALTH_PORT)
+            async with health_server:
+                await self.poll_loop()
 
 
 def main():

@@ -60,9 +60,11 @@ services:
   # Optional second price source: an MT5 terminal under Wine + a tick bridge
   # (mt5/, docs/mt5-feed.md "Bridge route"), an alternative to the MetaApi
   # source. Off by default - only builds/starts with
-  # `docker compose --profile mt5 up`. Not published: port 8765 stays inside
-  # the compose network, the server reaches it as mt5:8765
-  # (MT5_BRIDGE_WS=ws://mt5:8765 in .env.box).
+  # `docker compose --profile mt5 up`. Port 8765 (ticks) stays inside the
+  # compose network, the server reaches it as mt5:8765
+  # (MT5_BRIDGE_WS=ws://mt5:8765 in .env.box). The only published port is
+  # KasmVNC's HTTPS UI (3001), bound to loopback only, for the one-time first
+  # login (docs/mt5-feed.md "Bridge route" -> "First login").
   mt5:
     build:
       context: .
@@ -70,6 +72,36 @@ services:
     restart: unless-stopped
     profiles: ['mt5']
     env_file: .env.box
+    # /config is the Wine prefix (docs/reports/b15-harden.md): the MT5 terminal's
+    # login/license state, the installed Wine-side Python + MetaTrader5/websockets
+    # packages, and the entrypoint's install marker all live here. Without this
+    # volume every recreate (image rebuild, host reboot) throws all of it away and
+    # replays the first-login dialog.
+    volumes:
+      - mt5_data:/config
+    ports:
+      - '127.0.0.1:3001:3001'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8766/healthz']
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      # Generous: a cold first boot downloads Mono + the MT5 installer + a Python
+      # installer (docs/mt5-feed.md) before bridge.py's healthz port even opens.
+      start_period: 900s
+    # Sized from a measured idle run of this image on this box
+    # (docs/reports/b15-harden.md "Memory and CPU limits"): the KasmVNC desktop
+    # stack (Xvfb, openbox, nginx) plus Wine + the MT5 terminal plus bridge.py.
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 2048M
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
 
   # Live container logs in a browser for the operator (docs/layers.md D1). Not published
   # directly: Caddy proxies it at /logs behind basic_auth. Production alternative:
@@ -87,3 +119,4 @@ volumes:
   pgdata:
   caddy_data:
   caddy_config:
+  mt5_data:

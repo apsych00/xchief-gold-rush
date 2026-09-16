@@ -7,11 +7,12 @@ Run: python -m pytest test/mt5/test_bridge.py  (or: python -m unittest discover 
 import os
 import sys
 import unittest
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "mt5"))
 
-from bridge import connect_terminal, is_duplicate, make_tick_message  # noqa: E402
+from bridge import Bridge, connect_terminal, is_duplicate, is_forex_market_hours, make_tick_message  # noqa: E402
 
 
 def fake_tick(bid, ask, time_msc=None, time=None):
@@ -116,6 +117,62 @@ class ConnectTerminalTest(unittest.TestCase):
         ok = connect_terminal(mt5, 1, "p", "s", "XAUUSD")
         self.assertFalse(ok)
         self.assertEqual(mt5.calls["shutdown"], 1)
+
+
+class IsForexMarketHoursTest(unittest.TestCase):
+    def test_saturday_is_always_closed(self):
+        self.assertFalse(is_forex_market_hours(datetime(2024, 1, 6, 12, 0, tzinfo=timezone.utc)))
+
+    def test_sunday_before_2200_utc_is_closed(self):
+        self.assertFalse(is_forex_market_hours(datetime(2024, 1, 7, 21, 59, tzinfo=timezone.utc)))
+
+    def test_sunday_at_2200_utc_is_open(self):
+        self.assertTrue(is_forex_market_hours(datetime(2024, 1, 7, 22, 0, tzinfo=timezone.utc)))
+
+    def test_friday_before_2200_utc_is_open(self):
+        self.assertTrue(is_forex_market_hours(datetime(2024, 1, 5, 21, 59, tzinfo=timezone.utc)))
+
+    def test_friday_at_2200_utc_is_closed(self):
+        self.assertFalse(is_forex_market_hours(datetime(2024, 1, 5, 22, 0, tzinfo=timezone.utc)))
+
+    def test_a_weekday_noon_is_open(self):
+        self.assertTrue(is_forex_market_hours(datetime(2024, 1, 3, 12, 0, tzinfo=timezone.utc)))
+
+
+class HealthStatusTest(unittest.TestCase):
+    """Bridge.health_status() backs mt5/Dockerfile's /healthz - it must only
+    flag an outage when the market is open and ticks have actually stopped."""
+
+    def make_bridge(self):
+        return Bridge(FakeMt5(), 1, "p", "s", "XAUUSD")
+
+    def test_healthy_when_market_closed_even_with_no_tick_ever(self):
+        b = self.make_bridge()
+        saturday_noon = datetime(2024, 1, 6, 12, 0, tzinfo=timezone.utc).timestamp()
+        ok, _ = b.health_status(now=saturday_noon)
+        self.assertTrue(ok)
+
+    def test_unhealthy_when_market_open_and_no_tick_ever(self):
+        b = self.make_bridge()
+        weekday_noon = datetime(2024, 1, 3, 12, 0, tzinfo=timezone.utc).timestamp()
+        ok, body = b.health_status(now=weekday_noon)
+        self.assertFalse(ok)
+        self.assertIn("no tick", body)
+
+    def test_healthy_when_market_open_and_last_tick_within_60s(self):
+        b = self.make_bridge()
+        weekday_noon = datetime(2024, 1, 3, 12, 0, tzinfo=timezone.utc).timestamp()
+        b.last_tick_at = weekday_noon - 59
+        ok, _ = b.health_status(now=weekday_noon)
+        self.assertTrue(ok)
+
+    def test_unhealthy_when_market_open_and_last_tick_over_60s_ago(self):
+        b = self.make_bridge()
+        weekday_noon = datetime(2024, 1, 3, 12, 0, tzinfo=timezone.utc).timestamp()
+        b.last_tick_at = weekday_noon - 61
+        ok, body = b.health_status(now=weekday_noon)
+        self.assertFalse(ok)
+        self.assertIn("no tick for", body)
 
 
 if __name__ == "__main__":
