@@ -145,6 +145,6 @@ So Layer 2 sets those specific limits and stops. Anything beyond them is a bigge
 - [ ] `docker compose up` on a **clean** machine applies `db/schema.sql` + seed once (`schema_migrations` has one row) and a second `up` is a no-op.
 - [ ] Time is synced; `date -u` on the box matches your phone.
 - [ ] The dev kiosk secret (`dev-kiosk-secret-0001`) and the 100 generated test coupons are **not** in production: revoke the dev kiosk, load the real codes, export to prove the pool.
-- [ ] One game server process, ever. Never `docker compose up --scale server=2`.
+- [ ] One game server process, ever. Never `docker compose up --scale server=2`. Finnhub allows one WebSocket per key and answers a second with HTTP 429 - seen in the rehearsal when a host-side dev server was still running next to the compose stack. Stop any other server using the key before `up`.
 - [ ] A snapshot exists from before the first visitor.
 - [ ] Rehearsed locally first: the same compose file, `SITE_ADDRESS=:80`, `https` skipped, nine-browser demo and 100-socket load run green through Caddy on port 80.

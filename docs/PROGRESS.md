@@ -6,11 +6,15 @@ Updated by the orchestrator at every milestone. The table is the truth; the log 
 
 The stack runs from the main checkout `D:\K Studio\projects\x-chief\repos\xchief-gold-rush` (branch `dev`):
 
-- **Web:** http://localhost:5173
-- **Kiosk:** http://localhost:5173/?k=dev-kiosk-secret-0001
-- **Health:** http://localhost:8787/health
+Production-shaped (docker compose: Postgres + game server + Caddy), on this machine:
 
-To start it after a reboot, in that folder: `bash db/run-tests.sh --keep` (local Postgres), then `npm run server` with `DATABASE_URL=postgresql://postgres:test@localhost:55432/postgres PLAYER_TOKEN_SECRET=dev-secret PORT=8787` **and `FINNHUB_TOKEN=<the Finnhub key from .env>`** in the environment (without the key the server falls back to PAXG, which barely moves), then `npm run dev`. `.env` already has `VITE_GAME_WS` set.
+- **Web:** http://localhost:8080
+- **Kiosk:** http://localhost:8080/?k=dev-kiosk-secret-0001
+- **Health:** http://localhost:8080/health
+
+Start/stop: `docker compose --env-file .env.box -f docker-compose.yml -f docker-compose.local.yml up -d --build` / `down`. Logs: `... logs -f server`. The old dev recipe (vite on 5173 + `npm run server`) still works for UI work, but never run it at the same time as the compose stack: they fight over the single Finnhub connection.
+
+Dev-only alternative, in that folder: `bash db/run-tests.sh --keep` (local Postgres), then `npm run server` with `DATABASE_URL=postgresql://postgres:test@localhost:55432/postgres PLAYER_TOKEN_SECRET=dev-secret PORT=8787` **and `FINNHUB_TOKEN=<the Finnhub key from .env>`** in the environment (without the key the server falls back to PAXG, which barely moves), then `npm run dev`. `.env` already has `VITE_GAME_WS` set.
 
 Demo (headed, tiled): `npm run demo -- --seconds 120`. Load: `npm run load -- --sockets 100 --seconds 120`.
 
@@ -29,6 +33,10 @@ Demo (headed, tiled): `npm run demo -- --seconds 120`. Load: `npm run load -- --
 | 7 | Acceptance run | done | **Load, 100 sockets / 90 s: PASS** - 1528 rounds, round_opened p95 8 ms, settled p95 5024 ms (max 5296), zero errors. **Browsers, 5 kiosks + 4 web / 4 min:** every round settled, click-to-verdict p95 5421 ms, flats 1.5%, zero browser errors; 22 runner errors all from one kiosk going broke on cosmetic coins and locking its buttons - the Layer 1.5 kiosk-session gap (C1), not a server defect. Earlier 10-min headed run: seven coupons issued across five kiosks. |
 
 Also merged: the marketing lead's "Play screen polish" commit from the old remote, no conflicts.
+
+## Local production rehearsal: PASS
+
+The full compose stack ran on this machine through Caddy: schema + seed applied once on first boot and skipped on restart; `/health`, the app and `/api/lead` served through Caddy; 30-socket load through Caddy PASS (round_opened p95 10 ms, settle p95 5087 ms); browsers through Caddy settled every round at p95 5442 ms with zero flats. Traps found and fixed before they reached production: compose read the developer's `.env` (now `.env.box`); the env template was gitignored; the client baked a localhost socket URL (now `auto` = same origin); host port 80 taken on dev machines (local override on 8080); two servers on one Finnhub key (429). Details in `box-architecture.md` section 9.
 
 ## Next: Layer 1.5 - client experience (see `layers.md`)
 
