@@ -11,6 +11,7 @@ import { IS_KIOSK } from './api/kiosk.js';
 import KioskApp from './KioskApp.jsx';
 import { enabled as apiEnabled } from './api/client.js';
 import OtpModal, { IdentityBar } from './Identity.jsx';
+import Profile, { initialsOf } from './Profile.jsx';
 
 const SIGNUP_REWARD = TASKS.find((t) => t.id === 'signup')?.reward ?? 1000;
 import { LEVERS, maxAffordableLever, stakeFor, useGame } from './useGame.js';
@@ -118,8 +119,10 @@ function CoinDot() {
 
 /* ---------- chrome ---------- */
 
-export function TopBar({ profile }) {
+export function TopBar({ profile, actions, active }) {
   const { t, lang, setLang } = useLang();
+  const signup = readSignup();
+  const level = levelFor(profile.record);
   return (
     <header className="topbar">
       <div className="topbar-start">
@@ -138,9 +141,27 @@ export function TopBar({ profile }) {
           </button>
         )}
       </div>
-      <div className="balance-chip" aria-live="polite">
-        <CoinDot />
-        <span className="balance-text">{num(profile.coins, lang)}</span>
+      <div className="topbar-end">
+        <div className="balance-chip" aria-live="polite">
+          <CoinDot />
+          <span className="balance-text">{num(profile.coins, lang)}</span>
+        </div>
+        <button
+          type="button"
+          className={`avatar-btn ${active ? 'avatar-btn-on' : ''} avatar-${level.id}`}
+          onClick={actions.goProfile}
+          aria-label={t('profile.open')}
+          aria-current={active ? 'page' : undefined}
+        >
+          <span className="avatar-initials" aria-hidden="true">
+            {initialsOf(signup?.name)}
+          </span>
+          {profile.streak > 0 && (
+            <span className="avatar-flame" aria-hidden="true">
+              🔥
+            </span>
+          )}
+        </button>
       </div>
     </header>
   );
@@ -847,7 +868,7 @@ export default function App() {
             <KioskApp state={state} profile={profile} actions={actions} trackRef={trackRef} />
           ) : (
             <>
-              <TopBar profile={profile} />
+              <TopBar profile={profile} actions={actions} active={screen === 'profile'} />
               <IdentityBar profile={profile} onSignOut={actions.signOut} />
               {screen === 'home' && <Home profile={profile} actions={actions} />}
               {screen === 'game' && <Console state={state} profile={profile} actions={actions} trackRef={trackRef} />}
@@ -858,6 +879,9 @@ export default function App() {
                   guestMode={guestMode}
                   onOpenIdentity={() => setOtpOpen(true)}
                 />
+              )}
+              {screen === 'profile' && (
+                <Profile profile={profile} actions={actions} onToast={(txt) => actions.toast?.(txt)} />
               )}
               {screen === 'tasks' && (
                 <Tasks profile={profile} onClaim={actions.claimTask} onToast={(txt) => actions.toast?.(txt)} />
