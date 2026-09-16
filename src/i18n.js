@@ -13,7 +13,13 @@ const dict = {
     coins: 'سکه',
     record: 'رکورد',
     streak: 'کمبو',
-    combo: { label: 'کمبو', next: 'برد بعدی ×{mult}', max: 'حداکثر کمبو ×{mult}', reset: 'کمبو صفر شد' },
+    combo: {
+      label: 'کمبو',
+      idle: 'جایزهٔ استریک',
+      next: 'برد بعدی ×{mult}',
+      max: 'حداکثر کمبو ×{mult}',
+      reset: 'کمبو صفر شد',
+    },
     langToggle: 'EN',
     level: { rookie: 'تازه‌کار', trader: 'تریدر', pro: 'حرفه‌ای', chief: 'Gold Chief' },
     home: {
@@ -28,7 +34,7 @@ const dict = {
     game: {
       home: '→ خانه',
       after: '۵ ثانیه بعد؟',
-      help: 'اهرم رو انتخاب کن، بعد جهت رو بزن',
+      help: 'ضریب رو انتخاب کن، بعد صعود یا نزول رو بزن',
       stake: 'شرط',
       win: 'برد',
       locked: 'پیش‌بینی قفل شد',
@@ -161,7 +167,13 @@ const dict = {
     coins: 'coins',
     record: 'Record',
     streak: 'Combo',
-    combo: { label: 'Combo', next: 'Next win ×{mult}', max: 'Max combo ×{mult}', reset: 'Combo reset' },
+    combo: {
+      label: 'Combo',
+      idle: 'Streak bonus',
+      next: 'Next win ×{mult}',
+      max: 'Max combo ×{mult}',
+      reset: 'Combo reset',
+    },
     langToggle: 'فا',
     level: { rookie: 'Rookie', trader: 'Trader', pro: 'Pro', chief: 'Gold Chief' },
     home: {
@@ -176,7 +188,7 @@ const dict = {
     game: {
       home: '← Home',
       after: 'Up or down in 5s?',
-      help: 'Pick a lever, then tap a direction',
+      help: 'Choose a multiplier, then tap Up or Down',
       stake: 'Stake',
       win: 'win',
       locked: 'Prediction locked',

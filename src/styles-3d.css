@@ -294,60 +294,55 @@
   left: 14%;
   right: 14%;
   top: 8%;
-  height: 36%;
+  height: 28%;
   border-radius: 50% 50% 48% 48% / 60% 60% 40% 40%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0));
   pointer-events: none;
 }
 .btn-down {
   box-shadow:
-    inset 0 -6px 12px rgba(0, 0, 0, 0.75),
-    inset 0 3px 6px rgba(255, 255, 255, 0.1),
-    0 0 0 2px rgba(255, 92, 92, 0.35),
-    0 12px 0 #050505,
-    0 18px 26px rgba(0, 0, 0, 0.6),
-    0 0 26px rgba(255, 92, 92, 0.35);
+    inset 0 -4px 8px rgba(0, 0, 0, 0.7),
+    inset 0 2px 4px rgba(255, 255, 255, 0.06),
+    0 0 0 1.5px rgba(255, 92, 92, 0.3),
+    0 6px 0 #050505,
+    0 9px 14px rgba(0, 0, 0, 0.5),
+    0 0 14px rgba(255, 92, 92, 0.22);
 }
 .btn-up {
   box-shadow:
-    inset 0 -6px 12px rgba(0, 0, 0, 0.75),
-    inset 0 3px 6px rgba(255, 255, 255, 0.1),
-    0 0 0 2px rgba(53, 227, 111, 0.45),
-    0 12px 0 #050505,
-    0 18px 26px rgba(0, 0, 0, 0.6),
-    0 0 26px rgba(53, 227, 111, 0.4);
+    inset 0 -4px 8px rgba(0, 0, 0, 0.7),
+    inset 0 2px 4px rgba(255, 255, 255, 0.06),
+    0 0 0 1.5px rgba(53, 227, 111, 0.4),
+    0 6px 0 #050505,
+    0 9px 14px rgba(0, 0, 0, 0.5),
+    0 0 14px rgba(53, 227, 111, 0.25);
 }
 .btn-down:active:not(:disabled) {
-  transform: translateY(8px);
+  transform: translateY(4px);
   box-shadow:
     inset 0 -2px 6px rgba(0, 0, 0, 0.7),
-    0 0 0 2px rgba(255, 92, 92, 0.5),
-    0 4px 0 #050505,
-    0 6px 12px rgba(0, 0, 0, 0.6),
-    0 0 44px var(--red);
+    0 0 0 1.5px rgba(255, 92, 92, 0.5),
+    0 2px 0 #050505,
+    0 4px 8px rgba(0, 0, 0, 0.5),
+    0 0 26px rgba(255, 92, 92, 0.6);
 }
 .btn-up:active:not(:disabled) {
-  transform: translateY(8px);
+  transform: translateY(4px);
   box-shadow:
     inset 0 -2px 6px rgba(0, 0, 0, 0.7),
-    0 0 0 2px rgba(53, 227, 111, 0.6),
-    0 4px 0 #050505,
-    0 6px 12px rgba(0, 0, 0, 0.6),
-    0 0 44px var(--green);
+    0 0 0 1.5px rgba(53, 227, 111, 0.6),
+    0 2px 0 #050505,
+    0 4px 8px rgba(0, 0, 0, 0.5),
+    0 0 26px rgba(53, 227, 111, 0.6);
 }
-.tick:not(:disabled) {
-  background: rgba(0, 0, 0, 0.14);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.25),
-    0 2px 0 rgba(0, 0, 0, 0.35);
+.tick,
+.tick:not(:disabled),
+.tick[aria-pressed='true']:not(:disabled) {
+  background: transparent;
+  box-shadow: none;
 }
 .tick[aria-pressed='true']:not(:disabled) {
-  background: linear-gradient(180deg, var(--ink-hi), var(--ink-2));
-  color: #fff;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    0 2px 0 #000,
-    0 4px 8px rgba(0, 0, 0, 0.4);
+  font-weight: 800;
 }
 
 /* ---------- bottom nav as the emerald podium ---------- */
