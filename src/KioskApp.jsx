@@ -102,7 +102,7 @@ function KioskReconnecting() {
 }
 
 export default function KioskApp({ state, profile, actions, trackRef }) {
-  const flow = useKioskFlow(state.phase, { onReturnToAttract: actions.goHome });
+  const flow = useKioskFlow({ onReturnToAttract: actions.goHome });
 
   return (
     <>

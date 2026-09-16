@@ -29,7 +29,10 @@ function readEnv() {
   }
   return out;
 }
-const GAME_WS = readEnv().VITE_GAME_WS;
+// Both overridable from the environment (same pattern as DATABASE_URL below) so the suite can
+// target a dev server on a non-default port when 8787 is taken by another worktree's stack;
+// defaults stay exactly as .env has them.
+const GAME_WS = process.env.VITE_GAME_WS || readEnv().VITE_GAME_WS;
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:test@localhost:55432/postgres';
 
 /** Ends whatever session dev-kiosk-secret-0001 currently has, over an independent socket - run
@@ -184,5 +187,32 @@ test.describe.serial('kiosk visitor flow', () => {
 
     await page.getByRole('button', { name: 'Claim' }).click();
     await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('5. idle countdown (C2b): overlay after idle, pointer move hides it, zero returns to ATTRACT', async ({
+    page,
+  }) => {
+    await tapToPlay(page);
+    // Shrink both constants through the DEV-only window.__xchief.kioskTiming hook
+    // (src/useKioskFlow.js) so the 20 s + 20 s product rule runs on a test-sized clock:
+    // 1.5 s of no activity shows the overlay, which then counts down 2 s to the flush.
+    await page.evaluate(() => window.__xchief.kioskTiming({ idleMs: 1500, countdownMs: 2000 }));
+
+    const overlay = page.getByText('Still there?');
+    await expect(overlay).toBeVisible({ timeout: 10000 });
+
+    // Any activity - here a plain pointer move, no tap, no play - hides the overlay and
+    // restarts the idle window.
+    await page.mouse.move(60, 80);
+    await page.mouse.move(180, 220);
+    await expect(overlay).toBeHidden({ timeout: 5000 });
+
+    // Idle again for the same 1.5 s: the overlay is back, counting from the top.
+    await expect(overlay).toBeVisible({ timeout: 10000 });
+
+    // Let the countdown reach zero untouched: flush animation, kiosk_reset to the server,
+    // ATTRACT for the next visitor.
+    await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 15000 });
+    await expect(forbiddenUi(page)).toHaveCount(0);
   });
 });
