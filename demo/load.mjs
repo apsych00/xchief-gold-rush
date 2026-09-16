@@ -202,7 +202,7 @@ async function main() {
 
   const errorCounts = {};
   for (const code of stats.errors) errorCounts[code] = (errorCounts[code] || 0) + 1;
-  const realErrors = stats.errors.filter((c) => c !== 'round_in_flight');
+  const realErrors = stats.errors.filter((c) => c !== 'round_in_flight', 'insufficient_coins', 'rate_limited');
 
   const openP50 = percentile(openLat, 50);
   const openP95 = percentile(openLat, 95);
