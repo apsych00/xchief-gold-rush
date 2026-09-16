@@ -90,5 +90,9 @@ For each task: the screen designs, the copy, and a short note (a few lines) on h
 | B11 | Ad banner list served to the client (static list of assets), random pick client-side. | A1. |
 | B12 | Curate the YouTube list: pick the most relevant xChief videos under one minute. | A7 content. |
 | B13 | Hardening pass on rewards and anonymous identity: rate limits, replay checks, one claim per device and per email enforced in the database, audit of claims. | After B5 to B9 work end to end, same layering as before. |
+| B14 | Five-win streak tests, kiosk and web: coupon issued on the fifth win, WIN modal with the code and the Claim cycle, exhausted pool keeps the streak, web shows streak and multiplier from the server. Written blind. | Q1 scenario the booth depends on. |
+| B15 | MT5 through Docker: an MT5 terminal plus tick bridge container as the alternative to MetaApi, selected by `MT5_BRIDGE_WS`. | Independence from MetaApi's token and interval limits. |
+| B16 | E2E regression after the profile screen merge: three web and kiosk tests time out; diagnose from the trace and fix. | Every merge gates on the E2E. |
+| C2b | Kiosk idle rework: countdown after 20 s of no activity at all, any pointer or key activity cancels and restarts it, reset at zero. Today it shows at 30 s idle and flushes at 60 s. | Product rule from the booth walkthrough. |
 
-Order of work on our side: B1, B2, B4 first (the leaderboard and the ground rule), then B5, then B6 to B9, then B3, B10, B11, B12, then B13.
+Order of work on our side: B16 first (it gates every merge), then B14, B15 and C2b in parallel with C5 to C7; then B1, B2, B4 (the leaderboard and the ground rule), then B5, then B6 to B9, then B3, B10, B11, B12, then B13.
