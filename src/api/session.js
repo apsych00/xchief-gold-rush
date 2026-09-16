@@ -1,57 +1,50 @@
 /**
- * Web auth: play-first, upgrade to email later. The player starts on an
- * anonymous Supabase session so a round can be played before any signup;
- * requestOtp/verifyOtp later link an email to that same auth.uid(), so the
- * players row (and its score) carries over rather than starting fresh.
+ * Web auth: play-first, upgrade to email later. The player's identity is the socket's own
+ * player token (docs/box-plan.md 1.5): connect() sends it (or nothing, for a fresh player) as
+ * the first frame, and the server's `welcome` is what makes the connection usable. requestOtp/
+ * verifyOtp later set an email on that same player id, so the row (and its score) carries over
+ * rather than starting fresh.
  */
-import { enabled, supabase } from './client.js';
-
-function authError(error) {
-  const err = new Error(error.message);
-  err.code = error.code || error.message;
-  return err;
-}
+import { enabled } from './client.js';
+import { connect, onStatus, requestOtp as socketRequestOtp, state, verifyOtp as socketVerifyOtp } from './socket.js';
 
 let inflight = null;
 
 /**
- * Signs in anonymously if there is no session yet. Returns the session, or null when the API
- * is disabled. Single-flight: React StrictMode mounts the game hook twice in dev, and two
- * concurrent calls would each see "no session" and mint two anonymous users, the second
- * silently replacing the first (and its score).
+ * Opens the socket if needed and resolves once `welcome` has landed. Returns null when the API
+ * is disabled. Single-flight: React StrictMode mounts the game hook twice in dev; connect()
+ * itself is idempotent, but this still keeps one shared "wait for welcome" promise so callers
+ * do not each set up their own listener.
  */
 export function ensureSession() {
   if (!enabled) return Promise.resolve(null);
   if (!inflight) {
-    inflight = (async () => {
-      const { data: getData, error: getErr } = await supabase.auth.getSession();
-      if (getErr) throw authError(getErr);
-      if (getData.session) return getData.session;
-      const { data, error } = await supabase.auth.signInAnonymously();
-      if (error) throw authError(error);
-      return data.session;
-    })().finally(() => {
+    inflight = new Promise((resolve) => {
+      connect();
+      if (state().connected) {
+        resolve(state());
+        return;
+      }
+      const off = onStatus((s) => {
+        if (!s.connected) return;
+        off();
+        resolve(s);
+      });
+    }).finally(() => {
       inflight = null;
     });
   }
   return inflight;
 }
 
-/**
- * Links an email to the current anonymous user. Supabase treats this as an
- * email change on that user, so it sends a one-time code to the new address
- * and the auth.uid() - and the players row it keys - stays the same.
- */
-export async function requestOtp(email) {
+/** Stores an 8-digit code against this player's email, sent through Elastic (dev: dev_otps). */
+export function requestOtp(email) {
   if (!enabled) throw Object.assign(new Error('api_disabled'), { code: 'api_disabled' });
-  const { error } = await supabase.auth.updateUser({ email });
-  if (error) throw authError(error);
+  return socketRequestOtp(email);
 }
 
-/** Verifies the code from requestOtp. The code is 8 digits, not Supabase's default 6. */
-export async function verifyOtp(email, token) {
+/** Verifies the code from requestOtp and sets the email on this same player id. Score is kept. */
+export function verifyOtp(email, code) {
   if (!enabled) throw Object.assign(new Error('api_disabled'), { code: 'api_disabled' });
-  const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email_change' });
-  if (error) throw authError(error);
-  return data.session;
+  return socketVerifyOtp(email, code);
 }

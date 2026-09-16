@@ -14,7 +14,14 @@
  *
  * To plug in a broker feed (for example an MT5 bridge), add another entry to
  * WS_SOURCES with its url, subscribe message and parse function.
+ *
+ * Server mode (docs/box-plan.md, "Client price feed in server mode"): when the app is wired
+ * to the box game server (VITE_GAME_WS set), startPriceFeed() below dispatches to
+ * startServerPriceFeed() at the bottom of this file instead - the only source is then the
+ * socket's own price frames. Local mode (everything above) is unchanged either way.
  */
+import { enabled as serverMode } from './api/client.js';
+import { connect as connectSocket, onPrice as onSocketPrice, onStatus as onSocketStatus } from './api/socket.js';
 
 const FINNHUB_TOKEN = (import.meta.env && import.meta.env.VITE_FINNHUB_TOKEN) || '';
 const FINNHUB_SYMBOLS = {
@@ -162,7 +169,7 @@ const isValid = (p) => typeof p === 'number' && Number.isFinite(p) && p > 100 &&
  *           onStatus: (s:{mode:'connecting'|'live'|'poll'|'demo', source:string|null, quiet:boolean}) => void }} opts
  * @returns {() => void} stop
  */
-export function startPriceFeed({ onPrice, onStatus }) {
+function startLocalPriceFeed({ onPrice, onStatus }) {
   let stopped = false;
   let sockets = [];
   let active = null; // { id, label, ws }
@@ -448,4 +455,50 @@ export function startPriceFeed({ onPrice, onStatus }) {
     clearTimers();
     closeAll();
   };
+}
+
+/**
+ * Server mode: the ONLY source is the game socket's price frames - no exchange sockets, no
+ * REST polling, no quiet-market simulation. What the player sees is exactly what the server
+ * will settle the round on. mode is 'connecting' (socket not open/authed yet), 'live' (a tick
+ * within the last 3 s) or 'quiet' (none for 3 s) - see src/api/socket.js's onStatus.
+ */
+function startServerPriceFeed({ onPrice, onStatus }) {
+  let stopped = false;
+  let mode = 'connecting';
+
+  const report = (next) => {
+    if (stopped || mode === next) return;
+    mode = next;
+    onStatus({ mode, source: null, symbol: 'XAU/USD', quiet: mode === 'quiet' });
+  };
+
+  const offPrice = onSocketPrice((price) => {
+    if (stopped) return;
+    report('live');
+    onPrice(price, { source: 'server', mode: 'live' });
+  });
+
+  const offStatus = onSocketStatus((s) => {
+    if (stopped) return;
+    report(!s.connected ? 'connecting' : s.quiet ? 'quiet' : 'live');
+  });
+
+  onStatus({ mode, source: null, symbol: 'XAU/USD', quiet: false });
+  connectSocket();
+
+  return () => {
+    stopped = true;
+    offPrice();
+    offStatus();
+  };
+}
+
+/**
+ * @param {{ onPrice: (price:number, meta:{source:string, mode:'live'|'poll'|'demo'|'quiet'}) => void,
+ *           onStatus: (s:{mode:'connecting'|'live'|'poll'|'demo', source:string|null, quiet:boolean}) => void }} opts
+ * @returns {() => void} stop
+ */
+export function startPriceFeed(opts) {
+  return serverMode ? startServerPriceFeed(opts) : startLocalPriceFeed(opts);
 }

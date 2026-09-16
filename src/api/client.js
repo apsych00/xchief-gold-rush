@@ -1,16 +1,11 @@
 /**
- * The one Supabase client instance for the app. `enabled` gates every other
- * module in src/api/: when the env vars are missing (local UI work without a
- * backend, or a preview build with no secrets), the rest of the app must fall
- * back to the local-only behaviour in useGame.js untouched.
+ * Whether the app talks to the box game server (docs/box-plan.md, docs/box-spec.md) over
+ * src/api/socket.js. `enabled` gates every other module in src/api/ and priceFeed.js's server
+ * mode: when VITE_GAME_WS is unset (local UI work with no backend, or a preview build with no
+ * server), the rest of the app falls back to the local-only behaviour in useGame.js untouched.
  */
-import { createClient } from '@supabase/supabase-js';
-
 const env = import.meta.env || {};
 
-export const supabaseUrl = env.VITE_SUPABASE_URL || '';
-export const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || '';
+export const gameWsUrl = env.VITE_GAME_WS || '';
 
-export const enabled = Boolean(supabaseUrl && supabaseAnonKey);
-
-export const supabase = enabled ? createClient(supabaseUrl, supabaseAnonKey) : null;
+export const enabled = Boolean(gameWsUrl);
