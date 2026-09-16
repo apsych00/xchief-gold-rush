@@ -45,3 +45,17 @@ Also compare "as felt": run the kiosk on each source for a minute and watch the 
 ## Ticket
 
 **S17 - MT5 feed.** (1) `demo/feed-compare.mjs` gains an `mt5` source; run it for 10 minutes in expo hours, attach the table. (2) If it clears the bar, add the source to `server/feed.js` at priority 0 with unit tests (same pattern as the existing sources) and the env vars to `.env.box.example`. (3) Publish 3 decimals (lever 2) as part of the same ticket. Lever 3 (client interpolation) is a separate small UI ticket for the marketing lead's side.
+
+## Hook-up procedure
+
+The plumbing (`server/feed.js` priority 0, `server/feed-mt5.js` adapter, unit tests, `demo/feed-compare.mjs`) is already in place and ships without MT5 active - `mt5` simply does not appear as a source until it is configured. Turning it on is a config change, not a code change:
+
+1. Install the SDK on the box: `npm install metaapi.cloud-sdk`. It is deliberately **not** a `package.json` dependency (its tree is large and old-pinned - socket.io v2, crypto-browserify, native bufferutil/utf-8-validate bindings); `server/feed-mt5.js` loads it with a dynamic `import()` only when an mt5 source actually connects, so every other source keeps working on a box that skips this step.
+2. Set three values in the box's `.env` (see `.env.box.example`), straight into the box, never in chat or committed:
+   - `METAAPI_TOKEN` - the MetaApi.cloud account token.
+   - `METAAPI_ACCOUNT_ID` - the MetaApi account id carrying the xChief investor (read-only) MT5 login.
+   - `METAAPI_SYMBOL` - the broker's XAU/USD symbol name (defaults to `XAUUSD` if left empty; confirm the exact spelling on that server first - some brokers use `XAUUSD.` or `GOLD`).
+3. Restart the server container (`docker compose up -d --build server` or the box's equivalent) so it picks up the new environment.
+4. Check `/status` (or the operator health endpoint) shows an `mt5` entry with `connected: true`. If it never connects, check the box logs for `[feed] upstream mt5` warnings - same reconnect/backoff logging as every other source.
+5. Run `demo/feed-compare.mjs` for 10 minutes during expo hours (`METAAPI_TOKEN=... METAAPI_ACCOUNT_ID=... node demo/feed-compare.mjs --seconds=600`) and read the `mt5 broker XAUUSD` row against the success bar above (3x Finnhub's changes/5s, p95 gap under 1 s, no gap over 5 s).
+6. Decision bar: if it clears, mt5 is already priority 0 and takes over automatically - nothing else to flip. If it does not clear, unset `METAAPI_TOKEN`/`METAAPI_ACCOUNT_ID` and restart; the feed falls back to Finnhub/PAXG exactly as it does today.

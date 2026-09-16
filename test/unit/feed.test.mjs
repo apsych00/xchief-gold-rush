@@ -10,11 +10,17 @@ import { createFeed } from '../../server/feed.js';
 
 const T0 = 1_700_000_000_000;
 
-function harness({ finnhubToken = 'test-token' } = {}) {
+// metaapiToken/metaapiAccountId default to null (not process.env) so these
+// tests are isolated from whatever the box's real environment happens to
+// have set; a test enables mt5 explicitly by passing both.
+function harness({ finnhubToken = 'test-token', metaapiToken = null, metaapiAccountId = null, metaapiSymbol } = {}) {
   let clock = T0;
   const ticks = [];
   const feed = createFeed({
     finnhubToken,
+    metaapiToken,
+    metaapiAccountId,
+    metaapiSymbol,
     onTick: (tick) => ticks.push(tick),
     now: () => clock,
   });
@@ -227,6 +233,76 @@ test('invalid ticks do not keep a source fresh', () => {
   assert.equal(h.ticks.length, 2, 'okx takes over because finnhub is stale');
   assert.equal(h.ticks.at(-1).price, 4355, 'still no jump at the switch');
   assert.equal(h.feed.latest().source, 'okx');
+});
+
+// --- mt5 source (priority 0) --------------------------------------------------
+// mt5 only exists in status()/ingest() when both metaapiToken and
+// metaapiAccountId are given (docs/mt5-feed.md); it is driven through the
+// same _injectTick hook as every other source, no network involved.
+
+function mt5Harness(opts = {}) {
+  return harness({ metaapiToken: 'test-metaapi-token', metaapiAccountId: 'test-account-id', ...opts });
+}
+
+test('mt5 exists in status() only when both metaapiToken and metaapiAccountId are set', () => {
+  const bare = harness();
+  assert.deepEqual(Object.keys(bare.feed.status()), ['finnhub', 'okx', 'binance']);
+
+  const tokenOnly = harness({ metaapiToken: 'tok' });
+  assert.deepEqual(Object.keys(tokenOnly.feed.status()), ['finnhub', 'okx', 'binance'], 'account id missing: no mt5');
+
+  const h = mt5Harness();
+  assert.deepEqual(Object.keys(h.feed.status()), ['mt5', 'finnhub', 'okx', 'binance'], 'mt5 is priority 0');
+});
+
+test('mt5 outranks finnhub when both are fresh', () => {
+  const h = mt5Harness();
+  h.inject('mt5', 4356.789, 0); // mt5 ticks first: baseline, offset 0
+  h.inject('finnhub', 4358.0, 100); // finnhub ticks too, but mt5 is priority 0: never published
+  h.inject('mt5', 4357.0, 100); // mt5 ticks again: still the active source
+  assert.equal(h.ticks.length, 2, 'only the two mt5 ticks are published');
+  assert.equal(h.ticks.at(-1).price, 4357.0);
+  assert.equal(h.feed.status().finnhub.raw, 4358.0, 'finnhub raw still updates while it is not active');
+  assert.equal(h.feed.latest().source, 'mt5');
+});
+
+test('demotion after 10 s of mt5 silence hands over to finnhub, continuous', () => {
+  const h = mt5Harness();
+  h.inject('mt5', 4360.0, 0);
+  h.inject('finnhub', 4358.0, 9999); // mt5 silent 9.999 s: still active
+  assert.equal(h.ticks.length, 1);
+  h.inject('finnhub', 4358.1, 501); // 10.5 s of mt5 silence: demoted, finnhub takes over
+  assert.equal(h.ticks.length, 2);
+  assert.equal(h.ticks.at(-1).price, 4360.0, 'no jump at the switch');
+  assert.equal(h.feed.latest().source, 'finnhub');
+  h.inject('finnhub', 4358.3, 500); // finnhub movement carries the anchored offset
+  assert.equal(h.ticks.at(-1).price, 4360.2);
+});
+
+test('switching back to mt5 after demotion is continuous', () => {
+  const h = mt5Harness();
+  h.inject('mt5', 4360.0, 0);
+  h.inject('finnhub', 4358.0, 10500); // mt5 stale -> finnhub active, published stays 4360.0
+  assert.equal(h.ticks.at(-1).price, 4360.0);
+  h.inject('mt5', 4362.0, 100); // mt5 fresh again -> switches back, offset anchors to 4360.0
+  assert.equal(h.ticks.at(-1).price, 4360.0, 'no jump switching back to mt5');
+  assert.equal(h.feed.latest().source, 'mt5');
+  h.inject('mt5', 4362.5, 100); // subsequent mt5 movement carries through the offset
+  assert.equal(h.ticks.at(-1).price, 4360.5);
+});
+
+test('invalid mt5 prices are dropped and never update source state or freshness', () => {
+  const h = mt5Harness();
+  for (const bad of [NaN, Infinity, -Infinity, 0, -5, 100, 100000, 1e9, '4355', null, undefined]) {
+    h.inject('mt5', bad, 1000);
+  }
+  assert.equal(h.ticks.length, 0);
+  const st = h.feed.status();
+  assert.equal(st.mt5.raw, null);
+  assert.equal(st.mt5.lastTickAt, null);
+  h.inject('mt5', 4360, 1000); // still usable afterwards
+  assert.equal(h.ticks.length, 1);
+  assert.equal(h.ticks[0].price, 4360);
 });
 
 // --- status(), lifecycle guards, test hooks ---------------------------------

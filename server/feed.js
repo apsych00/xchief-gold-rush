@@ -3,10 +3,18 @@
  * "Price feed"). Starting point: relay/server.js.
  *
  * One upstream connection per source, all kept hot at once:
+ *   0. MT5      broker XAUUSD tick stream    (only when METAAPI_TOKEN and METAAPI_ACCOUNT_ID are both set)
  *   1. Finnhub  OANDA:XAU_USD trade stream   (only when a token is given)
  *   2. OKX      PAXG-USDT tickers mid
  *   3. Binance  PAXG/USDT bookTicker mid
  * Reconnect with exponential backoff 1 s..30 s.
+ *
+ * MT5 is a "custom" source (server/feed-mt5.js, docs/mt5-feed.md): it does
+ * not speak the raw WebSocket protocol the others share, so it connects
+ * through its own adapter (connect()/disconnect(), onTick/onState callbacks)
+ * instead of a `url`/`subscribe`/`parse` def. It still goes through the same
+ * ingest() pipeline as every other source once a tick arrives, so priority,
+ * demotion, the continuity offset, and validation are identical.
  *
  * ONE published series: the active source is the highest-priority source that
  * ticked within STALE_MS; a source is demoted only after 10 s of silence.
@@ -23,6 +31,7 @@
  */
 
 import { WebSocket } from 'ws';
+import { createMt5Source } from './feed-mt5.js';
 
 const STALE_MS = 10000; // demote the active source only after 10 s of silence
 const QUIET_MS = 3000; // no published tick for 3 s -> the series is quiet
@@ -37,9 +46,22 @@ const isValidPrice = (p) => typeof p === 'number' && Number.isFinite(p) && p > P
 // into "no change" and made the chart feel stepped; keep the third decimal.
 const round3 = (p) => Math.round(p * 1000) / 1000;
 
-/** Source definitions in priority order; Finnhub only exists when a token is given. */
-function sourceDefs(finnhubToken) {
+/**
+ * Source definitions in priority order. Finnhub only exists when a token is
+ * given; mt5 only exists when both METAAPI_TOKEN and METAAPI_ACCOUNT_ID are
+ * given (docs/mt5-feed.md).
+ */
+function sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbol }) {
   const defs = [];
+  if (metaapiToken && metaapiAccountId) {
+    defs.push({
+      id: 'mt5',
+      priority: 0,
+      custom: true,
+      createSource: (onTick, onState) =>
+        createMt5Source({ token: metaapiToken, accountId: metaapiAccountId, symbol: metaapiSymbol, onTick, onState }),
+    });
+  }
   if (finnhubToken) {
     defs.push({
       id: 'finnhub',
@@ -86,9 +108,16 @@ function sourceDefs(finnhubToken) {
  * everything and cancels reconnects. onTick receives every accepted tick of
  * the active source as { price, t, quiet:false } - no source name.
  */
-export function createFeed({ finnhubToken, onTick, now = Date.now } = {}) {
+export function createFeed({
+  finnhubToken,
+  metaapiToken = process.env.METAAPI_TOKEN || null,
+  metaapiAccountId = process.env.METAAPI_ACCOUNT_ID || null,
+  metaapiSymbol = process.env.METAAPI_SYMBOL || 'XAUUSD',
+  onTick,
+  now = Date.now,
+} = {}) {
   const sources = new Map(); // id -> state, iteration order = priority order
-  for (const def of sourceDefs(finnhubToken)) {
+  for (const def of sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbol })) {
     sources.set(def.id, { def, connected: false, lastTickAt: null, raw: null, offset: 0 });
   }
 
@@ -97,6 +126,7 @@ export function createFeed({ finnhubToken, onTick, now = Date.now } = {}) {
   let idle = false; // set by the round manager via setIdle
   let running = false; // start()/stop() gate for the sockets and timers
   const sockets = new Map();
+  const customSources = new Map(); // id -> { connect, disconnect } handle for non-WebSocket sources (mt5)
   const retryTimers = new Map();
   const attempts = new Map();
 
@@ -143,6 +173,10 @@ export function createFeed({ finnhubToken, onTick, now = Date.now } = {}) {
   // --------------------------------------------------------------- upstream --
 
   function connect(src) {
+    if (src.def.custom) {
+      connectCustom(src);
+      return;
+    }
     const id = src.def.id;
     let ws;
     try {
@@ -188,6 +222,39 @@ export function createFeed({ finnhubToken, onTick, now = Date.now } = {}) {
     });
   }
 
+  /**
+   * Connect a custom (non-WebSocket) source, e.g. mt5 (server/feed-mt5.js).
+   * Mirrors the ws open/close handling above: `opened` tracks whether this
+   * connection ever came up, so a drop after a good connection retries from
+   * attempt 0 while a drop before ever connecting backs off.
+   */
+  function connectCustom(src) {
+    const id = src.def.id;
+    let opened = false;
+    // Arrival time, never the broker's own clock: lastTickAt/staleness compare against now(),
+    // and a broker timestamp in the broker's timezone would demote a healthy source.
+    const handle = src.def.createSource(
+      (raw) => ingest(id, raw, now()),
+      (state) => {
+        const wasConnected = src.connected;
+        src.connected = Boolean(state && state.connected);
+        if (src.connected) {
+          opened = true;
+          attempts.set(id, 0);
+        } else if (wasConnected && running) {
+          retry(id, opened ? 0 : (attempts.get(id) || 0) + 1);
+        }
+      },
+    );
+    customSources.set(id, handle);
+    Promise.resolve()
+      .then(() => handle.connect())
+      .catch((err) => {
+        src.connected = false;
+        if (running) retry(id, (attempts.get(id) || 0) + 1, err);
+      });
+  }
+
   /** Exponential backoff, 1 s..30 s. */
   function retry(sourceId, attempt, err) {
     if (!running) return;
@@ -224,6 +291,16 @@ export function createFeed({ finnhubToken, onTick, now = Date.now } = {}) {
       if (src) src.connected = false;
     }
     sockets.clear();
+    for (const [id, handle] of customSources) {
+      const src = sources.get(id);
+      if (src) src.connected = false;
+      Promise.resolve()
+        .then(() => handle.disconnect())
+        .catch(() => {
+          /* ignore: best-effort teardown, mirrors ws.close() above */
+        });
+    }
+    customSources.clear();
   }
 
   // ------------------------------------------------------------------- reads --
