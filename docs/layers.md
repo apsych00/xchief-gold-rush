@@ -15,7 +15,7 @@ Tickets 1-7 in `box-plan.md`: database on the box, continuous price feed, game s
 **Booth visitor (kiosk).** Walks up to an idle screen. Plays with a server-owned pot of coins. Two ways it ends, and both must be unmistakable:
 - **Five wins in a row -> the prize.** A full-screen modal: "You won! Get your phone ready - photograph this code." The code, large. A 30-second countdown and a **Claim** button. Claim (or the countdown ending, or walking away) resets the machine for the next person.
 - **Coins run out -> the exit.** A full-screen modal: "That was your shot - you have used all your coins. Time to let the next player in." A 20-second countdown and a **Done** button. Either resets the machine. No "try again" loop.
-- A third, silent end: 60 seconds with no round -> reset. Nothing is ever owed to an abandoned session.
+- **Walks away mid-game -> the visible flush.** After a verdict, if nobody plays for 30 s, a countdown appears on screen ("Still there? Resetting in 30..."). At zero the screen flushes with a short animation back to the attract state, ready for the next person. Any tap during the countdown cancels it. The server's own 60 s idle reset stays as the safety net if the browser is gone.
 - The kiosk never shows email, tasks, the leaderboard, or any registration/lead modal. (Observed in the ten-minute run: a registration modal appeared on some windows - that is a bug in kiosk mode, ticket C2.)
 - Scenarios to design for explicitly: wins the code on the first five tries; plays for half an hour and never strings five; goes broke in a minute; walks away mid-streak.
 
@@ -26,7 +26,7 @@ Tickets 1-7 in `box-plan.md`: database on the box, continuous price feed, game s
 | # | Ticket | Layer | Notes |
 |---|---|---|---|
 | C1 | **Kiosk session on the server.** A visitor session per kiosk: coins (start 1000, stake by lever as on web), streak, state. Ends on claim, on broke, on 60 s idle, or on an explicit `kiosk_reset` frame; ending clears coins and streak. `round_settled` for kiosks carries coins and delta; `insufficient_coins` on a kiosk means "session over", not "buy more". Schema: `kiosks.session_coins`, `session_started_at`; `settle_kiosk_round` applies the same economy as `settle_round`. | server + SQL | replaces "kiosk coins are cosmetic" |
-| C2 | **Kiosk screens.** Attract/idle state; play; win/lose feedback; the WIN modal (code, 30 s, Claim); the EXIT modal (20 s, Done); reconnecting state; and a hard guarantee that no email, task, leaderboard, or lead-capture UI can render in kiosk mode. Frames: `kiosk_reset` on Claim/Done; `kiosk_session` after every change. | client | the booth's money moments |
+| C2 | **Kiosk screens.** Attract/idle state; play; win/lose feedback; the WIN modal (code, 30 s, Claim); the EXIT modal (20 s, Done); the abandon countdown (visible 30 s, then a flush animation to attract, client sends `kiosk_reset`); reconnecting state; and a hard guarantee that no email, task, leaderboard, or lead-capture UI can render in kiosk mode. Frames: `kiosk_reset` on Claim/Done; `kiosk_session` after every change. | client | the booth's money moments |
 | C3 | **Web identity.** The OTP entry screen (8 digits) that does not exist yet; after verification, the masked email in the header with "scores saved to this email"; sign-out; what an unverified player sees instead ("play as guest - add your email to be ranked"). | client + small server | uses the frames from ticket 4 |
 | C4 | **Live, masked leaderboard.** `leaderboard()` returns masked emails computed server-side (raw address never leaves the server); the server pushes a `leaderboard` frame to web clients whenever a top-10 record changes (debounced to 1 s); the client re-renders from the frame. | server + client | |
 | C4b | Leaderboard motion: rows animate to their new position; the player's own row highlighted; "you moved up" cue. | client polish | after C4 |
@@ -38,7 +38,7 @@ Tickets 1-7 in `box-plan.md`: database on the box, continuous price feed, game s
 
 Order: C1 -> C2 (the booth), then C3 -> C4 -> C5 -> C6 -> C7 (the web), D1 alongside, Q1 as each lands, C4b last.
 
-Product defaults taken (say if wrong): kiosk starts each visitor at 1000 coins with the same levers as web; WIN modal 30 s; EXIT modal 20 s; idle reset 60 s; masked email keeps the first and last character of the local part and the full domain.
+Product defaults taken (say if wrong): kiosk starts each visitor at 1000 coins with the same levers as web; WIN modal 30 s; EXIT modal 20 s; abandon countdown shows after 30 s idle and flushes at 60 s (matching the server's reset); masked email keeps the first and last character of the local part and the full domain.
 
 ---
 
