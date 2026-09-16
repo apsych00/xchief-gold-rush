@@ -41,6 +41,18 @@ begin
   return v_id;
 end $$;
 
+-- Inserts a bare auth user with no email at all - the real anonymous-player shape - plus a
+-- matching players row, returns the id.
+create or replace function tests.create_anonymous_player()
+returns uuid language plpgsql as $$
+declare
+  v_id uuid := gen_random_uuid();
+begin
+  insert into auth.users (id) values (v_id);
+  perform public.ensure_player(v_id);
+  return v_id;
+end $$;
+
 -- Inserts an active kiosk with a known raw secret, returns the kiosk id.
 create or replace function tests.create_kiosk(p_label text, p_secret text)
 returns uuid language plpgsql as $$

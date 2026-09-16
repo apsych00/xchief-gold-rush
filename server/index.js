@@ -15,6 +15,7 @@ import { WebSocketServer } from 'ws';
 import { createFeed } from './feed.js';
 import { createRoundManager } from './rounds.js';
 import * as ledger from './ledger.js';
+import * as otp from './otp.js';
 
 const PING_INTERVAL_MS = 25000;
 const MAX_MISSED_PONGS = 2;
@@ -280,10 +281,30 @@ export function createApp({ finnhubToken = process.env.FINNHUB_TOKEN || null } =
           send(ws, { type: 'leaderboard', rows: await ledger.leaderboard() });
           break;
         }
-        case 'request_otp':
+        case 'request_otp': {
+          if (kind !== 'player') {
+            send(ws, { type: 'error', code: 'not_available' });
+            break;
+          }
+          const email = str(frame.email, 254).toLowerCase();
+          if (!EMAIL_RE.test(email)) {
+            send(ws, { type: 'error', code: 'invalid_email' });
+            break;
+          }
+          const code = await ledger.requestOtpCode(id, email);
+          await otp.send(email, code);
+          send(ws, { type: 'otp_sent' });
+          break;
+        }
         case 'verify_otp': {
-          // Ticket 4: login frames land in server/otp.js.
-          send(ws, { type: 'error', code: 'not_implemented' });
+          if (kind !== 'player') {
+            send(ws, { type: 'error', code: 'not_available' });
+            break;
+          }
+          const email = str(frame.email, 254).toLowerCase();
+          const code = str(frame.code, 8);
+          await ledger.verifyOtpCode(id, email, code);
+          send(ws, { type: 'me', ...(await ledger.getMe(id)), email_verified: true });
           break;
         }
         default:
