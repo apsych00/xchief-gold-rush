@@ -37,6 +37,10 @@ const KNOWN_ERROR_CODES = [
   'refill_unavailable',
   'unknown_task',
   'unauthenticated',
+  'invalid_code',
+  'too_many_attempts',
+  'expired_code',
+  'email_taken',
 ];
 
 function mapError(err) {
@@ -168,6 +172,38 @@ export async function leaderboard() {
 export async function kioskStreak(kioskId) {
   const { rows } = await getPool().query('select streak from public.kiosks where id = $1', [kioskId]);
   return rows[0] ? rows[0].streak : 0;
+}
+
+/**
+ * Login codes (ticket 4, db/migrations/0011_otp_codes.sql). Both are service-only functions
+ * that take the identity as their own argument, called directly with call() - no transaction
+ * needed, exactly like open_round/verify_kiosk.
+ */
+export async function requestOtpCode(playerId, email) {
+  return call('request_otp_code', playerId, email);
+}
+
+/**
+ * verify_otp_code returns text, not a thrown error, for a wrong guess (see the migration's
+ * comment: an UPDATE that must survive - the attempts count - cannot share a call with a raise
+ * that would roll it back). Turn every non-'ok' outcome into the same thrown-Error-with-.code
+ * shape every other ledger call already produces, so index.js does not need to special-case it.
+ */
+export async function verifyOtpCode(playerId, email, code) {
+  const outcome = await call('verify_otp_code', playerId, email, code);
+  if (outcome === 'ok') return;
+  const err = new Error(outcome);
+  err.code = outcome;
+  throw err;
+}
+
+/**
+ * Dev-only capture (server/otp.js) when ELASTIC_API_KEY is unset: the same public.dev_otps
+ * table the old Supabase Auth hook wrote to (db/migrations/0006_dev_otps.sql), now inserted
+ * directly since there is no edge function on the box.
+ */
+export async function insertDevOtp(email, token) {
+  await getPool().query('insert into public.dev_otps (email, token) values ($1, $2)', [email, token]);
 }
 
 /** Process start: nobody is left to honestly settle a round still marked open. */
