@@ -5,6 +5,7 @@ dist
 .env*
 !.env.example
 !.env.box.example
+!.env.production
 
 # local reference images
 image_*.png

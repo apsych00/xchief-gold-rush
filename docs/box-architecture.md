@@ -149,3 +149,5 @@ So Layer 2 sets those specific limits and stops. Anything beyond them is a bigge
 - [ ] A snapshot exists from before the first visitor.
 - [ ] Rehearsed locally first: the same compose file, `SITE_ADDRESS=:80`, `https` skipped, nine-browser demo and 100-socket load run green through Caddy on port 80.
 - [ ] `DOZZLE_PASSWORD_HASH` in `.env.box` has every `$` doubled (`$$`). Docker Compose re-interpolates `.env` values that flow into a `${VAR}` in `docker-compose.yml`; a single `$` in a bcrypt hash is read as the start of another variable name and silently dropped, so `/logs` accepts a password that is not the one you set. Confirm with `curl -u admin:<password> https://<domain>/logs/` -> 200.
+- [ ] The client bundle must not carry a developer socket address. `.env.production` pins `VITE_GAME_WS=auto` and the client defaults to same-origin when the variable is unset; check the built bundle: `grep -c "ws://localhost" dist/assets/*.js` must print 0. (Trap hit 2026-09-16: builds picked up the developer `.env` and the play screen sat on Connecting.)
+
