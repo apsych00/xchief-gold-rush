@@ -5,7 +5,7 @@ import { loadProfile, saveProfile } from './profile.js';
 import { enabled as apiEnabled } from './api/client.js';
 import * as api from './api/game.js';
 import { ensureSession } from './api/session.js';
-import { getKioskSecret, playKioskRound } from './api/kiosk.js';
+import { IS_KIOSK, playKioskRound } from './api/kiosk.js';
 import { connect as connectSocket, onSettled } from './api/socket.js';
 
 export const ROUND_SECONDS = 5;
@@ -13,10 +13,6 @@ export const LEVERS = ECON.levers;
 const TICK_MS = 60;
 const MAX_HISTORY = 90;
 const HOUR = 60 * 60 * 1000;
-
-// Read once: a kiosk's launch URL is fixed, so its secret never changes mid-session.
-const KIOSK_SECRET = getKioskSecret();
-const IS_KIOSK = apiEnabled && !!KIOSK_SECRET;
 
 const OTHERS = [
   { name: 'GoldHunter', s: 3600 },
@@ -219,11 +215,13 @@ export function useGame() {
   }, []);
 
   // Applies a server verdict (web or kiosk) in place of the local settle(). Every field the
-  // frame carries (outcome, delta/coins/record/best_streak for web; outcome/streak/coupon/
-  // coupons_exhausted for kiosk) is taken as-is - no local price comparison, no recomputed
-  // win/lose. The kiosk frame carries no coins at all (docs/box-plan.md, "coins on the kiosk
-  // are cosmetic"), so its win/lose amount is a display-only combo calculation laid on top of
-  // the server-decided outcome and streak; it never feeds back into what the server decided.
+  // frame carries (outcome/delta/coins/record/best_streak for web; outcome/delta/mult/coins/
+  // streak/coupon/coupons_exhausted for kiosk, server/rounds.js) is taken as-is - no local price
+  // comparison, no recomputed win/lose, no recomputed payout. C1 added real coins to the kiosk's
+  // own round_settled (kiosks.session_coins, settle_kiosk_round); trust that figure the same way
+  // the web branch already does rather than re-deriving it from the local combo table, so a
+  // missed frame or a client/server combo mismatch can never leave the displayed balance out of
+  // step with what the server actually holds.
   //
   // `silent` is for a verdict that arrives for a round the player is no longer watching (the
   // "missed verdict" delivered once on reconnect, docs/box-plan.md 1.3): the profile is still
@@ -235,23 +233,20 @@ export function useGame() {
       let result;
       const endPrice = verdict.end_price;
       if (isKiosk) {
-        const stake = stakeFor(levRef.current);
+        next.coins = verdict.coins;
+        next.record = Math.max(p.record, verdict.coins);
         next.streak = verdict.streak;
         next.bestStreak = Math.max(p.bestStreak, verdict.streak);
-        if (verdict.outcome === 'win') {
-          const mult = comboMult(p.streak);
-          const gain = Math.round(stake * mult);
-          const coins = p.coins + gain;
-          next.coins = coins;
-          next.record = Math.max(p.record, coins);
-          next.wins = p.wins + 1;
-          result = { outcome: 'win', stake, delta: gain, mult, streak: verdict.streak, badge: null, coupon: verdict.coupon || null };
-        } else if (verdict.outcome === 'lose') {
-          next.coins = Math.max(0, p.coins - stake);
-          result = { outcome: 'lose', stake, delta: -stake, mult: 1, streak: 0, badge: null, coupon: null };
-        } else {
-          result = { outcome: 'flat', stake, delta: 0, mult: comboMult(p.streak), streak: verdict.streak, badge: null, coupon: null };
-        }
+        next.wins = verdict.outcome === 'win' ? p.wins + 1 : p.wins;
+        result = {
+          outcome: verdict.outcome,
+          stake: stakeFor(levRef.current),
+          delta: verdict.delta,
+          mult: verdict.mult,
+          streak: verdict.streak,
+          badge: null,
+          coupon: verdict.coupon || null,
+        };
         if (!silent && verdict.coupons_exhausted) toast('Prize pool empty - please tell the staff', 5000);
       } else {
         next = {
@@ -349,7 +344,7 @@ export function useGame() {
 
       if (apiEnabled) {
         const lever = levRef.current;
-        const call = IS_KIOSK ? playKioskRound(dir) : api.playRound(dir, lever);
+        const call = IS_KIOSK ? playKioskRound(dir, lever) : api.playRound(dir, lever);
         call
           .then((opened) => {
             // round_opened only, not the verdict (docs/box-plan.md 1.3): the visual countdown
