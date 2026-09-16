@@ -30,6 +30,7 @@ function readEnv() {
   return out;
 }
 const GAME_WS = readEnv().VITE_GAME_WS;
+const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:test@localhost:55432/postgres';
 
 /** Ends whatever session dev-kiosk-secret-0001 currently has, over an independent socket - run
  * before every test so one test's leftover streak/coins/state can never leak into the next. */
@@ -66,6 +67,21 @@ function resetKioskSession() {
       reject(err);
     });
   });
+}
+
+/** Sets the dev kiosk's session pot directly - the server owns coins, so a test that needs a
+ * specific balance goes through the database, never the client. */
+async function setSessionCoins(coins) {
+  const { default: pg } = await import('pg');
+  const pool = new pg.Pool({ connectionString: DATABASE_URL });
+  try {
+    await pool.query(
+      "update public.kiosks set session_coins = $2, session_state = 'playing', last_round_at = now() where id = public.verify_kiosk($1)",
+      [KIOSK_SECRET, coins],
+    );
+  } finally {
+    await pool.end();
+  }
 }
 
 async function tapToPlay(page) {
@@ -111,39 +127,15 @@ test.describe.serial('kiosk visitor flow', () => {
   });
 
   test('2. going broke shows the EXIT modal, and Done returns to ATTRACT', async ({ page }) => {
-    test.setTimeout(300000);
+    // Deterministic: the session's pot is set below the smallest stake straight in the database
+    // (the server owns it; there is no client path to coins), so the very first play is refused
+    // as insufficient_coins, the server marks the session broke and pushes kiosk_session - the
+    // exact frame the EXIT modal is driven by. No market luck involved.
     await tapToPlay(page);
-    // Always the biggest affordable lever: useGame.js's own idle-lever effect keeps the
-    // selection affordable as coins shrink, so betting max every round drives the session to
-    // broke in the fewest rounds - and, since win/loss odds do not depend on the lever chosen,
-    // the fewest rounds is also the least exposure to a real five-win streak landing first
-    // (real market odds - not guaranteed not to happen, so a WON modal here is handled by
-    // claiming it and continuing toward broke, not treated as a failure).
-    await page.locator('.tick-5').click();
-
-    let broke = false;
-    for (let i = 0; i < 40 && !broke; i++) {
-      await page.click(i % 2 === 0 ? '.btn-down' : '.btn-up');
-      await expect(page.locator('.countdown')).toBeVisible({ timeout: 3000 });
-      await Promise.race([
-        page.locator('.pane-result').waitFor({ state: 'visible', timeout: 20000 }),
-        page.getByText('That was your shot').waitFor({ state: 'visible', timeout: 20000 }),
-        page.getByText('You won!').waitFor({ state: 'visible', timeout: 20000 }),
-      ]);
-      broke = await page.getByText('That was your shot').isVisible();
-      if (broke) break;
-      if (await page.getByText('You won!').isVisible()) {
-        await page.getByRole('button', { name: 'Claim' }).click();
-        await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
-        await page.locator('.btn-start').click();
-        await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
-        await page.locator('.tick-5').click();
-        continue;
-      }
-      await page.locator('.btn-again').click();
-      await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 10000 });
-    }
-    expect(broke, 'expected the kiosk session to go broke within 40 rounds betting the max lever').toBe(true);
+    await setSessionCoins(50);
+    await page.locator('.tick-1').click();
+    await page.click('.btn-up');
+    await expect(page.getByText('That was your shot')).toBeVisible({ timeout: 10000 });
     await expect(page.getByText(/You have used all your coins/)).toBeVisible();
     await expect(forbiddenUi(page)).toHaveCount(0);
 

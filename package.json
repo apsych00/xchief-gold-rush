@@ -22,7 +22,7 @@
     "test:db": "supabase test db",
     "db:test": "bash db/run-tests.sh",
     "test:integration": "node --test \"test/integration/*.test.mjs\"",
-    "test:server": "node --test \"test/integration-box/*.test.mjs\"",
+    "test:server": "node --test --test-concurrency=1 \"test/integration-box/*.test.mjs\"",
     "test:e2e": "playwright test",
     "server": "node server/index.js",
     "demo": "node demo/run-demo.mjs",

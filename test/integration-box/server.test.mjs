@@ -418,6 +418,8 @@ test('a lever the session cannot cover ends it as broke; the session then refuse
   const err = await nextFrame(ws, (f) => f.type === 'error' || f.type === 'round_opened');
   assert.equal(err.type, 'error');
   assert.equal(err.code, 'insufficient_coins');
+  const broke = await nextFrame(ws, (f) => f.type === 'kiosk_session');
+  assert.equal(broke.state, 'broke', 'the refusal is followed by the session state so the screen can react');
 
   send(ws, { type: 'play', dir: 'up', lever: 1 });
   const err2 = await nextFrame(ws, (f) => f.type === 'error' || f.type === 'round_opened');

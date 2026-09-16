@@ -16,6 +16,9 @@ const GAME_SERVER_URL = `http://localhost:${GAME_SERVER_PORT}/health`;
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
+  // One worker: every spec shares one game server, one database and one dev kiosk identity, so
+  // two files running at once reset each other's sessions mid-round.
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: 'list',

@@ -471,6 +471,12 @@ export function createApp({
       }
     } catch (err) {
       send(ws, { type: 'error', code: err.code || 'internal' });
+      if (kind === 'kiosk' && err.code === 'insufficient_coins') {
+        // open_kiosk_round marked the session broke when it refused the stake; the kiosk's
+        // screen is driven by kiosk_session frames, so tell it (docs/layers.md C2).
+        const session = await ledger.kioskSession(id).catch(() => null);
+        if (session) send(ws, { type: 'kiosk_session', ...session });
+      }
     }
   }
 
