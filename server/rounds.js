@@ -52,7 +52,7 @@ export function createRoundManager({ feed, ledger, getSocket, log = console.log,
   }
 
   /** dir/lever validation is the database's job (bad_dir/bad_lever); this only guards the feed. */
-  async function play(kind, id, { dir, lever }) {
+  async function play(kind, id, { dir, lever }, origin = undefined) {
     const p = feed.latest();
     if (!p) {
       const err = new Error('feed_stale');
@@ -101,7 +101,9 @@ export function createRoundManager({ feed, ledger, getSocket, log = console.log,
       log(`round ${roundId} ${kind}:${id} ${settled.outcome} ${p.price}->${end.price} ${ms}ms`);
 
       const frame = { type: 'round_settled', round_id: roundId, ...settled };
-      const ws = getSocket(kind, id);
+      // Prefer the socket that opened the round: several browsers may share one identity
+      // (e.g. testers on one kiosk secret) and the verdict belongs to the one that asked.
+      const ws = origin && origin.readyState === origin.OPEN ? origin : getSocket(kind, id);
       if (ws && ws.readyState === ws.OPEN) {
         send(ws, frame);
       } else {

@@ -247,7 +247,7 @@ export function createApp({ finnhubToken = process.env.FINNHUB_TOKEN || null } =
         case 'play': {
           const dir = frame.dir;
           const lever = kind === 'kiosk' ? 1 : frame.lever;
-          const opened = await rounds.play(kind, id, { dir, lever });
+          const opened = await rounds.play(kind, id, { dir, lever }, ws);
           send(ws, { type: 'round_opened', ...opened });
           break;
         }
