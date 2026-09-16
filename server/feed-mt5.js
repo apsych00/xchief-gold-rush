@@ -24,7 +24,9 @@
  * @param {() => Promise<any>} [opts._loadSdk] - test hook: replaces the dynamic import of metaapi.cloud-sdk with a fake module loader.
  */
 export function createMt5Source({ token, accountId, symbol = 'XAUUSD', onTick, onState, _loadSdk } = {}) {
-  const loadSdk = _loadSdk || (() => import('metaapi.cloud-sdk').then((m) => m.default || m));
+  // The package's bare entry resolves to its browser bundle under Node's ESM `import`
+  // condition (it references `window`); `esm-node` is the Node build.
+  const loadSdk = _loadSdk || (() => import('metaapi.cloud-sdk/esm-node').then((m) => m.default || m));
 
   let connection = null;
   let listener = null;

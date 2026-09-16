@@ -84,6 +84,7 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 - No OTP code-entry screen in the UI (C3).
 - `claim_task` / `free_refill` frames carry no `reward` field (C5).
 - `npm run format:check` is red on ~20 pre-existing files; cosmetic.
+- Leaderboard own-row match is a string compare on the masked email, so two players whose masks collide (`k****i@gmail.com` twice) are both highlighted as "me". Found by the B16 investigation on a reused database. Covered by B2 in `tasks-marketing-lead.md` (the server returns the player's own rank and row in every leaderboard response); until then it only shows with colliding masks.
 
 ## Log
 

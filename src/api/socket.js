@@ -114,6 +114,9 @@ function devSnapshot(frame) {
   const g = (window.__xchief = window.__xchief || {});
   g.mode = 'server';
   g.lastFrame = frame;
+  // Price ticks overwrite lastFrame within milliseconds of a verdict; a test that waits for
+  // the verdict polls this counter instead, which only round_settled ever moves.
+  if (frame.type === 'round_settled') g.settledCount = (g.settledCount || 0) + 1;
   g.token = token;
   // Ticket C2: lets a test drive a scenario that is rare to hit for real (a kiosk five-win
   // streak) by feeding a synthetic frame through the exact same path a real server frame takes -

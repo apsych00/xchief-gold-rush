@@ -127,17 +127,18 @@ test.describe('player-visible promises', () => {
       })
       .toBe('server');
 
+    const settledBefore = await page.evaluate(() => (window.__xchief && window.__xchief.settledCount) || 0);
     const t0 = Date.now();
     await page.click('.btn-up');
     await expect(page.locator('.countdown')).toBeVisible({ timeout: 3000 });
 
-    // Price ticks keep arriving throughout the round and would overwrite
-    // window.__xchief.lastFrame within a second or two of settling, so this catches the
-    // transition to round_settled the instant it happens rather than reading a stale snapshot
-    // after the fact.
-    await page.waitForFunction(() => window.__xchief && window.__xchief.lastFrame && window.__xchief.lastFrame.type === 'round_settled', {
-      timeout: 20000,
-    });
+    // Price ticks overwrite window.__xchief.lastFrame within milliseconds of the verdict, so
+    // wait on the settle counter the dev hook keeps, which only round_settled moves.
+    await page.waitForFunction(
+      (before) => window.__xchief && (window.__xchief.settledCount || 0) > before,
+      settledBefore,
+      { timeout: 20000 },
+    );
     const elapsed = Date.now() - t0;
     expect(elapsed, 'the verdict must not appear sooner than ~5 s').toBeGreaterThanOrEqual(4500);
 
