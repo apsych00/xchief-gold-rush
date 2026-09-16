@@ -14,6 +14,7 @@ import { WebSocketServer } from 'ws';
 
 import { createFeed } from './feed.js';
 import { createRoundManager } from './rounds.js';
+import { createKioskIdleSweep } from './kiosk.js';
 import * as ledger from './ledger.js';
 import * as otp from './otp.js';
 
@@ -142,7 +143,13 @@ async function handleLead(req, res) {
  * pass `null` (or nothing, with FINNHUB_TOKEN unset) to get a PAXG-only feed they drive
  * themselves through the returned `feed._injectTick`.
  */
-export function createApp({ finnhubToken = process.env.FINNHUB_TOKEN || null } = {}) {
+export function createApp({
+  finnhubToken = process.env.FINNHUB_TOKEN || null,
+  // Kiosk idle-sweep timing (server/kiosk.js). Left undefined in production so kiosk.js's own
+  // 60 s / 10 s defaults apply; tests shrink both so they do not wait on a real minute.
+  kioskIdleMs = undefined,
+  kioskSweepIntervalMs = undefined,
+} = {}) {
   const playerSockets = new Map(); // playerId -> ws
   const kioskSockets = new Map(); // kioskId -> ws
 
@@ -169,6 +176,13 @@ export function createApp({ finnhubToken = process.env.FINNHUB_TOKEN || null } =
     ledger,
     getSocket,
     log: (line) => console.log(`[round] ${line}`),
+  });
+  const kioskIdleSweep = createKioskIdleSweep({
+    ledger,
+    getSocket,
+    ...(kioskIdleMs !== undefined ? { idleMs: kioskIdleMs } : {}),
+    ...(kioskSweepIntervalMs !== undefined ? { intervalMs: kioskSweepIntervalMs } : {}),
+    log: (line) => console.log(`[kiosk] ${line}`),
   });
 
   const server = createServer((req, res) => {
@@ -219,8 +233,9 @@ export function createApp({ finnhubToken = process.env.FINNHUB_TOKEN || null } =
         ws.kind = 'kiosk';
         ws.identity = kioskId;
         kioskSockets.set(kioskId, ws);
-        const streak = await ledger.kioskStreak(kioskId);
-        send(ws, { type: 'welcome', kiosk: true, streak });
+        const session = await ledger.kioskSession(kioskId);
+        send(ws, { type: 'welcome', kiosk: true, streak: session.streak });
+        send(ws, { type: 'kiosk_session', ...session });
         await sendHelloAndPending(ws, 'kiosk', kioskId);
         return;
       }
@@ -246,9 +261,18 @@ export function createApp({ finnhubToken = process.env.FINNHUB_TOKEN || null } =
       switch (frame.type) {
         case 'play': {
           const dir = frame.dir;
-          const lever = kind === 'kiosk' ? 1 : frame.lever;
+          const lever = kind === 'kiosk' ? (frame.lever ?? 1) : frame.lever;
           const opened = await rounds.play(kind, id, { dir, lever }, ws);
           send(ws, { type: 'round_opened', ...opened });
+          break;
+        }
+        case 'kiosk_reset': {
+          if (kind !== 'kiosk') {
+            send(ws, { type: 'error', code: 'not_available' });
+            break;
+          }
+          const session = await ledger.resetKioskSession(id);
+          send(ws, { type: 'kiosk_session', ...session });
           break;
         }
         case 'get_me': {
@@ -372,6 +396,7 @@ export function createApp({ finnhubToken = process.env.FINNHUB_TOKEN || null } =
     server,
     wss,
     feed,
+    kioskIdleSweep,
 
     /**
      * Void leftover open rounds and listen. Resolves with the bound port.
@@ -384,6 +409,7 @@ export function createApp({ finnhubToken = process.env.FINNHUB_TOKEN || null } =
     async start(port = Number(process.env.PORT) || 8787, { startFeed = true } = {}) {
       await ledger.voidOpenRounds();
       if (startFeed) feed.start();
+      kioskIdleSweep.start();
       await new Promise((resolve, reject) => {
         server.once('error', reject);
         server.listen(port, () => {
@@ -395,6 +421,7 @@ export function createApp({ finnhubToken = process.env.FINNHUB_TOKEN || null } =
     },
 
     async close() {
+      kioskIdleSweep.stop();
       clearInterval(heartbeat);
       try {
         feed.stop();

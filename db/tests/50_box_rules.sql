@@ -1,9 +1,10 @@
--- Box rules (0008_box.sql): the 400/hr cap, rounds.source audit column, the 60 s kiosk idle
--- streak reset, and the empty-coupon-pool rule that keeps the streak and reports exhausted.
+-- Box rules: the 400/hr cap, rounds.source audit column, the 60 s kiosk idle session reset
+-- (ticket C1: the whole session resets, not only the streak), and the empty-coupon-pool rule
+-- that keeps the streak, reports exhausted, and leaves the session playing.
 -- Runs in one transaction and rolls back, so the seeded 100 coupons are untouched afterwards.
 begin;
 
-select plan(14);
+select plan(18);
 
 -- 400 rounds per player per rolling hour ----------------------------------
 select tests.create_confirmed_player('ratelimit@example.com') as p_rate \gset
@@ -37,29 +38,41 @@ select ok(
   'rounds.source is null when no source is passed'
 );
 
--- kiosk streak resets after 60 s idle, holds inside 60 s ------------------
+-- kiosk session resets after 60 s idle (coins too, not only the streak), holds inside 60 s --
 select tests.create_kiosk('idle-old', 'idle-old-secret-000000000000') as k_old \gset
-update public.kiosks set streak = 3, last_round_at = now() - interval '61 seconds' where id = :'k_old';
+update public.kiosks set streak = 3, session_coins = 700, session_state = 'playing',
+  last_round_at = now() - interval '61 seconds' where id = :'k_old';
 select (public.open_kiosk_round(:'k_old'::uuid, 'up', 100)->>'round_id')::uuid as rd_old \gset
 select is(
   (select streak from public.kiosks where id = :'k_old'),
   0,
   'a kiosk with its last round 61 s ago starts the next visitor at streak 0'
 );
+select is(
+  (select session_coins from public.kiosks where id = :'k_old'),
+  1000,
+  'the 60 s idle reset restarts the whole session, so coins go back to 1000 too'
+);
 
 select tests.create_kiosk('idle-fresh', 'idle-fresh-secret-00000000000') as k_fresh \gset
-update public.kiosks set streak = 3, last_round_at = now() - interval '30 seconds' where id = :'k_fresh';
+update public.kiosks set streak = 3, session_coins = 700, session_state = 'playing',
+  last_round_at = now() - interval '30 seconds' where id = :'k_fresh';
 select (public.open_kiosk_round(:'k_fresh'::uuid, 'up', 100)->>'round_id')::uuid as rd_fresh \gset
 select is(
   (select streak from public.kiosks where id = :'k_fresh'),
   3,
   'a kiosk with its last round 30 s ago keeps its streak of 3'
 );
+select is(
+  (select session_coins from public.kiosks where id = :'k_fresh'),
+  700,
+  'a kiosk still inside the 60 s window keeps its session coins untouched'
+);
 
--- 5th win with an empty pool: keep the streak, report exhausted -----------
+-- 5th win with an empty pool: keep the streak, report exhausted, session stays playing ------
 update public.coupons set status = 'claimed', claimed_at = now() where status = 'available';
 select tests.create_kiosk('no-coupon', 'no-coupon-secret-00000000000') as k_nocoup \gset
-update public.kiosks set streak = 4 where id = :'k_nocoup';
+update public.kiosks set streak = 4, session_state = 'playing' where id = :'k_nocoup';
 select (public.open_kiosk_round(:'k_nocoup'::uuid, 'up', 100)->>'round_id')::uuid as rd_nocoup \gset
 select public.settle_kiosk_round(:'rd_nocoup'::uuid, 101) as settle_nocoup \gset
 select ok(
@@ -76,11 +89,16 @@ select is(
   5,
   'the 5-win streak is kept (not reset) when the pool is empty'
 );
+select is(
+  (:'settle_nocoup'::json->>'state'),
+  'playing',
+  'an exhausted pool leaves the session playing, not won'
+);
 
--- 5th win with one coupon available: hand it over, reset the streak -------
+-- 5th win with one coupon available: hand it over, reset the streak, end the session --------
 insert into public.coupons (code) values ('BOX-TEST-CODE');
 select tests.create_kiosk('has-coupon', 'has-coupon-secret-0000000000') as k_coup \gset
-update public.kiosks set streak = 4 where id = :'k_coup';
+update public.kiosks set streak = 4, session_state = 'playing' where id = :'k_coup';
 select (public.open_kiosk_round(:'k_coup'::uuid, 'up', 100)->>'round_id')::uuid as rd_coup \gset
 select public.settle_kiosk_round(:'rd_coup'::uuid, 101) as settle_coup \gset
 select is(
@@ -97,6 +115,11 @@ select is(
   (select streak from public.kiosks where id = :'k_coup'),
   0,
   'a successful claim resets the streak to 0'
+);
+select is(
+  (:'settle_coup'::json->>'state'),
+  'won',
+  'claiming the coupon ends the session as won'
 );
 select is(
   (:'settle_coup'::json->>'start_price')::numeric,
