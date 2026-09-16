@@ -57,6 +57,20 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
+  # Optional second price source: an MT5 terminal under Wine + a tick bridge
+  # (mt5/, docs/mt5-feed.md "Bridge route"), an alternative to the MetaApi
+  # source. Off by default - only builds/starts with
+  # `docker compose --profile mt5 up`. Not published: port 8765 stays inside
+  # the compose network, the server reaches it as mt5:8765
+  # (MT5_BRIDGE_WS=ws://mt5:8765 in .env.box).
+  mt5:
+    build:
+      context: .
+      dockerfile: mt5/Dockerfile
+    restart: unless-stopped
+    profiles: ['mt5']
+    env_file: .env.box
+
   # Live container logs in a browser for the operator (docs/layers.md D1). Not published
   # directly: Caddy proxies it at /logs behind basic_auth. Production alternative:
   # Cloudflare Access in front of /logs instead of (or in addition to) the Caddy password

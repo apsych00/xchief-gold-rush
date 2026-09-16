@@ -59,3 +59,15 @@ The plumbing (`server/feed.js` priority 0, `server/feed-mt5.js` adapter, unit te
 4. Check `/status` (or the operator health endpoint) shows an `mt5` entry with `connected: true`. If it never connects, check the box logs for `[feed] upstream mt5` warnings - same reconnect/backoff logging as every other source.
 5. Run `demo/feed-compare.mjs` for 10 minutes during expo hours (`METAAPI_TOKEN=... METAAPI_ACCOUNT_ID=... node demo/feed-compare.mjs --seconds=600`) and read the `mt5 broker XAUUSD` row against the success bar above (3x Finnhub's changes/5s, p95 gap under 1 s, no gap over 5 s).
 6. Decision bar: if it clears, mt5 is already priority 0 and takes over automatically - nothing else to flip. If it does not clear, unset `METAAPI_TOKEN`/`METAAPI_ACCOUNT_ID` and restart; the feed falls back to Finnhub/PAXG exactly as it does today.
+
+## Bridge route
+
+The "Implement: own terminal + bridge" route from the table above, wired up (ticket B15): `mt5/` runs the MT5 terminal under Wine, logged in with the investor login, and `mt5/bridge.py` polls it and republishes ticks over a WebSocket on port 8765. `server/feed-mt5-bridge.js` is the client-side adapter - same `connect()/disconnect()`, `onTick`/`onState` contract as `server/feed-mt5.js`, so `server/feed.js` treats either the same way under the `mt5` source id. If both routes are configured, MetaApi wins (it is the vetted one); the bridge only takes over when `METAAPI_TOKEN` is unset.
+
+Run it locally:
+
+1. `cp .env.box.example .env.box` and fill in `MT5_LOGIN`, `MT5_PASSWORD` (investor), `MT5_SERVER`, and `MT5_SYMBOL` if it isn't `XAUUSD` on that broker. Leave `METAAPI_TOKEN` unset so the bridge is the one that takes the `mt5` slot. `MT5_BRIDGE_WS=ws://mt5:8765` is already set - that is the compose network address, not a public port.
+2. Start the bridge alongside the rest of the box with the `mt5` compose profile: `docker compose --profile mt5 up -d --build`. It is otherwise off - a plain `docker compose up` never builds or starts it, and port 8765 is never published outside the compose network.
+3. Check `/status` (or the operator health endpoint) for an `mt5` entry with `connected: true`, exactly as with the MetaApi route. If it never connects, check the bridge's own logs (`docker compose logs -f mt5`, or `/logs` on the box) - it logs every login/connect attempt and every reconnect to stdout.
+
+Everything after that - priority, validation, the 10 s demotion rule, `/status`, `rounds.source` - is identical to the MetaApi route; the client never knows which one is behind `mt5`.
