@@ -42,6 +42,17 @@ The full compose stack ran on this machine through Caddy: schema + seed applied 
 
 Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then web identity, live masked leaderboard, tasks, win/lose feedback, broke path; monitoring (Dozzle + status page) alongside. Layer 2 hardening after.
 
+| Ticket | Status | Evidence |
+|---|---|---|
+| C1 kiosk session on the server | building | Sonnet builder in `c1-kiosk-session` |
+| C2 kiosk screens (attract, WIN, EXIT, abandon countdown) | queued behind C1 | spec ready |
+| C3 / C3a / C4 web identity, session policy, live masked leaderboard | queued | spec ready |
+| C5-C7 tasks, win/lose, broke on the web | queued | |
+| D1 monitoring | **done** | `/status` (200, counts + feed sources), `/ops` page (screenshot `reports/d1-ops.png`), `/logs` 401 without and 200 with the password, start alert seen in the server log; lint clean, 40 unit, 16 integration. Merged `4839072`. |
+| D2 one-command deploy + auto-deploy on push | **done** | `deploy/deploy.sh`, `deploy/autodeploy.sh`, `box-deploy.md`; commit `acc3b0d` |
+| S17-prep MT5 source | building | Sonnet builder in `s17-mt5`; plug-and-play behind `METAAPI_*` env |
+| Q1 blind E2E | after each screen lands | |
+
 ## Defects found and fixed along the way
 
 - SQL: `create or replace` with a new argument list left the old overload installed. Fixed. Found by the DB worker.
@@ -63,6 +74,7 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 
 ## Log
 
+- 2026-09-16: D1 monitoring merged. Operator pages on the local stack: http://localhost:8080/ops and http://localhost:8080/logs (user `admin`, the password whose hash is in `.env.box`). Trap found by the builder: every `$` in the bcrypt hash must be doubled in `.env.box` or compose silently blanks it; documented in `.env.box.example` and the checklist.
 - 2026-09-16: published price now carries gold's third decimal (was rounded to 2, collapsing real moves); live: 37 distinct moves at 3 dp vs 35 at 2 dp over 12 s. MT5 feed specced (`mt5-feed.md`) with a liveness harness (`demo/feed-compare.mjs`).
 
 - 2026-09-16 morning: layered spec, Opus review (4 Blockers, 10 Highs) folded into the plan before any code. Feed decision changed to one continuous series. MT5 feed card added.
