@@ -276,6 +276,13 @@ export function useGame() {
   // `silent` is for a verdict that arrives for a round the player is no longer watching (the
   // "missed verdict" delivered once on reconnect, docs/box-plan.md 1.3): the profile is still
   // updated so the balance stays correct, but there is no result pane to show it in.
+  // C6 audit note: `result.stake` below is the one field in this object the round_settled frame
+  // never carries (server/rounds.js, db/schema.sql's settle_round/settle_kiosk_round json).
+  // It is not an outcome the server decides, though - it is the wager this same client already
+  // sent in its own `play` frame and the server validated before opening the round, and lev is
+  // locked for the whole running phase (setLev bails unless phase is idle), so it cannot have
+  // changed under the round. Every other field here - outcome/delta/mult/coins/streak/
+  // best_streak/coupon - is taken from `verdict` as-is.
   const applyVerdict = useCallback(
     (isKiosk, verdict, { silent = false } = {}) => {
       const p = profileRef.current;

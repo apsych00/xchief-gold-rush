@@ -453,7 +453,10 @@ function Display({ state, profile, actions }) {
                 </div>
                 <div className="result-line miss-line">{t('result.missTitle')}</div>
                 <div className="result-points result-points-neg">
-                  {t('result.missDelta', { n: num(result.stake, lang) })}
+                  {/* result.delta is the frame's own number (server/rounds.js, round_settled): for a
+                      loss it is already -stake, so the amount shown here is the server's figure,
+                      not a client-recomputed stake (docs/layers.md C6 audit). */}
+                  {t('result.missDelta', { n: num(Math.abs(result.delta), lang) })}
                 </div>
                 <div className="result-sub miss-sub">{t('result.missSub')}</div>
               </>
@@ -511,7 +514,7 @@ function Display({ state, profile, actions }) {
   );
 }
 
-export function Console({ state, profile, actions, trackRef }) {
+export function Console({ state, profile, actions, trackRef, onOpenIdentity }) {
   const { t, lang } = useLang();
   const { phase, lev, dir, result, price } = state;
   const isIdle = phase === 'idle';
@@ -565,7 +568,10 @@ export function Console({ state, profile, actions, trackRef }) {
           : 'rgba(255,255,255,.4)';
 
   let hint;
-  if (broke) hint = t('body.cantAfford');
+  // C7: the broke overlay itself now carries the free-refill/tasks/verify-email copy - showing
+  // this hint underneath too just doubled up with "Not enough coins" bleeding through the
+  // overlay's translucent background under the extra CTA lines (docs/reports/c6-c7 screenshots).
+  if (broke) hint = '';
   else if (isIdle && noPrice) hint = t('feed.waiting');
   else if (isIdle) hint = '';
   else if (isRunning) hint = t('body.hintRunning');
@@ -661,44 +667,47 @@ export function Console({ state, profile, actions, trackRef }) {
             {hint}
           </div>
 
-          {/* The web's own broke messaging (signup/refill/tasks CTAs) never applies to a kiosk
-              visitor: a kiosk session that runs out of coins ends outright (the full-screen
+          {/* The web's own broke messaging (signup/refill/tasks/verify CTAs) never applies to a
+              kiosk visitor: a kiosk session that runs out of coins ends outright (the full-screen
               BROKE modal in KioskApp.jsx, driven by the server's kiosk_session state), never
-              "do a task for more coins" - see docs/layers.md C2. */}
-          {!IS_KIOSK && broke && !signupDone && (
+              "do a task for more coins" - see docs/layers.md C2.
+
+              C7: never a dead end. The primary CTA is whichever unconditional path is still open
+              (the once-only free refill, then the tasks screen) - both work with no email at
+              all. Verify-email and the signup bonus are offered as extra links, never gates on
+              the primary path: db/schema.sql's claim_task('signup') requires email_confirmed_at
+              (t.requires_email), so that CTA only appears once profile.emailVerified is true -
+              offering it earlier used to send the player through SignupForm's local lead capture
+              only to have the server's claim_task reject with `email_required`, a dead end this
+              ticket closes. */}
+          {!IS_KIOSK && broke && (
             <div className="broke">
-              <div className="broke-title">{t('signup.brokeTitle')}</div>
-              <div className="broke-sub">{t('signup.brokeSub', { n: num(signupReward, lang) })}</div>
-              <button type="button" className="btn-primary" onClick={() => setSignupFor('signup_broke')}>
-                {t('signup.cta', { n: num(signupReward, lang) })}
-              </button>
+              <div className="broke-title">{!profile.freeRefillUsed ? t('game.freeTitle') : t('game.brokeTitle')}</div>
+              <div className="broke-sub">{!profile.freeRefillUsed ? t('game.freeSub') : t('game.brokeSub')}</div>
               {!profile.freeRefillUsed ? (
-                <button type="button" className="link-btn broke-alt" onClick={actions.freeRefill}>
-                  {t('signup.brokeAlt', { n: num(ECON.freeRefill, lang) })}
+                <button type="button" className="btn-primary" onClick={actions.freeRefill}>
+                  {t('game.freeCta', { n: num(ECON.freeRefill, lang) })}
                 </button>
               ) : (
-                <button type="button" className="link-btn broke-alt" onClick={actions.goTasks}>
-                  {t('signup.brokeAltUsed')}
+                <button type="button" className="btn-primary" onClick={actions.goTasks}>
+                  {t('game.brokeCta')}
                 </button>
               )}
-            </div>
-          )}
-          {!IS_KIOSK && broke && signupDone && !profile.freeRefillUsed && (
-            <div className="broke">
-              <div className="broke-title">{t('game.freeTitle')}</div>
-              <div className="broke-sub">{t('game.freeSub')}</div>
-              <button type="button" className="btn-primary" onClick={actions.freeRefill}>
-                {t('game.freeCta', { n: num(ECON.freeRefill, lang) })}
-              </button>
-            </div>
-          )}
-          {!IS_KIOSK && broke && signupDone && profile.freeRefillUsed && (
-            <div className="broke">
-              <div className="broke-title">{t('game.brokeTitle')}</div>
-              <div className="broke-sub">{t('game.brokeSub')}</div>
-              <button type="button" className="btn-primary" onClick={actions.goTasks}>
-                {t('game.brokeCta')}
-              </button>
+              {!profile.freeRefillUsed && (
+                <button type="button" className="link-btn broke-alt" onClick={actions.goTasks}>
+                  {t('game.brokeCta')}
+                </button>
+              )}
+              {!profile.emailVerified && (
+                <button type="button" className="link-btn broke-alt" onClick={onOpenIdentity}>
+                  {t('otp.title')}
+                </button>
+              )}
+              {profile.emailVerified && !signupDone && (
+                <button type="button" className="link-btn broke-alt" onClick={() => setSignupFor('signup_broke')}>
+                  {t('signup.cta', { n: num(signupReward, lang) })}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -878,7 +887,15 @@ export default function App() {
               <TopBar profile={profile} actions={actions} active={screen === 'profile'} />
               <IdentityBar profile={profile} onSignOut={actions.signOut} />
               {screen === 'home' && <Home profile={profile} actions={actions} />}
-              {screen === 'game' && <Console state={state} profile={profile} actions={actions} trackRef={trackRef} />}
+              {screen === 'game' && (
+                <Console
+                  state={state}
+                  profile={profile}
+                  actions={actions}
+                  trackRef={trackRef}
+                  onOpenIdentity={() => setOtpOpen(true)}
+                />
+              )}
               {screen === 'lb' && (
                 <Leaderboard
                   others={state.others}

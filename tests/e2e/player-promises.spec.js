@@ -11,6 +11,7 @@
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import { WebSocket } from 'ws';
+import pg from 'pg';
 
 function readEnv() {
   const out = {};
@@ -111,6 +112,23 @@ async function playRound(page, dir = 'up') {
   const text = await page.locator('.pane-result').innerText();
   const outcome = /WIN/.test(text) ? 'win' : /MISS/.test(text) ? 'lose' : /FLAT/.test(text) ? 'flat' : 'unknown';
   return { outcome, text, elapsed };
+}
+
+// Directly rewrites this player's coins in the database (docs/layers.md C7's own recipe): the
+// only way to force "broke" deterministically without playing out a losing streak for real.
+// The server is never told about this out of band - the next frame it sends (welcome/me/
+// round_settled) simply reads the row the test just changed, same as any other write to it.
+async function setCoinsInDb(playerId, coins) {
+  const databaseUrl = process.env.DATABASE_URL;
+  expect(databaseUrl, 'DATABASE_URL must be set for the broke-path test to reach the database directly').toBeTruthy();
+  const client = new pg.Client({ connectionString: databaseUrl });
+  await client.connect();
+  try {
+    const { rowCount } = await client.query('update public.players set coins = $1 where id = $2', [coins, playerId]);
+    expect(rowCount, `no players row for id ${playerId}`).toBe(1);
+  } finally {
+    await client.end();
+  }
 }
 
 test.describe('player-visible promises', () => {
@@ -241,5 +259,50 @@ test.describe('player-visible promises', () => {
     const after = await getMe(page);
     expect(after.coins, 'the server must have actually granted a reward').toBeGreaterThan(before.coins);
     expect(await screenCoins(page), 'coins on screen must equal the server coins after the claim').toBe(after.coins);
+  });
+
+  test('5. going broke on the web is never a dead end: the overlay shows from the server coins, and a free refill re-enables play with no reload (docs/layers.md C7)', async ({
+    page,
+  }) => {
+    await startGame(page);
+    const before = await getMe(page);
+
+    // Force broke through the database, not by losing rounds for real (flaky, slow, and not
+    // what this test is checking): 50 coins is below every lever's stake (100/200/500,
+    // src/config.js's ECON.stakeBase x levers).
+    await setCoinsInDb(before.id, 50);
+
+    // The client only ever hears about this through a frame it already trusts - reload to force
+    // a fresh `welcome`/`get_me` round trip, then re-enter the game screen the same way
+    // startGame() does everywhere else in this file.
+    await page.reload();
+    await page.locator('.btn-start').click();
+
+    const overlay = page.locator('.broke');
+    await expect(overlay, 'the broke overlay must appear once the server reports coins below the smallest stake').toBeVisible({
+      timeout: 20000,
+    });
+    expect(await screenCoins(page), 'the balance chip must show the server coins, not a locally-tracked count').toBe(50);
+
+    // A fresh player has never used the one-time refill: it must be the way out, not a dead end.
+    const refillBtn = overlay.locator('.btn-primary');
+    await expect(refillBtn).toBeVisible();
+    await refillBtn.click();
+
+    const after = await getMe(page);
+    expect(after.free_refill_used, 'the server must record the refill as used').toBe(true);
+    expect(after.coins, 'the refill must actually raise the balance').toBeGreaterThan(50);
+    await expect
+      .poll(() => screenCoins(page), {
+        message: 'the balance chip must reflect the refill without a reload',
+        timeout: 10000,
+      })
+      .toBe(after.coins);
+
+    // Play must be enabled again with no reload: the overlay is gone and the direction buttons
+    // are no longer disabled.
+    await expect(overlay, 'the overlay must clear itself once the balance can afford a round').toHaveCount(0);
+    await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 10000 });
+    await expect(page.locator('.btn-down')).toBeEnabled({ timeout: 10000 });
   });
 });
