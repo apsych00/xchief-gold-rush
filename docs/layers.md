@@ -30,6 +30,7 @@ Tickets 1-7 in `box-plan.md`: database on the box, continuous price feed, game s
 | C1 | **Kiosk session on the server.** A visitor session per kiosk: coins (start 1000, stake by lever as on web), streak, state. Ends on claim, on broke, on 60 s idle, or on an explicit `kiosk_reset` frame; ending clears coins and streak. `round_settled` for kiosks carries coins and delta; `insufficient_coins` on a kiosk means "session over", not "buy more". Schema: `kiosks.session_coins`, `session_started_at`; `settle_kiosk_round` applies the same economy as `settle_round`. | server + SQL | replaces "kiosk coins are cosmetic" |
 | C2 | **Kiosk screens.** Attract/idle state; play; win/lose feedback; the WIN modal (code, 30 s, Claim); the EXIT modal (20 s, Done); the abandon countdown (visible 30 s, then a flush animation to attract, client sends `kiosk_reset`); reconnecting state; and a hard guarantee that no email, task, leaderboard, or lead-capture UI can render in kiosk mode. Frames: `kiosk_reset` on Claim/Done; `kiosk_session` after every change. | client | the booth's money moments |
 | C3 | **Web identity.** The OTP entry screen (8 digits) that does not exist yet; after verification, the masked email in the header with "scores saved to this email"; sign-out; what an unverified player sees instead ("play as guest - add your email to be ranked"). | client + small server | uses the frames from ticket 4 |
+| C3a | **Session policy.** The player token carries an expiry (30 days) and a version; on `welcome`, a token older than 7 days is replaced with a fresh one (sliding renewal - active players never log out); expired or bad tokens start a new anonymous player. Re-login = OTP: verifying an email that already belongs to a player switches the session to that player (the code proves ownership; the anonymous session is dropped). Revocation = bump the version. Kiosks never store a token. | server + client | replaces S1 and S4 |
 | C4 | **Live, masked leaderboard.** `leaderboard()` returns masked emails computed server-side (raw address never leaves the server); the server pushes a `leaderboard` frame to web clients whenever a top-10 record changes (debounced to 1 s); the client re-renders from the frame. | server + client | |
 | C4b | Leaderboard motion: rows animate to their new position; the player's own row highlighted; "you moved up" cue. | client polish | after C4 |
 | C5 | **Tasks and gifts on the web.** Every reward shown comes from the server (`claim_task` / `free_refill` return the reward and the new balance); the tasks screen reflects claimed/repeatable state from the server, not localStorage. | server + client | closes the "no reward field" gap |
@@ -38,7 +39,9 @@ Tickets 1-7 in `box-plan.md`: database on the box, continuous price feed, game s
 | D1 | **Monitoring for the campaign.** Dozzle in compose (live container logs in a browser, behind Cloudflare Access or Caddy basic auth), a `/status` page (feed sources, rounds/min, open sockets, coupons left), and one alert (feed silent > 60 s, or server restart) to a phone. | ops | before launch |
 | Q1 | **Blind E2E for every scenario above**, written from the contract by a different agent: first-five-tries win, half-hour no-streak, broke exit, walk-away reset, web email flow, masked live leaderboard. | tests | |
 
-Order: C1 -> C2 (the booth), then C3 -> C4 -> C5 -> C6 -> C7 (the web), D1 alongside, Q1 as each lands, C4b last.
+Order: C1 -> C2 (the booth), then C3 -> C3a -> C4 -> C5 -> C6 -> C7 (the web), D1 alongside, Q1 as each lands, C4b last.
+
+**Design fidelity rule for every client ticket:** new screens and states reuse the existing components, classes, colour tokens and typography only - no new colours, fonts or layout systems; every ticket attaches screenshots of each new screen next to an existing one for review.
 
 Product defaults taken (say if wrong): kiosk starts each visitor at 1000 coins with the same levers as web; WIN modal 30 s; EXIT modal 20 s; abandon countdown shows after 30 s idle and flushes at 60 s (matching the server's reset); masked email keeps the first and last character of the local part and the full domain.
 
@@ -48,10 +51,10 @@ Product defaults taken (say if wrong): kiosk starts each visitor at 1000 coins w
 
 | # | Ticket |
 |---|---|
-| S1 | Player token expiry and revocation; secret rotation procedure |
+| S1 | (folded into C3a) secret rotation procedure only |
 | S2 | Per-socket rate limits (play, request_otp per email and per IP, message flood cut-off) |
 | S3 | Kiosk secret out of the URL (one-time exchange for a session cookie); scrub `k=` from Caddy logs |
-| S4 | Email merge rule when a verified email already belongs to another player |
+| S4 | (folded into C3a: OTP on a known email logs into that player) |
 | S5 | Postgres least privilege: an `app` role that can only execute the game functions |
 | S6 | Backups: nightly `pg_dump` to object storage, one rehearsed restore |
 | S7 | Ops runbook for a non-engineer; feed-silence and restart alerts (D1 provides the plumbing) |
@@ -64,4 +67,4 @@ Product defaults taken (say if wrong): kiosk starts each visitor at 1000 coins w
 | S14 | Kiosk hygiene: never persist a player token on a kiosk browser; clear per-player UI state between visitors (partly covered by C1/C2) |
 | S15 | Least privilege, extended (with S5) |
 | S16 | Leaderboard integrity at prize time: one row per verified email, export proves it |
-| S17 | MT5 price feed via an investor login (MetaApi or a terminal bridge) as priority-0 source |
+| S17 | MT5 price feed: the `mt5` source is being built into `server/feed.js` now behind `METAAPI_TOKEN` + `METAAPI_ACCOUNT_ID` (S17-prep, mock-tested); live evaluation with `demo/feed-compare.mjs` the day the investor login exists (`mt5-feed.md`) |

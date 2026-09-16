@@ -31,6 +31,7 @@ rules that catch people out:
 - **Never open `.env`.** It holds real secrets and anything you read goes to your model provider. If a
   ticket needs Supabase access, use `.env.public` (public URL + anon key) and nothing else; if a
   ticket seems to need a real secret, stop and report - the orchestrator runs that step.
+- **Design fidelity.** Any new screen or state reuses the existing components, CSS classes, colour tokens and typography only; no new colours, fonts, spacing systems or libraries. Attach a screenshot of every new screen beside an existing one in your report.
 - **The client UI belongs to the marketing lead and is in flux.** Backend touches it only through
   `src/api/`; do not restructure or restyle components.
 - **A question you cannot answer from the ticket and the spec is a defect in the ticket, not
