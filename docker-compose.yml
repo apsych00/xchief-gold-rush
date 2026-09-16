@@ -1,0 +1,58 @@
+# The whole box: Postgres, the game server, and Caddy (docs/box-spec.md 1.7).
+#
+#   cp .env.box.example .env   # fill it in first (see docs/box-deploy.md)
+#   docker compose up -d --build
+#
+# Only Caddy publishes ports. The database is reachable from the compose
+# network as db:5432 and from nowhere else; ops scripts run inside the server
+# container with `docker compose exec server ...`.
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is missing - cp .env.box.example .env and fill it in}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    # Everything the game server reads (DATABASE_URL, FINNHUB_TOKEN,
+    # PLAYER_TOKEN_SECRET, ELASTIC_API_KEY, OTP_SENDER, PORT) comes from .env.
+    env_file: .env
+    # On start the image applies db/migrations + db/seed.sql (idempotent) and
+    # then runs server/index.js (ticket 3), which listens on PORT (8787).
+    depends_on:
+      db:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The built frontend (npm run build). The mount is live: a new dist/ is
+      # served immediately, no container restart needed.
+      - ./dist:/srv/app:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

@@ -1,16 +1,22 @@
 /**
- * Shared helper for the ops scripts. All database access goes through the
- * Supabase Management API:
- *   POST https://api.supabase.com/v1/projects/{ref}/database/query
- *   Authorization: Bearer {token}   body: {"query": "<sql>"}
+ * Shared helper for the ops scripts. All database access is a direct Postgres
+ * connection through `pg`, configured by one environment variable:
+ *   DATABASE_URL=postgresql://user:password@host:5432/dbname
  *
- * Credentials come from process.env only (SUPABASE_PROJECT_REF,
- * SUPABASE_ACCESS_TOKEN). They are never read from a .env file and never
- * printed. With --dry-run no request is made: the SQL is printed and the
- * command exits 0, which is how these scripts are validated without a token.
+ * On the deployed box the database is not reachable from outside the Docker
+ * network, so run these through the server container (npm run box:kiosk:new,
+ * ... see docs/box-deploy.md). Against a local dev database set DATABASE_URL
+ * yourself (db/run-tests.sh starts a throwaway postgres:16).
+ * Credentials come from process.env only. They are never read from a .env
+ * file and never printed. With --dry-run no connection is made: the SQL is
+ * printed and the command exits 0, which is how these scripts are validated
+ * without a database.
  */
 
 import crypto from 'node:crypto';
+import pg from 'pg';
+
+const { Pool } = pg;
 
 let dryRun = false;
 
@@ -40,7 +46,7 @@ function requireEnv(name) {
   if (!value) {
     console.error(
       `Missing required environment variable ${name}. ` +
-        `Set it alongside the command, e.g. SUPABASE_PROJECT_REF=... SUPABASE_ACCESS_TOKEN=... ${invocation}`,
+        `Set it alongside the command, e.g. ${name}='postgresql://postgres:<password>@localhost:5432/postgres' ${invocation}`,
     );
     process.exit(1);
   }
@@ -55,7 +61,7 @@ export function setInvocation(form) {
 }
 
 /**
- * Run SQL against the project. Returns the result rows (an empty array for
+ * Run SQL against the database. Returns the result rows (an empty array for
  * statements that return nothing). In dry-run mode prints the SQL and returns
  * [] without touching the network or the environment.
  */
@@ -65,42 +71,18 @@ export async function runQuery(sql) {
     console.log(sql);
     return [];
   }
-  const ref = requireEnv('SUPABASE_PROJECT_REF');
-  const token = requireEnv('SUPABASE_ACCESS_TOKEN');
-  const url = `https://api.supabase.com/v1/projects/${encodeURIComponent(ref)}/database/query`;
+  const connectionString = requireEnv('DATABASE_URL');
+  const pool = new Pool({ connectionString, max: 1 });
   let res;
   try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ query: sql }),
-    });
+    res = await pool.query(sql);
   } catch (err) {
-    console.error(`Management API request failed: ${err.message}`);
+    console.error(`Query failed: ${err.message}`);
     process.exit(1);
+  } finally {
+    await pool.end();
   }
-  const text = await res.text();
-  if (!res.ok) {
-    console.error(`Management API error (HTTP ${res.status}): ${text || res.statusText}`);
-    process.exit(1);
-  }
-  if (!text) return [];
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    console.error(`Management API returned a non-JSON response: ${text.slice(0, 500)}`);
-    process.exit(1);
-  }
-  if (Array.isArray(data)) return data;
-  if (typeof data.error === 'string' && data.error) {
-    console.error(`Query failed: ${data.error}`);
-    process.exit(1);
-  }
-  return Array.isArray(data?.result) ? data.result : [];
+  return res.rows ?? [];
 }
 
 /** Print rows as a simple aligned text table. */
