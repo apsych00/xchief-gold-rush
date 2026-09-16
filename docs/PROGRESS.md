@@ -46,7 +46,8 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 |---|---|---|
 | C1 kiosk session on the server | **done** | 141 pgTAP, 20 integration, lint, unit; `kiosk_session` frame, `kiosk_reset`, 60 s idle sweep. Merged `c91d294`. |
 | C2 kiosk screens (attract, WIN, EXIT, abandon countdown) | building | Sonnet builder, dispatched after C1 merged |
-| C3 / C3a / C4 web identity, session policy, live masked leaderboard | queued | spec ready |
+| C3a session policy (30-day versioned token, sliding renewal, OTP re-login, revocation) | **done** | 146 pgTAP, 23 integration, 67 unit; merged fast-forward |
+| C3 + C4 web identity screen and live masked leaderboard | building | Sonnet builder, dispatched after C3a merged |
 | C5-C7 tasks, win/lose, broke on the web | queued | |
 | D1 monitoring | **done** | `/status` (200, counts + feed sources), `/ops` page (screenshot `reports/d1-ops.png`), `/logs` 401 without and 200 with the password, start alert seen in the server log; lint clean, 40 unit, 16 integration. Merged `4839072`. |
 | D2 one-command deploy + auto-deploy on push | **done** | `deploy/deploy.sh`, `deploy/autodeploy.sh`, `box-deploy.md`; commit `acc3b0d` |
@@ -74,6 +75,7 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 
 ## Log
 
+- 2026-09-16: C3a session policy merged. Tokens carry expiry and version; a verified email entered on a new device logs into the existing player. `revoke_player_sessions` documented for the operator.
 - 2026-09-16: C1 (kiosk session on the server) and S17-prep (MT5 source, plug-and-play) merged. The local compose stack was recreated from scratch for the new kiosk columns. Review fix on S17: MT5 ticks are stamped with arrival time, not broker time, so staleness never trips on a broker timezone.
 - 2026-09-16: D1 monitoring merged. Operator pages on the local stack: http://localhost:8080/ops and http://localhost:8080/logs (user `admin`, the password whose hash is in `.env.box`). Trap found by the builder: every `$` in the bcrypt hash must be doubled in `.env.box` or compose silently blanks it; documented in `.env.box.example` and the checklist.
 - 2026-09-16: published price now carries gold's third decimal (was rounded to 2, collapsing real moves); live: 37 distinct moves at 3 dp vs 35 at 2 dp over 12 s. MT5 feed specced (`mt5-feed.md`) with a liveness harness (`demo/feed-compare.mjs`).
