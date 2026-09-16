@@ -1,13 +1,16 @@
-// Blind E2E suite for the "Player-visible promises" in docs/test-contract.md.
-// Written against the contract only: no reads of src/api/, supabase/functions/ or
-// supabase/migrations/. Runs headless against the dev server (npm run dev, BASE_URL
-// default http://localhost:5173) with the public Supabase config from .env.
+// Blind E2E suite for the "Player-visible promises" in docs/test-contract.md, adapted for the
+// box's game socket (docs/box-plan.md, docs/box-spec.md). Runs headless against the dev server
+// (npm run dev, BASE_URL default http://localhost:5173) with the box's game server already
+// running (PORT 8787) and VITE_GAME_WS pointed at it from .env - see playwright.config.js.
 //
-// Server-side verification recipe (from the ticket): POST {VITE_SUPABASE_URL}/rest/v1/rpc/get_me
-// with apikey + Authorization: Bearer <access token>, the token read from the localStorage
-// entry Supabase's client stores (key starts with "sb-", ends with "-auth-token").
+// Server-side verification recipe (ticket 5): the client's dev-only window.__xchief hook
+// (src/api/socket.js, guarded by import.meta.env.DEV) exposes the player token the socket
+// authenticated with; this file opens its own tiny WebSocket to the same server, authenticates
+// with that same token, and sends get_me - the same round trip the app itself makes, run
+// independently so the assertion cannot be fooled by anything the page renders.
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
+import { WebSocket } from 'ws';
 
 function readEnv() {
   const out = {};
@@ -19,52 +22,67 @@ function readEnv() {
   return out;
 }
 const ENV = readEnv();
+const GAME_WS = ENV.VITE_GAME_WS;
 
-// Read the Supabase session's access token from localStorage the way an end user's
-// browser would hold it after the client authenticated.
-async function accessToken(page) {
-  // The anonymous sign-in finishes shortly after the first paint; wait for the session
-  // to be persisted rather than reading localStorage on the first tick.
+// Read the socket's player token off the page's dev-only hook the way the app itself holds it
+// (src/api/socket.js sets window.__xchief.token once `welcome` lands).
+async function tokenFromWindow(page) {
   const deadline = Date.now() + 10000;
-  let token = await readToken(page);
+  let token = await page.evaluate(() => window.__xchief && window.__xchief.token);
   while (!token && Date.now() < deadline) {
     await page.waitForTimeout(250);
-    token = await readToken(page);
+    token = await page.evaluate(() => window.__xchief && window.__xchief.token);
   }
   return token;
 }
 
-async function readToken(page) {
-  return page.evaluate(() => {
-    const key = Object.keys(localStorage).find((k) => k.startsWith('sb-') && k.endsWith('-auth-token'));
-    if (!key) return null;
-    try {
-      const stored = JSON.parse(localStorage.getItem(key));
-      return stored?.session?.access_token ?? stored?.access_token ?? null;
-    } catch {
-      return null;
-    }
+/** Authenticates a fresh socket with `token` and returns the get_me row - a second, independent
+ * client asking the server the same question the app asks itself. */
+function getMeViaSocket(token) {
+  return new Promise((resolve, reject) => {
+    expect(GAME_WS, 'VITE_GAME_WS is not set in .env: the box game server is not configured').toBeTruthy();
+    const ws = new WebSocket(GAME_WS);
+    const timer = setTimeout(() => {
+      ws.terminate();
+      reject(new Error('timed out waiting for get_me over the socket'));
+    }, 8000);
+    let authed = false;
+    ws.on('open', () => ws.send(JSON.stringify({ type: 'auth', token })));
+    ws.on('message', (data) => {
+      let frame;
+      try {
+        frame = JSON.parse(data.toString());
+      } catch {
+        return;
+      }
+      if (frame.type === 'welcome') {
+        authed = true;
+        ws.send(JSON.stringify({ type: 'get_me' }));
+      } else if (authed && frame.type === 'me') {
+        clearTimeout(timer);
+        ws.close();
+        resolve(frame);
+      } else if (frame.type === 'error') {
+        clearTimeout(timer);
+        ws.close();
+        reject(Object.assign(new Error(frame.code), { code: frame.code }));
+      }
+    });
+    ws.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 
 async function getMe(page) {
-  const token = await accessToken(page);
+  const token = await tokenFromWindow(page);
   expect(
     token,
-    'client is not wired to Supabase: no sb-*-auth-token session in localStorage after playing, ' +
-      'so the server-side promise cannot be verified (src/api/ does not exist; profile is local-only)',
+    'client is not wired to the game socket: no window.__xchief.token after playing, ' +
+      'so the server-side promise cannot be verified',
   ).toBeTruthy();
-  const res = await fetch(`${ENV.VITE_SUPABASE_URL}/rest/v1/rpc/get_me`, {
-    method: 'POST',
-    headers: {
-      apikey: ENV.VITE_SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: '{}',
-  });
-  expect(res.status, `get_me returned HTTP ${res.status}`).toBe(200);
-  return res.json();
+  return getMeViaSocket(token);
 }
 
 // Coins as rendered in the top balance chip, locale digits stripped to a number.
@@ -98,13 +116,35 @@ async function playRound(page, dir = 'up') {
 test.describe('player-visible promises', () => {
   test.setTimeout(180000);
 
-  test('1. a played round shows a countdown then a verdict, and screen coins equal the server coins', async ({
+  test('1. server mode is active, and a played round shows a countdown then a verdict decided by the server, with screen coins equal to the server coins', async ({
     page,
   }) => {
     await startGame(page);
-    const { outcome, elapsed } = await playRound(page, 'up');
-    expect(['win', 'lose', 'flat']).toContain(outcome);
+    await expect
+      .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
+        message: 'window.__xchief.mode must be "server" - the client is not wired to the game socket',
+        timeout: 10000,
+      })
+      .toBe('server');
+
+    const t0 = Date.now();
+    await page.click('.btn-up');
+    await expect(page.locator('.countdown')).toBeVisible({ timeout: 3000 });
+
+    // Price ticks keep arriving throughout the round and would overwrite
+    // window.__xchief.lastFrame within a second or two of settling, so this catches the
+    // transition to round_settled the instant it happens rather than reading a stale snapshot
+    // after the fact.
+    await page.waitForFunction(() => window.__xchief && window.__xchief.lastFrame && window.__xchief.lastFrame.type === 'round_settled', {
+      timeout: 20000,
+    });
+    const elapsed = Date.now() - t0;
     expect(elapsed, 'the verdict must not appear sooner than ~5 s').toBeGreaterThanOrEqual(4500);
+
+    await expect(page.locator('.pane-result')).toBeVisible({ timeout: 5000 });
+    const text = await page.locator('.pane-result').innerText();
+    const outcome = /WIN/.test(text) ? 'win' : /MISS/.test(text) ? 'lose' : /FLAT/.test(text) ? 'flat' : 'unknown';
+    expect(['win', 'lose', 'flat']).toContain(outcome);
 
     const me = await getMe(page);
     expect(await screenCoins(page), 'coins on screen must equal the server coins after settling').toBe(me.coins);
@@ -119,8 +159,8 @@ test.describe('player-visible promises', () => {
     await expect(page.locator('.countdown')).toBeVisible({ timeout: 3000 });
     await page.waitForTimeout(1000);
     await page.reload();
-    // The server round takes ~8 s from the click (5 s clock + two price reads + settle).
-    // Reviewer note: the contract promises "never a free retry", not a settle deadline, so poll.
+    // The server round takes ~5 s from the click plus round-trip time; the reload drops the
+    // page but the server's own timer still fires and settles it regardless.
     let after = await getMe(page);
     const deadline = Date.now() + 15000;
     while (after.rounds < before.rounds + 1 && Date.now() < deadline) {

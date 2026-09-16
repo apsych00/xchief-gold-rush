@@ -6,6 +6,7 @@ import { enabled as apiEnabled } from './api/client.js';
 import * as api from './api/game.js';
 import { ensureSession } from './api/session.js';
 import { getKioskSecret, playKioskRound } from './api/kiosk.js';
+import { connect as connectSocket, onSettled } from './api/socket.js';
 
 export const ROUND_SECONDS = 5;
 export const LEVERS = ECON.levers;
@@ -56,6 +57,7 @@ export function useGame() {
   const [state, setState] = useState(initialGame);
   const [profile, setProfile] = useState(loadProfile);
   const timer = useRef(null);
+  const settlingTimer = useRef(null);
   const phaseRef = useRef(state.phase);
   const dragRef = useRef(false);
   const priceRef = useRef(null);
@@ -75,9 +77,14 @@ export function useGame() {
   // Hydrate from the server once on load: sign in anonymously (or resume the
   // existing session) then pull the real balance/streak/record. Kiosk mode
   // has no session of its own - its identity is the bearer secret checked on
-  // every round - so it skips this and stays cosmetic-local.
+  // every round - so it skips this and stays cosmetic-local, but it still
+  // needs the socket open (auth {kiosk}) to receive prices and verdicts.
   useEffect(() => {
-    if (!apiEnabled || IS_KIOSK) return undefined;
+    if (!apiEnabled) return undefined;
+    if (IS_KIOSK) {
+      connectSocket();
+      return undefined;
+    }
     let cancelled = false;
     ensureSession()
       .then(() => api.getMe())
@@ -108,6 +115,8 @@ export function useGame() {
   const stopTimer = useCallback(() => {
     if (timer.current) clearInterval(timer.current);
     timer.current = null;
+    if (settlingTimer.current) clearTimeout(settlingTimer.current);
+    settlingTimer.current = null;
   }, []);
 
   const patch = useCallback((p) => setState((s) => ({ ...s, ...p })), []);
@@ -209,71 +218,88 @@ export function useGame() {
     }));
   }, []);
 
-  // Applies a server verdict (web or kiosk) in place of the local settle().
-  // Kiosk coins/lever are cosmetic (the spec: "coins/levers are ignored for
-  // kiosk"), so a kiosk win/lose still runs the local combo math on top of
-  // the server-decided outcome and streak.
-  const applyVerdict = useCallback((isKiosk, verdict) => {
-    const cur = stateRef.current;
-    const p = profileRef.current;
-    let next = { ...p, rounds: p.rounds + 1 };
-    let result;
-    let endPrice;
-    if (isKiosk) {
-      endPrice = priceRef.current ?? cur.start;
-      const stake = stakeFor(levRef.current);
-      if (verdict.outcome === 'win') {
-        const mult = comboMult(p.streak);
-        const gain = Math.round(stake * mult);
-        const coins = p.coins + gain;
+  // Applies a server verdict (web or kiosk) in place of the local settle(). Every field the
+  // frame carries (outcome, delta/coins/record/best_streak for web; outcome/streak/coupon/
+  // coupons_exhausted for kiosk) is taken as-is - no local price comparison, no recomputed
+  // win/lose. The kiosk frame carries no coins at all (docs/box-plan.md, "coins on the kiosk
+  // are cosmetic"), so its win/lose amount is a display-only combo calculation laid on top of
+  // the server-decided outcome and streak; it never feeds back into what the server decided.
+  //
+  // `silent` is for a verdict that arrives for a round the player is no longer watching (the
+  // "missed verdict" delivered once on reconnect, docs/box-plan.md 1.3): the profile is still
+  // updated so the balance stays correct, but there is no result pane to show it in.
+  const applyVerdict = useCallback(
+    (isKiosk, verdict, { silent = false } = {}) => {
+      const p = profileRef.current;
+      let next = { ...p, rounds: p.rounds + 1 };
+      let result;
+      const endPrice = verdict.end_price;
+      if (isKiosk) {
+        const stake = stakeFor(levRef.current);
+        next.streak = verdict.streak;
+        next.bestStreak = Math.max(p.bestStreak, verdict.streak);
+        if (verdict.outcome === 'win') {
+          const mult = comboMult(p.streak);
+          const gain = Math.round(stake * mult);
+          const coins = p.coins + gain;
+          next.coins = coins;
+          next.record = Math.max(p.record, coins);
+          next.wins = p.wins + 1;
+          result = { outcome: 'win', stake, delta: gain, mult, streak: verdict.streak, badge: null, coupon: verdict.coupon || null };
+        } else if (verdict.outcome === 'lose') {
+          next.coins = Math.max(0, p.coins - stake);
+          result = { outcome: 'lose', stake, delta: -stake, mult: 1, streak: 0, badge: null, coupon: null };
+        } else {
+          result = { outcome: 'flat', stake, delta: 0, mult: comboMult(p.streak), streak: verdict.streak, badge: null, coupon: null };
+        }
+        if (!silent && verdict.coupons_exhausted) toast('Prize pool empty - please tell the staff', 5000);
+      } else {
         next = {
           ...next,
-          coins,
-          record: Math.max(p.record, coins),
+          coins: verdict.coins,
+          record: verdict.record,
           streak: verdict.streak,
-          bestStreak: Math.max(p.bestStreak, verdict.streak),
-          wins: p.wins + 1,
+          bestStreak: Math.max(p.bestStreak, verdict.best_streak ?? verdict.streak),
+          wins: verdict.outcome === 'win' ? p.wins + 1 : p.wins,
         };
-        result = { outcome: 'win', stake, delta: gain, mult, streak: verdict.streak, badge: null, coupon: verdict.coupon || null };
-      } else if (verdict.outcome === 'lose') {
-        next = { ...next, coins: Math.max(0, p.coins - stake), streak: 0 };
-        result = { outcome: 'lose', stake, delta: -stake, mult: 1, streak: 0, badge: null, coupon: null };
-      } else {
-        result = { outcome: 'flat', stake, delta: 0, mult: comboMult(p.streak), streak: p.streak, badge: null, coupon: null };
+        result = {
+          outcome: verdict.outcome,
+          stake: stakeFor(levRef.current),
+          delta: verdict.delta,
+          mult: verdict.mult,
+          streak: verdict.streak,
+          badge: null,
+          coupon: null,
+        };
       }
-    } else {
-      endPrice = verdict.end_price;
-      next = {
-        ...next,
-        coins: verdict.coins,
-        record: verdict.record,
-        streak: verdict.streak,
-        bestStreak: Math.max(p.bestStreak, verdict.streak),
-        wins: verdict.outcome === 'win' ? p.wins + 1 : p.wins,
-      };
-      result = {
-        outcome: verdict.outcome,
-        stake: stakeFor(levRef.current),
-        delta: verdict.delta,
-        mult: verdict.mult,
-        streak: verdict.streak,
-        badge: null,
-        coupon: null,
-      };
-    }
-    profileRef.current = next;
-    setProfile(next);
-    phaseRef.current = 'result';
-    setState((s) => ({
-      ...s,
-      phase: 'result',
-      price: endPrice,
-      end: endPrice,
-      remaining: 0,
-      history: [...s.history, endPrice],
-      result,
-    }));
-  }, []);
+      profileRef.current = next;
+      setProfile(next);
+      if (silent) return;
+      phaseRef.current = 'result';
+      setState((s) => ({
+        ...s,
+        phase: 'result',
+        price: endPrice,
+        end: endPrice,
+        remaining: 0,
+        history: [...s.history, endPrice],
+        result,
+      }));
+    },
+    [toast],
+  );
+
+  // The verdict for a round arrives on its own, once the server's 5-second timer fires and it
+  // has read the price itself (docs/box-plan.md 1.3) - it is not the reply to `play`. This is
+  // the one place both web and kiosk hear it.
+  useEffect(() => {
+    if (!apiEnabled) return undefined;
+    return onSettled((verdict) => {
+      const wasRunning = phaseRef.current === 'running';
+      if (wasRunning) stopTimer();
+      applyVerdict(IS_KIOSK, verdict, { silent: !wasRunning });
+    });
+  }, [applyVerdict, stopTimer]);
 
   const startRound = useCallback(
     (dir) => {
@@ -301,9 +327,16 @@ export function useGame() {
             stopTimer();
             settle(dir, price);
           } else {
-            // The countdown is purely visual once apiEnabled: it holds here
-            // until the server verdict below arrives.
+            // The countdown is purely visual once apiEnabled: it holds here until the
+            // round_settled verdict arrives via onSettled above. If it takes more than 2 s
+            // past the countdown's own end, say so rather than sit on a frozen "0" - never
+            // fabricate a verdict (docs/box-plan.md, "Late verdict").
             setState((c) => ({ ...c, remaining: 0, history: [...c.history, price].slice(-MAX_HISTORY) }));
+            if (!settlingTimer.current) {
+              settlingTimer.current = setTimeout(() => {
+                if (phaseRef.current === 'running') toast('Settling…', 6000);
+              }, 2000);
+            }
           }
           return;
         }
@@ -318,9 +351,11 @@ export function useGame() {
         const lever = levRef.current;
         const call = IS_KIOSK ? playKioskRound(dir) : api.playRound(dir, lever);
         call
-          .then((verdict) => {
-            stopTimer();
-            applyVerdict(IS_KIOSK, verdict);
+          .then((opened) => {
+            // round_opened only, not the verdict (docs/box-plan.md 1.3): the visual countdown
+            // is already running above; this just corrects the pinned start price to the
+            // server's own. The verdict itself arrives later, through onSettled.
+            patch({ start: opened.start_price });
           })
           .catch((err) => {
             stopTimer();
@@ -330,7 +365,7 @@ export function useGame() {
           });
       }
     },
-    [applyVerdict, patch, settle, stopTimer, toast],
+    [patch, settle, stopTimer, toast],
   );
 
   const setLevFromEvent = useCallback(
@@ -355,6 +390,11 @@ export function useGame() {
           .claimTask(taskId)
           .then((res) => {
             const p = profileRef.current;
+            // The socket's claim_task reply is the player's current state, not the reward
+            // amount (server/index.js sends `me`, not the claim_task RPC's own {coins, reward}
+            // json) - the coin delta the server actually applied is what res.coins - p.coins
+            // says, so the toast reads that rather than guessing at a reward figure.
+            const gained = res.coins - p.coins;
             const next = {
               ...p,
               coins: res.coins,
@@ -363,7 +403,7 @@ export function useGame() {
             };
             profileRef.current = next;
             setProfile(next);
-            toast(`+${res.reward}`);
+            toast(`+${gained}`);
           })
           .catch((err) => toast(err?.code || 'error'));
         return true;
@@ -394,10 +434,11 @@ export function useGame() {
         .freeRefill()
         .then((res) => {
           const p = profileRef.current;
+          const gained = res.coins - p.coins; // see the same note in claimTask above
           const next = { ...p, coins: res.coins, record: Math.max(p.record, res.coins), freeRefillUsed: true };
           profileRef.current = next;
           setProfile(next);
-          toast(`+${res.reward}`);
+          toast(`+${gained}`);
         })
         .catch((err) => toast(err?.code || 'error'));
       return true;
