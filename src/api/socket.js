@@ -63,6 +63,7 @@ function makeEmitter() {
 const priceEmitter = makeEmitter();
 const statusEmitter = makeEmitter();
 const settledEmitter = makeEmitter();
+const identityEmitter = makeEmitter();
 
 let ws = null;
 let started = false;
@@ -154,6 +155,21 @@ function handleWelcome(frame) {
   notifyStatus();
 }
 
+/**
+ * A `me` frame only ever carries a token for the re-login case (docs/layers.md C3a,
+ * server/index.js's verify_otp handler): the code proved ownership of an email that already
+ * belongs to a different, verified player, so the server switched this socket's identity and
+ * sent a token for that player instead of the one welcome issued. Every other `me` reply
+ * (get_me, claim_task, free_refill, an ordinary first-time verify_otp) has no token field and
+ * changes nothing here - the socket is still the same player it always was.
+ */
+function handleMe(frame) {
+  if (!frame.token) return;
+  token = frame.token;
+  storeToken(token);
+  identityEmitter.emit(payloadOf(frame));
+}
+
 function handleTick(frame) {
   lastTickAt = Date.now();
   evaluateQuiet();
@@ -172,6 +188,10 @@ function handleMessage(frame) {
       break;
     case 'round_settled':
       settledEmitter.emit(payloadOf(frame));
+      break;
+    case 'me':
+      handleMe(frame);
+      settlePending(frame);
       break;
     case 'ping':
       // ws-level pongs answer the server's heartbeat automatically; nothing to send back.
@@ -250,6 +270,12 @@ export function onStatus(cb) {
 
 export function onSettled(cb) {
   return settledEmitter.on(cb);
+}
+
+/** Fires with the fresh `me` row when verify_otp switches this socket to a different, existing
+ * player (docs/layers.md C3a) - never on an ordinary get_me/claim_task/free_refill reply. */
+export function onIdentityChange(cb) {
+  return identityEmitter.on(cb);
 }
 
 /** Resolves with round_opened; rejects with an Error whose .code is the server's error code. */

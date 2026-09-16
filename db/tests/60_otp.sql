@@ -1,6 +1,7 @@
 -- Invariant: login codes (db/migrations/0011_otp_codes.sql, docs/box-plan.md 1.5) - an 8-digit
 -- code is stored only as a hash, five wrong guesses lock it out, an expired code cannot verify,
--- and a right code never overwrites another player's already-confirmed email.
+-- and a right code for an email already confirmed elsewhere logs the caller into that existing
+-- player (docs/layers.md C3a: "re-login by OTP") rather than overwriting anything.
 begin;
 
 select plan(16);
@@ -80,7 +81,8 @@ select throws_like(
   'a code past its expiry raises expired_code even with the right digits'
 );
 
--- a second player verifying an email already confirmed elsewhere is refused -
+-- a second player entering the right code for an email already confirmed elsewhere is a
+-- re-login, not a refusal --------------------------------------------------
 select tests.create_anonymous_player() as p4 \gset
 select public.request_otp_code(:'p4'::uuid, 'shared@example.com') as code4 \gset
 select is(
@@ -91,14 +93,14 @@ select is(
 
 select tests.create_anonymous_player() as p5 \gset
 select public.request_otp_code(:'p5'::uuid, 'shared@example.com') as code5 \gset
-select throws_like(
-  $$ select public.verify_otp_code('$$ || :'p5' || $$'::uuid, 'shared@example.com', '$$ || :'code5' || $$') $$,
-  '%email_taken%',
-  'a second player verifying the right code for an already-confirmed email gets email_taken'
+select is(
+  public.verify_otp_code(:'p5'::uuid, 'shared@example.com', :'code5'),
+  'logged_in:' || :'p4',
+  'a second player entering the right code for shared@example.com is told to log in as the first player, not email_taken'
 );
 select ok(
   (select email from public.players where id = :'p5'::uuid) is null,
-  'email_taken changes nothing on the second player'
+  'the re-login changes nothing on the second (anonymous) player - no merge, no delete'
 );
 
 select * from finish();

@@ -27,7 +27,8 @@ if (!process.env.DATABASE_URL) {
 }
 process.env.PLAYER_TOKEN_SECRET ??= 'dev-secret';
 
-const { createApp } = await import('../../server/index.js');
+const { createApp, signToken } = await import('../../server/index.js');
+const DAY = 24 * 60 * 60;
 
 const DEV_KIOSK_SECRET = 'dev-kiosk-secret-0001';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -467,6 +468,84 @@ test('the idle sweep resets a stale kiosk session and pushes kiosk_session witho
   } finally {
     await sweepApp.close();
   }
+});
+
+// --- session policy (ticket C3a) --------------------------------------------------------
+
+test('a token issued more than 7 days ago is renewed on welcome; a younger one is sent back unchanged', async () => {
+  const ws1 = connect();
+  await whenOpen(ws1);
+  const welcome1 = await authAnonymous(ws1);
+  const playerId = welcome1.me.id;
+  ws1.close();
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+
+  const staleToken = signToken(playerId, 1, nowSeconds - 8 * DAY);
+  const wsStale = connect();
+  await whenOpen(wsStale);
+  send(wsStale, { type: 'auth', token: staleToken });
+  const staleWelcome = await nextFrame(wsStale, (f) => f.type === 'welcome');
+  assert.equal(staleWelcome.me.id, playerId, 'still the same player');
+  assert.notEqual(staleWelcome.token, staleToken, 'a token over 7 days old is replaced');
+  wsStale.close();
+
+  const freshToken = signToken(playerId, 1, nowSeconds - 3 * DAY);
+  const wsFresh = connect();
+  await whenOpen(wsFresh);
+  send(wsFresh, { type: 'auth', token: freshToken });
+  const freshWelcome = await nextFrame(wsFresh, (f) => f.type === 'welcome');
+  assert.equal(freshWelcome.me.id, playerId, 'still the same player');
+  assert.equal(freshWelcome.token, freshToken, 'a token under 7 days old is sent back unchanged');
+  wsFresh.close();
+});
+
+test('an expired token, a tampered signature, and the old two-field format all yield a fresh player, never an error', async () => {
+  const ws0 = connect();
+  await whenOpen(ws0);
+  const welcome0 = await authAnonymous(ws0);
+  const originalId = welcome0.me.id;
+  ws0.close();
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const expiredToken = signToken(originalId, 1, nowSeconds - 31 * DAY);
+
+  const validToken = signToken(originalId, 1, nowSeconds);
+  const lastChar = validToken.at(-1);
+  const tamperedToken = validToken.slice(0, -1) + (lastChar === '0' ? '1' : '0');
+
+  const oldFormatToken = `${originalId}.${'a'.repeat(64)}`;
+
+  for (const token of [expiredToken, tamperedToken, oldFormatToken]) {
+    const ws = connect();
+    await whenOpen(ws);
+    send(ws, { type: 'auth', token });
+    const welcome = await nextFrame(ws, (f) => f.type === 'welcome' || f.type === 'error');
+    assert.equal(welcome.type, 'welcome', `token should yield a fresh player, not an error: ${token}`);
+    assert.notEqual(welcome.me.id, originalId, 'a bad token never resumes the original player');
+    assert.equal(welcome.me.coins, 1000, 'a fresh anonymous player');
+    ws.close();
+  }
+});
+
+test('revoke_player_sessions invalidates every token already issued for that player', async () => {
+  const ws1 = connect();
+  await whenOpen(ws1);
+  const welcome1 = await authAnonymous(ws1);
+  const token = welcome1.token;
+  const playerId = welcome1.me.id;
+  ws1.close();
+
+  await pool.query('select public.revoke_player_sessions($1)', [playerId]);
+
+  const ws2 = connect();
+  await whenOpen(ws2);
+  send(ws2, { type: 'auth', token });
+  const welcome2 = await nextFrame(ws2, (f) => f.type === 'welcome' || f.type === 'error');
+  assert.equal(welcome2.type, 'welcome');
+  assert.notEqual(welcome2.me.id, playerId, 'the revoked token no longer resumes the original player');
+  assert.equal(welcome2.me.coins, 1000, 'a fresh anonymous player, not an error');
+  ws2.close();
 });
 
 // --- http --------------------------------------------------------------------------------

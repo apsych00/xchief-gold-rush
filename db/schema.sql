@@ -82,6 +82,10 @@ create table public.players (
   wins int not null default 0,
   rounds int not null default 0,
   free_refill_used boolean not null default false,
+  -- Session policy (docs/layers.md C3a): the player token carries this value, and verifyToken
+  -- (server/index.js) requires an exact match. revoke_player_sessions() below bumps it, which
+  -- is the only way it ever changes - every token issued before the bump stops verifying.
+  token_version int not null default 1,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -236,7 +240,7 @@ create policy tasks_select_all on public.tasks
 --   * service-role only (called by the game server that owns the 5-second clock):
 --       ensure_player, open_round, settle_round, void_round,
 --       verify_kiosk, open_kiosk_round, settle_kiosk_round,
---       request_otp_code, verify_otp_code
+--       request_otp_code, verify_otp_code, revoke_player_sessions
 --   * callable by a signed-in client (identity taken from auth.uid(), never from
 --       arguments): get_me, claim_task, free_refill
 -- The access rules for all of them are stated once in the Grants section.
@@ -292,6 +296,15 @@ begin
   select * into p from public.players where id = auth.uid();
   return p;
 end $$;
+
+-- Operator tool, no UI (docs/layers.md C3a, docs/box-deploy.md "Daily habits"): log a player
+-- out everywhere by bumping token_version, so every token already issued for them - however
+-- many browsers hold one - stops verifying on its next use. Idempotent to call more than once;
+-- a player id nobody has ever played is simply a no-op update, not an error.
+create function public.revoke_player_sessions(p_player uuid)
+returns void language sql security definer set search_path = public as $$
+  update public.players set token_version = token_version + 1, updated_at = now() where id = p_player;
+$$;
 
 -- --------------------------------------------------------------------------- rounds --
 
@@ -668,17 +681,21 @@ begin
 end $$;
 
 -- The newest unused, unexpired code for (player, email) gets five guesses. The right code
--- confirms the email on this player, unless another player already holds it confirmed - then
--- nothing changes and the caller gets email_taken (merging that case is Layer 2).
+-- confirms the email on this player - unless another player already holds it confirmed, in
+-- which case that IS the returning player logging back in (docs/layers.md C3a: "re-login by
+-- OTP"): the code already proved they own the email, so the caller returns 'logged_in:<uuid>'
+-- of the owning player instead of raising email_taken, and server/index.js switches the
+-- socket's identity there. Nothing on either player row changes in that branch - no merge, no
+-- delete - only the otp_codes row is marked used, same as a normal verify.
 --
 -- Returns text, not the boolean the spec sketch names, for a reason worth recording: a plain
 -- `raise exception` aborts the whole calling statement, undoing any UPDATE made earlier in the
 -- same call (verified live against this database - see the ticket 4 handoff report). So a wrong
 -- guess cannot both durably increment `attempts` AND raise in the same call; the increment would
--- never survive to the next guess and too_many_attempts could never be reached. Only the two
--- outcomes with nothing left to lose (no live code at all; another player already owns the
--- email) still raise, exactly as every other function in this file does. A wrong guess instead
--- returns a status text so its attempts update commits normally; ledger.js turns that into the
+-- never survive to the next guess and too_many_attempts could never be reached. Only the one
+-- outcome with nothing left to lose (no live code at all) still raises, exactly as every other
+-- function in this file does. A wrong guess, and the re-login case, instead return a status
+-- text so their updates commit normally; ledger.js turns the remaining failure text into the
 -- same error shape as everything else.
 create function public.verify_otp_code(p_player uuid, p_email text, p_code text)
 returns text language plpgsql security definer set search_path = public, extensions as $$
@@ -708,11 +725,12 @@ begin
   end if;
 
   select id into v_taken from public.players where email = p_email and id <> p_player for update;
-  if v_taken is not null then
-    raise exception 'email_taken';
-  end if;
 
   update public.otp_codes set used_at = now() where id = v_row.id;
+
+  if v_taken is not null then
+    return 'logged_in:' || v_taken::text;
+  end if;
 
   insert into auth.users (id, email, email_confirmed_at)
   values (p_player, p_email, now())
@@ -761,5 +779,6 @@ revoke execute on function
   public.open_kiosk_round(uuid, text, numeric, text, int),
   public.settle_kiosk_round(uuid, numeric),
   public.request_otp_code(uuid, text),
-  public.verify_otp_code(uuid, text, text)
+  public.verify_otp_code(uuid, text, text),
+  public.revoke_player_sessions(uuid)
 from public, anon, authenticated;

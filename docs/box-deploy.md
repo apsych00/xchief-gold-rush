@@ -249,3 +249,14 @@ data.
 That is the whole daily routine. No SSH needed unless something above is red.
 
 - Before real prizes go live, ask the developer to enable nightly database backups (planned, ticket S6).
+- **Log a player out everywhere.** A web player's token is good for 30 days and renews itself
+  while they keep playing (docs/layers.md C3a); there is no button for signing one out. If you
+  ever need to (a lost device, a support request), find their id and revoke it from the box:
+  ```
+  docker compose --env-file .env.box exec db psql -U postgres \
+    -c "select id from public.players where email = 'player@example.com';"
+  docker compose --env-file .env.box exec db psql -U postgres \
+    -c "select public.revoke_player_sessions('<the id from above>');"
+  ```
+  Every token already issued for that player stops working on its next use; they simply become
+  a fresh anonymous player next time they connect. Their score and history are untouched.

@@ -6,7 +6,7 @@ import { enabled as apiEnabled } from './api/client.js';
 import * as api from './api/game.js';
 import { ensureSession } from './api/session.js';
 import { getKioskSecret, playKioskRound } from './api/kiosk.js';
-import { connect as connectSocket, onSettled } from './api/socket.js';
+import { connect as connectSocket, onIdentityChange, onSettled } from './api/socket.js';
 
 export const ROUND_SECONDS = 5;
 export const LEVERS = ECON.levers;
@@ -86,29 +86,35 @@ export function useGame() {
       return undefined;
     }
     let cancelled = false;
+    // Shared with the re-login case below (docs/layers.md C3a): verifying an email that
+    // already belongs to a different player switches this socket's identity there, and the
+    // profile has to be rebuilt from that player's row exactly as it is on first load.
+    const applyMe = (row) => {
+      if (cancelled) return;
+      const next = {
+        ...profileRef.current,
+        coins: row.coins,
+        record: row.record,
+        streak: row.streak,
+        bestStreak: row.best_streak,
+        wins: row.wins,
+        rounds: row.rounds,
+        freeRefillUsed: row.free_refill_used,
+        displayName: row.display_name,
+      };
+      profileRef.current = next;
+      setProfile(next);
+    };
     ensureSession()
       .then(() => api.getMe())
-      .then((row) => {
-        if (cancelled) return;
-        const next = {
-          ...profileRef.current,
-          coins: row.coins,
-          record: row.record,
-          streak: row.streak,
-          bestStreak: row.best_streak,
-          wins: row.wins,
-          rounds: row.rounds,
-          freeRefillUsed: row.free_refill_used,
-          displayName: row.display_name,
-        };
-        profileRef.current = next;
-        setProfile(next);
-      })
+      .then(applyMe)
       .catch((err) => {
         console.error('[api] session bootstrap failed', err);
       });
+    const offIdentityChange = onIdentityChange(applyMe);
     return () => {
       cancelled = true;
+      offIdentityChange();
     };
   }, []);
 

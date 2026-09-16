@@ -24,6 +24,9 @@ const MAX_MISSED_PONGS = 2;
 const BACKPRESSURE_BYTES = 256 * 1024;
 const STATUS_CACHE_MS = 5000; // /status does one DB round-trip; cache it so polling stays cheap
 
+const TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days (docs/layers.md C3a)
+const TOKEN_RENEW_AFTER_SECONDS = 7 * 24 * 60 * 60; // sliding renewal: reissue once a token is older than this
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE_RE = /^\+?[0-9 ()-]{7,20}$/;
@@ -39,24 +42,74 @@ function tokenSecret() {
   return secret;
 }
 
-function signToken(playerId) {
-  const sig = crypto.createHmac('sha256', tokenSecret()).update(playerId).digest('hex');
-  return `${playerId}.${sig}`;
+function tokenPayload(playerId, version, expiresAtSeconds) {
+  return `${playerId}.${version}.${expiresAtSeconds}`;
 }
 
-/** An invalid token (bad shape, wrong signature) is treated as no token: caller starts fresh. */
-function verifyToken(token) {
+/**
+ * `<playerId>.<version>.<expiresAtSeconds>.<hmacHex>`, the hmac over the first three fields
+ * (docs/layers.md C3a). `version` must equal players.token_version at verify time -
+ * revoke_player_sessions bumps that column to invalidate every outstanding token for a player.
+ * `nowSeconds` is a parameter rather than reading `Date.now()` here so tests can mint a token
+ * as if it had been issued at an arbitrary time, instead of mocking the system clock.
+ */
+export function signToken(playerId, version = 1, nowSeconds = Math.floor(Date.now() / 1000)) {
+  const expiresAt = nowSeconds + TOKEN_TTL_SECONDS;
+  const payload = tokenPayload(playerId, version, expiresAt);
+  const sig = crypto.createHmac('sha256', tokenSecret()).update(payload).digest('hex');
+  return `${payload}.${sig}`;
+}
+
+/**
+ * An invalid token - bad shape, the old two-field format, a tampered signature, an expired
+ * token, or a version that no longer matches players.token_version - is treated exactly like
+ * no token: the caller starts fresh as a new anonymous player, never an error frame.
+ *
+ * `getVersion` defaults to a live lookup (ledger.getTokenVersion) and `nowSeconds` to the real
+ * clock; both are overridable so unit tests can exercise the signature/expiry/version logic
+ * without a database or a mocked Date.now().
+ */
+export async function verifyToken(
+  token,
+  { getVersion = ledger.getTokenVersion, nowSeconds = Math.floor(Date.now() / 1000) } = {},
+) {
   if (typeof token !== 'string') return null;
-  const dot = token.lastIndexOf('.');
-  if (dot === -1) return null;
-  const id = token.slice(0, dot);
-  const sigHex = token.slice(dot + 1);
+  const parts = token.split('.');
+  if (parts.length !== 4) return null; // the old id.sig format has no version or expiry: simply invalid
+  const [id, versionStr, expiresAtStr, sigHex] = parts;
   if (!UUID_RE.test(id)) return null;
-  const expectedHex = crypto.createHmac('sha256', tokenSecret()).update(id).digest('hex');
-  const given = Buffer.from(sigHex, 'hex');
-  const expected = Buffer.from(expectedHex, 'hex');
-  if (given.length !== expected.length) return null;
-  return crypto.timingSafeEqual(given, expected) ? id : null;
+  if (!/^[0-9]+$/.test(versionStr) || !/^[0-9]+$/.test(expiresAtStr)) return null;
+  const version = Number(versionStr);
+  const expiresAt = Number(expiresAtStr);
+
+  const expectedHex = crypto
+    .createHmac('sha256', tokenSecret())
+    .update(tokenPayload(id, version, expiresAt))
+    .digest('hex');
+  let given;
+  let expected;
+  try {
+    given = Buffer.from(sigHex, 'hex');
+    expected = Buffer.from(expectedHex, 'hex');
+  } catch {
+    return null;
+  }
+  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
+  if (expiresAt <= nowSeconds) return null;
+
+  const dbVersion = await getVersion(id);
+  return dbVersion === version ? id : null;
+}
+
+/**
+ * Sliding renewal (docs/layers.md C3a): a token issued (expiresAt - 30d) more than 7 days ago
+ * is replaced on its next `welcome`; a younger one is sent back unchanged so active players
+ * never see their token churn on every connect.
+ */
+export function needsRenewal(token, nowSeconds = Math.floor(Date.now() / 1000)) {
+  const expiresAt = Number(token.split('.')[2]);
+  const issuedAt = expiresAt - TOKEN_TTL_SECONDS;
+  return nowSeconds - issuedAt > TOKEN_RENEW_AFTER_SECONDS;
 }
 
 async function readJsonBody(req) {
@@ -297,7 +350,17 @@ export function createApp({
         return;
       }
 
-      let playerId = frame.token ? verifyToken(frame.token) : null;
+      let playerId = null;
+      let currentToken = null;
+      let version = 1;
+      if (frame.token) {
+        const id = await verifyToken(frame.token);
+        if (id) {
+          playerId = id;
+          currentToken = frame.token;
+          version = Number(frame.token.split('.')[1]);
+        }
+      }
       if (!playerId) playerId = await ledger.createPlayer();
 
       const me = await ledger.getMe(playerId);
@@ -305,7 +368,8 @@ export function createApp({
       ws.kind = 'player';
       ws.identity = playerId;
       playerSockets.set(playerId, ws);
-      send(ws, { type: 'welcome', token: signToken(playerId), me });
+      const token = currentToken && !needsRenewal(currentToken) ? currentToken : signToken(playerId, version);
+      send(ws, { type: 'welcome', token, me });
       await sendHelloAndPending(ws, 'player', playerId);
     } catch (err) {
       send(ws, { type: 'error', code: err.code || 'unauthenticated' });
@@ -384,8 +448,22 @@ export function createApp({
           }
           const email = str(frame.email, 254).toLowerCase();
           const code = str(frame.code, 8);
-          await ledger.verifyOtpCode(id, email, code);
-          send(ws, { type: 'me', ...(await ledger.getMe(id)), email_verified: true });
+          const { loggedIn } = await ledger.verifyOtpCode(id, email, code);
+          if (loggedIn) {
+            // Re-login (docs/layers.md C3a): the code proved ownership of an email that
+            // already belongs to a different, verified player. Switch this socket's identity
+            // there; the anonymous player it started as is left untouched - no merge, no delete.
+            if (playerSockets.get(id) === ws) playerSockets.delete(id);
+            ws.identity = loggedIn;
+            playerSockets.set(loggedIn, ws);
+            const [me, loggedInVersion] = await Promise.all([
+              ledger.getMe(loggedIn),
+              ledger.getTokenVersion(loggedIn),
+            ]);
+            send(ws, { type: 'me', ...me, email_verified: true, token: signToken(loggedIn, loggedInVersion ?? 1) });
+          } else {
+            send(ws, { type: 'me', ...(await ledger.getMe(id)), email_verified: true });
+          }
           break;
         }
         default:

@@ -41,7 +41,6 @@ const KNOWN_ERROR_CODES = [
   'invalid_code',
   'too_many_attempts',
   'expired_code',
-  'email_taken',
 ];
 
 function mapError(err) {
@@ -234,15 +233,25 @@ export async function requestOtpCode(playerId, email) {
 /**
  * verify_otp_code returns text, not a thrown error, for a wrong guess (see the migration's
  * comment: an UPDATE that must survive - the attempts count - cannot share a call with a raise
- * that would roll it back). Turn every non-'ok' outcome into the same thrown-Error-with-.code
- * shape every other ledger call already produces, so index.js does not need to special-case it.
+ * that would roll it back). The same text return also carries the re-login case (docs/layers.md
+ * C3a): 'logged_in:<uuid>' when the email already belongs to a different, verified player, so
+ * index.js can switch the socket's identity there. Every other non-'ok' outcome becomes the
+ * same thrown-Error-with-.code shape every other ledger call already produces.
  */
 export async function verifyOtpCode(playerId, email, code) {
   const outcome = await call('verify_otp_code', playerId, email, code);
-  if (outcome === 'ok') return;
+  if (outcome === 'ok') return { loggedIn: null };
+  if (outcome.startsWith('logged_in:')) return { loggedIn: outcome.slice('logged_in:'.length) };
   const err = new Error(outcome);
   err.code = outcome;
   throw err;
+}
+
+/** players.token_version for a player, or null if that id has no row - a token naming an
+ * unknown player is exactly as invalid as a bad signature (server/index.js verifyToken). */
+export async function getTokenVersion(playerId) {
+  const { rows } = await getPool().query('select token_version from public.players where id = $1', [playerId]);
+  return rows[0] ? rows[0].token_version : null;
 }
 
 /**

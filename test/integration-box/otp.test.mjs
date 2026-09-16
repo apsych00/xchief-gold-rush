@@ -155,12 +155,12 @@ test('five wrong codes in a row locks the code out with too_many_attempts', asyn
   ws.close();
 });
 
-test('a second player verifying an email already confirmed on another player gets email_taken', async () => {
+test('a second socket verifying an email already confirmed on another player is switched into that player (re-login), not email_taken', async () => {
   const email = `otp-shared-${Date.now()}@example.com`;
 
   const ws1 = connect();
   await whenOpen(ws1);
-  await authAnonymous(ws1);
+  const welcome1 = await authAnonymous(ws1);
   send(ws1, { type: 'request_otp', email });
   await nextFrame(ws1, (f) => f.type === 'otp_sent');
   const code1 = await latestDevOtp(email);
@@ -171,14 +171,29 @@ test('a second player verifying an email already confirmed on another player get
 
   const ws2 = connect();
   await whenOpen(ws2);
-  await authAnonymous(ws2);
-  send(ws2, { type: 'request_otp', email });
+  const welcome2 = await authAnonymous(ws2);
+  assert.notEqual(welcome2.me.id, welcome1.me.id, 'ws2 starts as its own, separate anonymous player');
+
+  send(ws2, { type: 'request_otp', email }); // request_otp on a known email must still be allowed
   await nextFrame(ws2, (f) => f.type === 'otp_sent');
   const code2 = await latestDevOtp(email);
   send(ws2, { type: 'verify_otp', email, code: code2 });
   const result = await nextFrame(ws2, (f) => f.type === 'me' || f.type === 'error');
-  assert.equal(result.type, 'error');
-  assert.equal(result.code, 'email_taken');
+  assert.equal(result.type, 'me');
+  assert.equal(result.id, welcome1.me.id, 'the socket is switched to the existing, verified player - not merged, not refused');
+  assert.equal(result.email, email);
+  assert.equal(result.email_verified, true);
+  assert.ok(result.token, 'the switch carries a fresh token for the player being logged into');
+
+  // The switch is real, not cosmetic: further requests on this socket now act as player 1.
+  send(ws2, { type: 'get_me' });
+  const me = await nextFrame(ws2, (f) => f.type === 'me');
+  assert.equal(me.id, welcome1.me.id);
+
+  // The anonymous player ws2 started as is left untouched - no merge, no delete.
+  const { rows } = await pool.query('select email from public.players where id = $1', [welcome2.me.id]);
+  assert.equal(rows[0].email, null);
+
   ws2.close();
 });
 

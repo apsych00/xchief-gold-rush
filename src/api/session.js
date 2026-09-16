@@ -1,9 +1,12 @@
 /**
  * Web auth: play-first, upgrade to email later. The player's identity is the socket's own
- * player token (docs/box-plan.md 1.5): connect() sends it (or nothing, for a fresh player) as
- * the first frame, and the server's `welcome` is what makes the connection usable. requestOtp/
- * verifyOtp later set an email on that same player id, so the row (and its score) carries over
- * rather than starting fresh.
+ * player token (docs/layers.md C3a): connect() sends it (or nothing, for a fresh player) as
+ * the first frame, and the server's `welcome` is what makes the connection usable - a token
+ * older than 7 days is silently renewed there too. requestOtp/verifyOtp later set an email on
+ * that same player id, so the row (and its score) carries over rather than starting fresh -
+ * unless that email already belongs to a different, verified player, in which case verifyOtp
+ * is a re-login: the server switches this socket to the existing player instead (its score is
+ * what carries over then) and socket.js stores the fresh token that answer carries.
  */
 import { enabled } from './client.js';
 import { connect, onStatus, requestOtp as socketRequestOtp, state, verifyOtp as socketVerifyOtp } from './socket.js';
@@ -43,7 +46,9 @@ export function requestOtp(email) {
   return socketRequestOtp(email);
 }
 
-/** Verifies the code from requestOtp and sets the email on this same player id. Score is kept. */
+/** Verifies the code from requestOtp and sets the email on this same player id (score kept) -
+ * or, if that email already belongs to a different, verified player, logs into that player
+ * instead (docs/layers.md C3a). Either way, whatever this resolves with is the new `me`. */
 export function verifyOtp(email, code) {
   if (!enabled) throw Object.assign(new Error('api_disabled'), { code: 'api_disabled' });
   return socketVerifyOtp(email, code);
