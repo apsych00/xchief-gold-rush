@@ -146,22 +146,25 @@ export function TopBar({ profile, actions, active }) {
           <CoinDot />
           <span className="balance-text">{num(profile.coins, lang)}</span>
         </div>
-        <button
-          type="button"
-          className={`avatar-btn ${active ? 'avatar-btn-on' : ''} avatar-${level.id}`}
-          onClick={actions.goProfile}
-          aria-label={t('profile.open')}
-          aria-current={active ? 'page' : undefined}
-        >
-          <span className="avatar-initials" aria-hidden="true">
-            {initialsOf(signup?.name)}
-          </span>
-          {profile.streak > 0 && (
-            <span className="avatar-flame" aria-hidden="true">
-              🔥
+        {/* The kiosk passes no actions: no profile, no avatar (docs/layers.md C2). */}
+        {actions?.goProfile && (
+          <button
+            type="button"
+            className={`avatar-btn ${active ? 'avatar-btn-on' : ''} avatar-${level.id}`}
+            onClick={actions.goProfile}
+            aria-label={t('profile.open')}
+            aria-current={active ? 'page' : undefined}
+          >
+            <span className="avatar-initials" aria-hidden="true">
+              {initialsOf(signup?.name)}
             </span>
-          )}
-        </button>
+            {profile.streak > 0 && (
+              <span className="avatar-flame" aria-hidden="true">
+                🔥
+              </span>
+            )}
+          </button>
+        )}
       </div>
     </header>
   );
@@ -750,12 +753,7 @@ function Leaderboard({ others, profile, guestMode, onOpenIdentity }) {
         {/* Unverified web players never get a synthetic score row - the leaderboard is exactly
             where the ticket asks for the guest prompt instead (docs/layers.md C3, C4). */}
         {guestMode && !ownRowPresent && (
-          <button
-            type="button"
-            className="lb-row lb-row-me"
-            style={{ '--i': entries.length }}
-            onClick={onOpenIdentity}
-          >
+          <button type="button" className="lb-row lb-row-me" style={{ '--i': entries.length }} onClick={onOpenIdentity}>
             <span className="lb-name">{t('lb.guestNote')}</span>
           </button>
         )}
