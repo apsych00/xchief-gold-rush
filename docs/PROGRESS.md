@@ -10,7 +10,7 @@ The stack is running from `C:\Users\Kayhan Azadi\orca\workspaces\xchief-gold-rus
 - **Kiosk:** http://localhost:5173/?k=dev-kiosk-secret-0001
 - **Health:** http://localhost:8787/health
 
-To start it yourself after a reboot, in that folder: `bash db/run-tests.sh --keep` (local Postgres), then `npm run server` with `DATABASE_URL=postgresql://postgres:test@localhost:55432/postgres PLAYER_TOKEN_SECRET=dev-secret PORT=8787` in the environment, then `npm run dev`. The `.env` there already has `VITE_GAME_WS` set.
+To start it yourself after a reboot, in that folder: `bash db/run-tests.sh --keep` (local Postgres), then `npm run server` with `DATABASE_URL=postgresql://postgres:test@localhost:55432/postgres PLAYER_TOKEN_SECRET=dev-secret PORT=8787` **and `FINNHUB_TOKEN=<the Finnhub key from .env>`** in the environment (without the key the server falls back to PAXG, which barely moves - sluggish, mostly flat), then `npm run dev`. The `.env` there already has `VITE_GAME_WS` set.
 
 What to look for: one WebSocket in the console (ours), no exchange sockets, the badge reads LIVE or QUIET MARKET with no source name, the verdict lands as the countdown ends, and the server log (`/tmp/gamesrv.log`) shows each round settling at ~5.0 s.
 
@@ -24,9 +24,9 @@ What to look for: one WebSocket in the console (ours), no exchange sockets, the 
 | 4 | Login codes (OTP) with dev capture | done | 16 pgTAP + 4 integration tests |
 | 5 | Client on the socket, LIVE/QUIET badge, server verdicts | done | E2E 4/4 on the socket, re-run by orchestrator; local mode unchanged |
 | 6 | docker compose + Caddy + deploy doc + ops scripts | done | compose validated; migrate.mjs idempotent |
-| 6b | Schema squash into one clean db/schema.sql | building (OpenCode) | - |
+| 6b | Schema squash into one clean db/schema.sql | done | 101/101 pgTAP; catalog diff old vs new: identical |
 | 7a | Acceptance runner: 9 browsers + 100-socket load script | building (OpenCode) | - |
-| 7 | Acceptance run: 5 kiosks + 4 web, 10 min; then 100 sockets | queued (after 6b, 7a) | - |
+| 7 | Acceptance run: 5 kiosks + 4 web, 10 min; then 100 sockets | queued (after 7a) | - |
 
 Also merged: the marketing lead's "Play screen polish" commit from the old remote, no conflicts.
 
@@ -49,4 +49,5 @@ Layer 2 (S1-S17, security and hardening) starts only after 7 passes. Spec: `box-
 ## Log
 
 - 2026-09-16 morning: layered spec, Opus review (4 Blockers, 10 Highs) folded into the plan before any code. Feed decision changed to one continuous series. MT5 feed card added.
-- 2026-09-16: tickets 1-6 built, verified, merged. Game playable locally on the box stack. 6b and 7a in flight.
+- 2026-09-16: tickets 1-6 built, verified, merged. Game playable locally on the box stack. 6b done. 7a in flight.
+- 2026-09-16: first hands-on: chart sluggish and flat - the local server had been started without FINNHUB_TOKEN and ran on the PAXG fallback. Restarted with the key: Finnhub connected, ~5-9 published changes per 5 s.
