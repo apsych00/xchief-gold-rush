@@ -1,24 +1,51 @@
 // Liveness comparison of price sources: ticks per second, distinct changes per 5 s at 3 and 2
 // decimals, and inter-tick gaps. Usage: FINNHUB_TOKEN=... node demo/feed-compare.mjs --seconds 30
+// Add METAAPI_TOKEN + METAAPI_ACCOUNT_ID (and optionally METAAPI_SYMBOL) to get an mt5 row too.
 import { WebSocket } from 'ws';
+import { createMt5Source } from '../server/feed-mt5.js';
 const SECS = Number((process.argv.find((a) => a.startsWith('--seconds=')) || '--seconds=30').split('=')[1]);
 const KEY = process.env.FINNHUB_TOKEN || '';
 const stats = {};
+function newStat(name) { return (stats[name] = { msgs: 0, ch3: 0, ch2: 0, last3: null, last2: null, gaps: [], lastAt: null, err: null }); }
+function record(s, p) {
+  if (typeof p !== 'number' || !Number.isFinite(p)) return;
+  const now = Date.now(); s.msgs++;
+  if (s.lastAt) s.gaps.push(now - s.lastAt); s.lastAt = now;
+  const p3 = Math.round(p * 1000) / 1000, p2 = Math.round(p * 100) / 100;
+  if (s.last3 !== null && p3 !== s.last3) s.ch3++; if (s.last2 !== null && p2 !== s.last2) s.ch2++;
+  s.last3 = p3; s.last2 = p2;
+}
 function track(name, url, subscribe, parse) {
-  const s = (stats[name] = { msgs: 0, ch3: 0, ch2: 0, last3: null, last2: null, gaps: [], lastAt: null, err: null });
+  const s = newStat(name);
   const ws = new WebSocket(url);
   ws.on('open', () => subscribe.forEach((m) => ws.send(m)));
   ws.on('message', (b) => {
     let m; try { m = JSON.parse(b.toString()); } catch { return; }
-    const p = parse(m); if (typeof p !== 'number' || !Number.isFinite(p)) return;
-    const now = Date.now(); s.msgs++;
-    if (s.lastAt) s.gaps.push(now - s.lastAt); s.lastAt = now;
-    const p3 = Math.round(p * 1000) / 1000, p2 = Math.round(p * 100) / 100;
-    if (s.last3 !== null && p3 !== s.last3) s.ch3++; if (s.last2 !== null && p2 !== s.last2) s.ch2++;
-    s.last3 = p3; s.last2 = p2;
+    record(s, parse(m));
   });
   ws.on('error', (e) => { s.err = e.message; });
   setTimeout(() => ws.close(), SECS * 1000);
+}
+// mt5 goes through the same adapter the game server uses (server/feed-mt5.js), not a raw
+// WebSocket: onTick(price, t) is the SDK's streamed mid, already the shape feed.js ingests.
+function trackMt5(name, { token, accountId, symbol }) {
+  const s = newStat(name);
+  const source = createMt5Source({
+    token,
+    accountId,
+    symbol,
+    onTick: (price) => record(s, price),
+    onState: () => {},
+  });
+  source.connect().catch((e) => { s.err = e.message; });
+  setTimeout(() => source.disconnect().catch(() => {}), SECS * 1000);
+}
+if (process.env.METAAPI_TOKEN && process.env.METAAPI_ACCOUNT_ID) {
+  trackMt5('mt5 broker XAUUSD', {
+    token: process.env.METAAPI_TOKEN,
+    accountId: process.env.METAAPI_ACCOUNT_ID,
+    symbol: process.env.METAAPI_SYMBOL || 'XAUUSD',
+  });
 }
 if (KEY) {
   track('finnhub OANDA XAU', `wss://ws.finnhub.io?token=${KEY}`, [JSON.stringify({ type: 'subscribe', symbol: 'OANDA:XAU_USD' })], (m) => (m.type === 'trade' ? m.data?.find((d) => d.s === 'OANDA:XAU_USD')?.p : null));
