@@ -8,10 +8,12 @@ Short version of `box-spec.md` plus the review's fixes, for sign-off. Layer 1 on
 |---|---|
 | Identity in SQL | Keep every migration and all 70 passing tests. Add `0000_compat.sql`: an `auth` schema, `auth.uid()` reading a per-transaction setting the **server** sets after verifying the token, a small `auth.users` the server owns, and the two role names. Identity never comes from a client argument. |
 | Development database | Local `postgres:16` in Docker only. Never the Supabase dev database. |
-| Price source per round | A round is pinned to the source it opened on; if the source changes before settle, the round is void (`feed_stale`), never settled across XAU and PAXG. Source demotion after 10 s of silence. `rounds` gains a `source` column. |
+| Price feed | All sources stay hot (Finnhub XAU, OKX and Binance PAXG). The server publishes ONE continuous series: on a source switch it carries an offset so the level never jumps. Clients and settlement use only that series. No voids mid-round; if nothing moved, the result is flat and the screen already said QUIET MARKET. Re-anchor to true XAU only when no round has been open anywhere for 2 s. `rounds.source` is recorded for audit only. |
 | Lead capture | The box's server owns `/api/lead` (same JSON, same optional webhook). |
 | Rate cap | 400 rounds per player per hour. The 5-second round is the real throttle. |
 | Empty coupon pool | The 5th win keeps the streak, returns `coupons_exhausted`, logs loudly. Kiosk shows "tell the staff". |
+| Late verdict | If `round_settled` has not arrived 2 s after the countdown, the client shows a small "settling" state and waits; it never fabricates. |
+| Client badge | LIVE (tick within 3 s) or QUIET MARKET (none for 3 s). No source names anywhere in the UI; the quiet-market micro-move animation is removed. |
 | Kiosk streak between players | Resets after 60 s with no round on that kiosk. Also resets on a loss or a claim, as today. |
 | Kiosks | One `kiosks` row and one launch URL per physical device. Five exist for the demo. |
 | Client price feed in server mode | Only ticks from the game socket. The browser's own exchange sockets and the quiet-market animation are off. What the player sees is what the server settles on. |
@@ -48,6 +50,13 @@ Short version of `box-spec.md` plus the review's fixes, for sign-off. Layer 1 on
 | 7 | Acceptance run: 5 kiosks + 4 web for 10 minutes, then a 100-socket load run | Zero errors, verdicts on the countdown, flats rare |
 
 Tickets 1 and 2 start together; 3 needs 1 and 2; 4 and 5 need 3; 6 needs 5; 7 needs 6. Layer 2 (S1-S16 in `box-spec.md`) starts only after 7 passes.
+
+## Card: MT5 price feed (future, same architecture)
+
+An xChief investor MT5 account can become the primary feed: broker-grade XAU/USD ticks, the same quote the brand trades. It slots into `server/feed.js` as one more source at the top of the priority list; nothing else changes. Two ways to get the ticks out of MT5:
+- **Buy:** a hosted MT5 bridge such as MetaApi (cloud, WebSocket streaming of symbol ticks for an investor login, tens of dollars a month). Fastest; no terminal to run.
+- **Implement:** a Windows/Wine VM running the MT5 terminal with a small Python bridge (`MetaTrader5` package) publishing ticks over a WebSocket to the game server. Cheap, but one more machine to keep alive.
+Ticket S17 in Layer 2: evaluate MetaApi with the investor login, measure tick density against Finnhub, and if better, promote it to priority 0. Finnhub and PAXG stay as fallbacks.
 
 ## Deploy target
 
