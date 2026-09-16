@@ -20,6 +20,7 @@
     "test:unit": "node --test \"test/unit/*.test.mjs\"",
     "test:feed": "node --test test/unit/feed.test.mjs",
     "test:db": "supabase test db",
+    "db:test": "bash db/run-tests.sh",
     "test:integration": "node --test \"test/integration/*.test.mjs\"",
     "test:e2e": "playwright test",
     "test:all": "npm run test:unit && npm run test:db",

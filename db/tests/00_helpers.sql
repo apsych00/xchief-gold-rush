@@ -1,10 +1,18 @@
 -- Shared fixtures for the pgTAP suite. pgTAP tests run as `postgres`, which is why we can
 -- insert straight into auth.users to create fixture identities.
 --
+-- On the box the auth.users table is the small server-owned one from 0000_compat.sql:
+-- (id, email, email_confirmed_at, created_at). The Supabase GoTrue columns the previous
+-- version of this file filled (instance_id, aud, role, encrypted_password, raw_*_meta_data,
+-- tokens, updated_at) carry no meaning there and none of them is read by the game SQL, so
+-- the inserts drop them. "Confirmed" means email_confirmed_at is set, exactly as before.
+-- pgcrypto lives in the `extensions` schema (placed there by 0000_compat), so crypt() and
+-- gen_salt() are referenced with that schema qualification.
+--
 -- Not itself an assertion file beyond a one-line sanity check - other files call these
 -- functions after their own `select plan(N)`.
 
-create extension if not exists pgtap with schema extensions;
+create extension if not exists pgtap;
 create schema if not exists tests;
 
 -- Inserts a confirmed-email auth user + a matching, email-populated players row.
@@ -13,16 +21,8 @@ returns uuid language plpgsql as $$
 declare
   v_id uuid := gen_random_uuid();
 begin
-  insert into auth.users (
-    instance_id, id, aud, role, email, encrypted_password,
-    email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
-    created_at, updated_at, confirmation_token, email_change,
-    email_change_token_new, recovery_token
-  ) values (
-    '00000000-0000-0000-0000-000000000000', v_id, 'authenticated', 'authenticated', p_email, crypt('x', gen_salt('bf')),
-    now(), '{"provider":"email","providers":["email"]}', '{}',
-    now(), now(), '', '', '', ''
-  );
+  insert into auth.users (id, email, email_confirmed_at)
+  values (v_id, p_email, now());
   perform public.ensure_player(v_id);
   if p_display is not null then
     update public.players set display_name = p_display where id = v_id;
@@ -36,16 +36,7 @@ returns uuid language plpgsql as $$
 declare
   v_id uuid := gen_random_uuid();
 begin
-  insert into auth.users (
-    instance_id, id, aud, role, email, encrypted_password,
-    email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
-    created_at, updated_at, confirmation_token, email_change,
-    email_change_token_new, recovery_token
-  ) values (
-    '00000000-0000-0000-0000-000000000000', v_id, 'authenticated', 'authenticated', p_email, crypt('x', gen_salt('bf')),
-    null, '{"provider":"email","providers":["email"]}', '{}',
-    now(), now(), '', '', '', ''
-  );
+  insert into auth.users (id, email) values (v_id, p_email);
   perform public.ensure_player(v_id);
   return v_id;
 end $$;
@@ -57,7 +48,7 @@ declare
   v_id uuid;
 begin
   insert into public.kiosks (label, secret_hash)
-  values (p_label, crypt(p_secret, gen_salt('bf')))
+  values (p_label, extensions.crypt(p_secret, extensions.gen_salt('bf')))
   returning id into v_id;
   return v_id;
 end $$;
