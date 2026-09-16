@@ -25,6 +25,8 @@
     "test:server": "node --test \"test/integration-box/*.test.mjs\"",
     "test:e2e": "playwright test",
     "server": "node server/index.js",
+    "demo": "node demo/run-demo.mjs",
+    "load": "node demo/load.mjs",
     "test:all": "npm run test:unit && npm run test:db",
     "lint": "eslint .",
     "format": "prettier --write .",
