@@ -176,9 +176,27 @@ async function ensureIdle(page) {
   if (await isVisible(page, '.btn-start')) {
     await page.locator('.btn-start').first().click({ timeout: CLICK_TIMEOUT_MS });
   }
-  if (await isVisible(page, '.btn-again')) {
-    await page.locator('.btn-again').first().click({ timeout: CLICK_TIMEOUT_MS });
+  // After a verdict the result pane renders a beat before its buttons: wait for
+  // "play again" rather than glancing once, then click it and wait for the dir
+  // buttons to be live again. A broke web player never gets a live button; the
+  // caller detects that through the returned flag and retires the window.
+  if (await isVisible(page, '.pane-result')) {
+    const again = page.locator('.btn-again').first();
+    await again.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
+    if (await again.count()) await again.click({ timeout: CLICK_TIMEOUT_MS }).catch(() => {});
   }
+  const live = await page
+    .waitForFunction(
+      () => {
+        const up = document.querySelector('.btn-up');
+        return !!up && !up.disabled;
+      },
+      null,
+      { timeout: 8000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  return live;
 }
 
 /**
@@ -289,7 +307,17 @@ async function driveWindow(browser, win, deadline) {
     roundNum++;
     let dir;
     try {
-      await ensureIdle(page);
+      const live = await ensureIdle(page);
+      if (!live) {
+        const bal = await readBalance(page);
+        if (win.kind === 'web' && bal !== null && bal < 100) {
+          console.log(`[${win.label}] round ${roundNum}: broke (coins=${bal}) - retiring window`);
+          rec.broke = true;
+          break;
+        }
+        errors.push(`round ${roundNum}: dir buttons never became live`);
+        continue;
+      }
       dir = Math.random() < 0.5 ? 'up' : 'down';
       await page.locator(dir === 'up' ? '.btn-up' : '.btn-down').first().click({ timeout: CLICK_TIMEOUT_MS });
       // The countdown starts the moment the click is dispatched, so stamp t0
