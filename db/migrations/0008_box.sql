@@ -7,6 +7,14 @@
 alter table public.rounds add column if not exists source text;
 alter table public.kiosks add column if not exists last_round_at timestamptz;
 
+-- create or replace cannot change an argument list: adding p_source as a defaulted 5th/4th
+-- parameter silently left the 0004 versions installed, and 4-arg / 3-arg calls (which the
+-- server makes when the source is unknown) would still have resolved to them - old 60/hr cap,
+-- no idle reset. Drop the superseded overloads so exactly one open_round / open_kiosk_round
+-- exists and every call gets the box rules.
+drop function if exists public.open_round(uuid, text, int, numeric);
+drop function if exists public.open_kiosk_round(uuid, text, numeric);
+
 create or replace function public.open_round(p_player uuid, p_dir text, p_lever int, p_start_price numeric, p_source text default null)
 returns json language plpgsql security definer set search_path = public as $$
 declare
