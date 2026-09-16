@@ -1,11 +1,13 @@
 /**
- * Schema bootstrap for the box (docs/box-spec.md 1.7, ticket 6).
+ * Schema bootstrap for the box (docs/box-spec.md 1.7, tickets 6 and 6b).
  *
- * Applies every db/migrations/*.sql in filename order, then db/seed.sql, each
- * exactly once. A schema_migrations table records what has been applied, so
- * re-running is a no-op and the server container can call this on every boot
- * without ever double-applying (seed.sql generates fresh random coupon codes
- * each time it runs, so it must not re-run freely).
+ * Applies db/schema.sql (the whole schema as one file, written from scratch;
+ * there is no migration history to preserve) and then db/seed.sql, each exactly
+ * once. A schema_migrations table records what has been applied, so re-running
+ * is a no-op and the server container can call this on every boot without ever
+ * double-applying (seed.sql generates fresh random coupon codes each time it
+ * runs, so it must not re-run freely). A fresh database gets both steps; a
+ * database that has already run shows schema.sql and seed.sql as applied.
  *
  *   node server/migrate.mjs        # needs DATABASE_URL in the environment
  *
@@ -31,24 +33,20 @@ function databaseUrl() {
   return url;
 }
 
-/** Everything to apply, in order: the migrations, then the seed. */
+/** Everything to apply, in order: the schema, then the seed. */
 function steps() {
-  const dir = path.join(ROOT, 'db', 'migrations');
-  const files = fs
-    .readdirSync(dir)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-  const list = files.map((f) => ({ name: `db/migrations/${f}`, file: path.join(dir, f) }));
-  list.push({ name: 'db/seed.sql', file: path.join(ROOT, 'db', 'seed.sql') });
-  return list;
+  return [
+    { name: 'db/schema.sql', file: path.join(ROOT, 'db', 'schema.sql') },
+    { name: 'db/seed.sql', file: path.join(ROOT, 'db', 'seed.sql') },
+  ];
 }
 
 const client = new pg.Client({ connectionString: databaseUrl() });
 try {
   await client.connect();
-  // pgcrypto was installed into the `extensions` schema by 0000_compat and
-  // seed.sql calls crypt()/gen_salt() unqualified, so the session needs
-  // extensions on the path (same as db/run-tests.sh).
+  // pgcrypto was installed into the `extensions` schema by the compat layer in
+  // db/schema.sql and seed.sql calls crypt()/gen_salt() unqualified, so the
+  // session needs extensions on the path (same as db/run-tests.sh).
   await client.query('set search_path to public, extensions');
   await client.query(`
     create table if not exists public.schema_migrations (

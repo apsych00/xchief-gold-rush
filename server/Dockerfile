@@ -1,5 +1,5 @@
 # Game server image (docs/box-spec.md 1.7, ticket 6).
-# Boots by applying db/migrations/*.sql + db/seed.sql through server/migrate.mjs
+# Boots by applying db/schema.sql + db/seed.sql through server/migrate.mjs
 # (a schema_migrations table makes re-runs a no-op), then starts the game server.
 FROM node:22-alpine
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Box database harness: apply every migration in db/migrations/ (filename order) plus
+# Box database harness: apply db/schema.sql (the whole schema as one file) plus
 # db/seed.sql on a throwaway STOCK postgres:16 container (not the supabase image, not the
 # Supabase dev project), then run every pgTAP suite in db/tests/ with pg_prove.
 #
@@ -42,10 +42,11 @@ else
 fi
 DATABASE_URL="postgresql://postgres:test@localhost:${PORT}/postgres"
 
-# pgcrypto was installed into the `extensions` schema by 0000_compat (mirroring Supabase) and
-# seed.sql calls crypt()/gen_salt() unqualified, so sessions need extensions on the path.
-# pgTAP itself then installs into plain `public`, where 0000_compat's default table privileges
-# let the `anon` role record assertions inside the "set local role anon" suites.
+# pgcrypto was installed into the `extensions` schema by the compat layer in db/schema.sql
+# (mirroring Supabase) and seed.sql calls crypt()/gen_salt() unqualified, so sessions need
+# extensions on the path. pgTAP itself then installs into plain `public`, where schema.sql's
+# default table privileges let the `anon` role record assertions inside the "set local role
+# anon" suites.
 PGOPTIONS="-c search_path=public,extensions"
 
 command -v docker >/dev/null 2>&1 || { echo "docker is required but not on PATH" >&2; exit 1; }
@@ -88,12 +89,9 @@ if [ -z "$ready" ]; then
   exit 1
 fi
 
-echo "==> applying db/migrations/*.sql in filename order"
-for f in db/migrations/*.sql; do
-  echo "    $f"
-  docker exec -i -e PGOPTIONS="$PGOPTIONS" "$NAME" \
-    psql -v ON_ERROR_STOP=1 -U postgres -q < "$f"
-done
+echo "==> applying db/schema.sql"
+docker exec -i -e PGOPTIONS="$PGOPTIONS" "$NAME" \
+  psql -v ON_ERROR_STOP=1 -U postgres -q < db/schema.sql
 
 echo "==> applying db/seed.sql"
 docker exec -i -e PGOPTIONS="$PGOPTIONS" "$NAME" \

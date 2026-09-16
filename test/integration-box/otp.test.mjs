@@ -1,5 +1,5 @@
 // OTP integration tests for the box game server (ticket 4: server/otp.js, the request_otp /
-// verify_otp frames in server/index.js, db/migrations/0011_otp_codes.sql). Same harness as
+// verify_otp frames in server/index.js, request_otp_code/verify_otp_code in db/schema.sql). Same harness as
 // test/integration-box/server.test.mjs - a live database, the server started in-process with a
 // stubbed feed.
 //
