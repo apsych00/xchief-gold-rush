@@ -1,6 +1,6 @@
 /**
  * The box game server (docs/box-plan.md 1.2, docs/box-spec.md 1.2): one HTTP server for
- * /health and /api/lead, one WebSocket at /ws for everything the game does.
+ * /health, /status and /api/lead, one WebSocket at /ws for everything the game does.
  *
  * The client never reports its own result: every frame that changes coins, streak or a
  * coupon is decided here, from prices this process read itself off `feed.js`, through the
@@ -14,12 +14,14 @@ import { WebSocketServer } from 'ws';
 
 import { createFeed } from './feed.js';
 import { createRoundManager } from './rounds.js';
+import { createAlerts } from './alerts.js';
 import * as ledger from './ledger.js';
 import * as otp from './otp.js';
 
 const PING_INTERVAL_MS = 25000;
 const MAX_MISSED_PONGS = 2;
 const BACKPRESSURE_BYTES = 256 * 1024;
+const STATUS_CACHE_MS = 5000; // /status does one DB round-trip; cache it so polling stays cheap
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -145,6 +147,7 @@ async function handleLead(req, res) {
 export function createApp({ finnhubToken = process.env.FINNHUB_TOKEN || null } = {}) {
   const playerSockets = new Map(); // playerId -> ws
   const kioskSockets = new Map(); // kioskId -> ws
+  let statusCache = null; // { at, aggregates } - see STATUS_CACHE_MS
 
   function getSocket(kind, id) {
     return kind === 'player' ? playerSockets.get(id) : kioskSockets.get(id);
@@ -170,10 +173,64 @@ export function createApp({ finnhubToken = process.env.FINNHUB_TOKEN || null } =
     getSocket,
     log: (line) => console.log(`[round] ${line}`),
   });
+  const alerts = createAlerts({ latest: feed.latest, log: (line) => console.log(line) });
+
+  /**
+   * The one DB round-trip /status needs (ledger.statusAggregates), cached for
+   * STATUS_CACHE_MS so an operator page polling every 5 s never costs more than one query
+   * every 5 s no matter how many people have it open.
+   */
+  async function getStatusAggregates() {
+    const now = Date.now();
+    if (statusCache && now - statusCache.at < STATUS_CACHE_MS) return statusCache.aggregates;
+    const aggregates = await ledger.statusAggregates();
+    statusCache = { at: now, aggregates };
+    return aggregates;
+  }
+
+  /**
+   * Operator-only aggregate view (docs/layers.md D1). No secrets, no player-identifying
+   * data: counts, feed health, and open socket totals only.
+   */
+  async function handleStatus(res) {
+    const [aggregates, db] = await Promise.all([getStatusAggregates(), ledger.ping()]);
+    const now = Date.now();
+    const sources = {};
+    for (const [id, s] of Object.entries(feed.status())) {
+      sources[id] = {
+        connected: s.connected,
+        lastTickAt: s.lastTickAt,
+        ageMs: s.lastTickAt === null ? null : now - s.lastTickAt,
+      };
+    }
+    const p = feed.latest();
+    sendJson(res, 200, {
+      ok: true,
+      uptimeSeconds: Math.round(process.uptime()),
+      feed: { sources, price: p ? p.price : null, quiet: p ? p.quiet : true },
+      sockets: { web: playerSockets.size, kiosk: kioskSockets.size },
+      rounds: {
+        inFlight: aggregates.rounds_in_flight,
+        settled60s: aggregates.rounds_settled_60s,
+        settled24h: aggregates.rounds_settled_24h,
+      },
+      flats24h: aggregates.flats_24h,
+      coupons: { available: aggregates.coupons_available, claimed: aggregates.coupons_claimed },
+      kiosksActive: aggregates.kiosks_active,
+      db,
+    });
+  }
 
   const server = createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
       ledger.ping().then((db) => sendJson(res, 200, { ok: true, feed: feed.status(), db }));
+      return;
+    }
+    if (req.method === 'GET' && req.url === '/status') {
+      handleStatus(res).catch((err) => {
+        console.error('[status] unhandled error', err);
+        sendJson(res, 500, { ok: false, error: 'internal' });
+      });
       return;
     }
     if (req.url === '/api/lead') {
@@ -384,6 +441,7 @@ export function createApp({ finnhubToken = process.env.FINNHUB_TOKEN || null } =
     async start(port = Number(process.env.PORT) || 8787, { startFeed = true } = {}) {
       await ledger.voidOpenRounds();
       if (startFeed) feed.start();
+      alerts.start();
       await new Promise((resolve, reject) => {
         server.once('error', reject);
         server.listen(port, () => {
@@ -396,6 +454,7 @@ export function createApp({ finnhubToken = process.env.FINNHUB_TOKEN || null } =
 
     async close() {
       clearInterval(heartbeat);
+      alerts.stop();
       try {
         feed.stop();
       } catch (err) {

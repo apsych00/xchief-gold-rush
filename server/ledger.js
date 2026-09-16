@@ -206,6 +206,28 @@ export async function insertDevOtp(email, token) {
   await getPool().query('insert into public.dev_otps (email, token) values ($1, $2)', [email, token]);
 }
 
+/**
+ * One aggregate round-trip for the operator /status endpoint (docs/layers.md D1). Every
+ * number is a count, no player-identifying data leaves this function; index.js caches the
+ * result for 5 s so polling /status never costs more than one query per five seconds.
+ */
+export async function statusAggregates() {
+  const { rows } = await getPool().query(`
+    select
+      (select count(*)::int from public.rounds where status = 'open') as rounds_in_flight,
+      (select count(*)::int from public.rounds
+         where status = 'settled' and end_at > now() - interval '60 seconds') as rounds_settled_60s,
+      (select count(*)::int from public.rounds
+         where status = 'settled' and end_at > now() - interval '24 hours') as rounds_settled_24h,
+      (select count(*)::int from public.rounds
+         where outcome = 'flat' and end_at > now() - interval '24 hours') as flats_24h,
+      (select count(*)::int from public.coupons where status = 'available') as coupons_available,
+      (select count(*)::int from public.coupons where status = 'claimed') as coupons_claimed,
+      (select count(*)::int from public.kiosks where status = 'active') as kiosks_active
+  `);
+  return rows[0];
+}
+
 /** Process start: nobody is left to honestly settle a round still marked open. */
 export async function voidOpenRounds() {
   await getPool().query(

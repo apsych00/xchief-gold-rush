@@ -21,6 +21,33 @@
 	handle /health {
 		reverse_proxy server:8787
 	}
+	# One cheap aggregate JSON for the operator page below (docs/layers.md D1). No secrets,
+	# so it is public exactly like /health - nothing here needs the /logs password.
+	handle /status {
+		reverse_proxy server:8787
+	}
+
+	# Live container logs (Dozzle, ticket D1), password-gated. Generate the hash with:
+	#   docker run --rm caddy:2 caddy hash-password --plaintext '<pw>'
+	# and set it as DOZZLE_PASSWORD_HASH in .env.box. In production, put Cloudflare Access
+	# in front of this path instead (or as well) - see docs/box-deploy.md.
+	#
+	# `handle` (not `handle_path`): Dozzle is started with DOZZLE_BASE=/logs, so it expects
+	# the /logs prefix to still be on the request when it reaches the container - it renders
+	# its own asset links as /logs/... and does not strip the base itself. Stripping the
+	# prefix here (handle_path) makes every request 404 past the basic_auth prompt.
+	handle /logs* {
+		basic_auth {
+			admin {$DOZZLE_PASSWORD_HASH}
+		}
+		reverse_proxy dozzle:8080
+	}
+
+	# The static operator page (ops/index.html), mounted read-only like dist/.
+	handle_path /ops* {
+		root * /srv/ops
+		file_server
+	}
 
 	# The SPA: serve the built files, fall back to index.html for routes.
 	handle {
