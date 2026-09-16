@@ -258,6 +258,36 @@ returns int language sql immutable as $$
   select 100 * p_lever;
 $$;
 
+-- ---------------------------------------------------------------------------- masking --
+
+-- The masked form of an email shown to anyone but its owner (docs/layers.md C3, C4;
+-- product default recorded there: "masked email keeps the first and last character of the
+-- local part and the full domain"). Computed once here and reused for both get_me()'s own
+-- `display` and leaderboard()'s row `display`, so the client's "is this my row" check is a
+-- plain string comparison, never its own masking logic.
+--
+-- Local part length 1-2: only the first character survives ("a" -> "a***", "ab" -> "a***") -
+-- there is no room for a distinct last character. Length 3+: first and last character are
+-- kept, with at least three asterisks between them even when the true middle is shorter
+-- ("kay" -> "k***y"); a middle of three or more characters is shown at its real length
+-- ("kayani" -> "k****i").
+create function public.mask_email(p_email text)
+returns text language sql immutable as $$
+  select case
+    when p_email is null or position('@' in p_email) = 0 then null
+    else
+      (case
+        when length(split_part(p_email, '@', 1)) <= 2
+          then left(split_part(p_email, '@', 1), 1) || repeat('*', 3)
+        else
+          left(split_part(p_email, '@', 1), 1)
+          || repeat('*', greatest(length(split_part(p_email, '@', 1)) - 2, 3))
+          || right(split_part(p_email, '@', 1), 1)
+      end)
+      || '@' || split_part(p_email, '@', 2)
+  end
+$$;
+
 -- --------------------------------------------------------------------------- players --
 
 -- Create the players row on first contact; copy the email in once it is confirmed.
@@ -284,17 +314,28 @@ begin
     updated_at = now();
 end $$;
 
+-- Every players column, plus two computed ones the client needs (docs/layers.md C3, C4):
+-- email_verified (players.email is only ever set once confirmed - see ensure_player and
+-- verify_otp_code) and display, this player's own masked email for the header ("playing as
+-- k****i@gmail.com") and for matching its own row on the leaderboard.
 create function public.get_me()
-returns public.players language plpgsql security definer set search_path = public as $$
-declare
-  p public.players%rowtype;
+returns table (
+  id uuid, display_name text, email text, coins int, record int, streak int, best_streak int,
+  wins int, rounds int, free_refill_used boolean, token_version int, created_at timestamptz,
+  updated_at timestamptz, email_verified boolean, display text
+) language plpgsql security definer set search_path = public as $$
 begin
   if auth.uid() is null then
     raise exception 'unauthenticated';
   end if;
   perform public.ensure_player(auth.uid());
-  select * into p from public.players where id = auth.uid();
-  return p;
+  return query
+    select p.id, p.display_name, p.email, p.coins, p.record, p.streak, p.best_streak, p.wins,
+           p.rounds, p.free_refill_used, p.token_version, p.created_at, p.updated_at,
+           (p.email is not null) as email_verified,
+           public.mask_email(p.email) as display
+    from public.players p
+    where p.id = auth.uid();
 end $$;
 
 -- Operator tool, no UI (docs/layers.md C3a, docs/box-deploy.md "Daily habits"): log a player
@@ -654,11 +695,13 @@ end $$;
 
 -- Public leaderboard: top 10 by peak balance, email-confirmed players only,
 -- safe columns only. Runs with the function owner's rights on purpose, so it
--- can read players past RLS while exposing nothing but display_name and record.
+-- can read players past RLS while exposing nothing but a masked email and record
+-- (docs/layers.md C4: "never a raw address" - display_name is not returned any more since it
+-- would defeat the point of masking).
 create function public.leaderboard()
-returns table (display_name text, record int, rank bigint)
+returns table (display text, record int, rank bigint)
 language sql security definer stable set search_path = public as $$
-  select display_name, record, rank() over (order by record desc, updated_at asc) as rank
+  select public.mask_email(email) as display, record, rank() over (order by record desc, updated_at asc) as rank
   from public.players
   where email is not null
   order by record desc, updated_at asc

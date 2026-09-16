@@ -9,6 +9,8 @@ import Logo from './Logo.jsx';
 import Tasks from './Tasks.jsx';
 import { IS_KIOSK } from './api/kiosk.js';
 import KioskApp from './KioskApp.jsx';
+import { enabled as apiEnabled } from './api/client.js';
+import OtpModal, { IdentityBar } from './Identity.jsx';
 
 const SIGNUP_REWARD = TASKS.find((t) => t.id === 'signup')?.reward ?? 1000;
 import { LEVERS, maxAffordableLever, stakeFor, useGame } from './useGame.js';
@@ -686,10 +688,18 @@ export function Console({ state, profile, actions, trackRef }) {
 
 /* ---------- leaderboard ---------- */
 
-function Leaderboard({ others, profile }) {
+function Leaderboard({ others, profile, guestMode, onOpenIdentity }) {
   const { t, lang } = useLang();
   const you = t('lb.you');
-  const entries = [...others.map((o) => ({ ...o, me: false })), { name: you, s: profile.record, me: true }];
+  // A live/fetched row already carries `me: true` once the player is verified and matched by
+  // its own masked email (docs/layers.md C4, useGame.js's refreshLeaderboard/onLeaderboard).
+  // Only the dummy/offline OTHERS list (api disabled) and a guest never on the board at all
+  // still need the synthetic "you" row this screen used to always append.
+  const ownRowPresent = others.some((o) => o.me);
+  const entries =
+    ownRowPresent || guestMode
+      ? others.map((o) => ({ ...o, me: !!o.me }))
+      : [...others.map((o) => ({ ...o, me: false })), { name: you, s: profile.record, me: true }];
   const sorted = [...entries].sort((a, b) => b.s - a.s);
   const myRank = sorted.findIndex((a) => a.me);
   return (
@@ -701,7 +711,7 @@ function Leaderboard({ others, profile }) {
         <div className="screen-sub">{t('lb.byRecord')}</div>
       </div>
       <div className="lb-list">
-        <div className="lb-spacer" style={{ '--n': entries.length }} />
+        <div className="lb-spacer" style={{ '--n': entries.length + (guestMode && !ownRowPresent ? 1 : 0) }} />
         {entries.map((r) => {
           const rank = sorted.findIndex((a) => a.name === r.name);
           const level = levelFor(r.s);
@@ -716,6 +726,18 @@ function Leaderboard({ others, profile }) {
             </div>
           );
         })}
+        {/* Unverified web players never get a synthetic score row - the leaderboard is exactly
+            where the ticket asks for the guest prompt instead (docs/layers.md C3, C4). */}
+        {guestMode && !ownRowPresent && (
+          <button
+            type="button"
+            className="lb-row lb-row-me"
+            style={{ '--i': entries.length }}
+            onClick={onOpenIdentity}
+          >
+            <span className="lb-name">{t('lb.guestNote')}</span>
+          </button>
+        )}
       </div>
       {myRank < 10 && !readLead() && (
         <LeadCapture
@@ -765,9 +787,13 @@ function Nav({ screen, actions }) {
 /* ---------- app ---------- */
 
 export default function App() {
-  const { state, profile, actions, trackRef } = useGame();
+  const { state, profile, actions, trackRef, isKiosk } = useGame();
   const { screen } = state;
   const [lang, setLangState] = useState(readStoredLang);
+  const [otpOpen, setOtpOpen] = useState(false);
+  // A guest is a web player (never a kiosk, which never shows email or the leaderboard at all)
+  // who has not verified an email yet (docs/layers.md C3, C4).
+  const guestMode = apiEnabled && !isKiosk && !profile.emailVerified;
 
   const langCtx = useMemo(() => {
     const setLang = (next) => {
@@ -815,16 +841,24 @@ export default function App() {
         <div className="phone" ref={phoneRef}>
           {IS_KIOSK ? (
             // The booth visitor flow is a separate tree, not a screen among the web's home/
-            // game/lb/tasks - it never mounts Home, Leaderboard, Tasks, Nav, LeadCapture or
-            // SignupForm (docs/layers.md C2's hard guarantee), it just reuses TopBar and
-            // Console from here for the chrome and the play screen itself.
+            // game/lb/tasks - it never mounts Home, Leaderboard, Tasks, Nav, LeadCapture,
+            // SignupForm or the identity bar (docs/layers.md C2's hard guarantee), it just
+            // reuses TopBar and Console from here for the chrome and the play screen itself.
             <KioskApp state={state} profile={profile} actions={actions} trackRef={trackRef} />
           ) : (
             <>
               <TopBar profile={profile} />
+              <IdentityBar profile={profile} onSignOut={actions.signOut} />
               {screen === 'home' && <Home profile={profile} actions={actions} />}
               {screen === 'game' && <Console state={state} profile={profile} actions={actions} trackRef={trackRef} />}
-              {screen === 'lb' && <Leaderboard others={state.others} profile={profile} />}
+              {screen === 'lb' && (
+                <Leaderboard
+                  others={state.others}
+                  profile={profile}
+                  guestMode={guestMode}
+                  onOpenIdentity={() => setOtpOpen(true)}
+                />
+              )}
               {screen === 'tasks' && (
                 <Tasks profile={profile} onClaim={actions.claimTask} onToast={(txt) => actions.toast?.(txt)} />
               )}
@@ -833,6 +867,13 @@ export default function App() {
           )}
           <Toast toast={state.toast} />
           <UpdateBanner />
+          {otpOpen && (
+            <OtpModal
+              onRequestOtp={actions.requestOtp}
+              onVerifyOtp={actions.verifyOtp}
+              onClose={() => setOtpOpen(false)}
+            />
+          )}
         </div>
       </div>
     </LangContext.Provider>

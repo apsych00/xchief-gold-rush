@@ -16,6 +16,11 @@ export function defaultProfile() {
     roundTimes: [], // timestamps of recent rounds, for the hourly cap
     badges: [], // 'high_roller' | 'hot_streak' | 'comeback'
     createdAt: Date.now(),
+    // Web identity (docs/layers.md C3, C4). null/false until the server's own `me` says
+    // otherwise - the client never decides its own verification state.
+    email: null,
+    emailVerified: false,
+    display: null, // this player's own masked email, once verified
   };
 }
 
