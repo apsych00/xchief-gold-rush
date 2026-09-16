@@ -11,8 +11,8 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 |---|---|---|---|
 | L1 game on the box | 7 / 7 | 0 | complete, load-tested (100 sockets, p95 settle 5024 ms), rehearsed through compose + Caddy |
 | L1.5 client experience | 12 / 15 | C8 no-codes modal (building), C4b animation, Q1 rest | the booth and the web flows are built and verified end to end |
-| OPS | 1 / 2 | D2 deploy scripts (being built now; the earlier "done" was wrong: only the ticket line had been committed) | |
-| FEED | 3 / 5 | MetaApi blocked on admin; Docker bridge being built | Finnhub live with PAXG fallbacks, 3-decimal publishing |
+| OPS | 2 / 2 | 0 | deploy scripts built; first real run happens on the box |
+| FEED | 3 / 5 | MetaApi blocked on admin; Docker bridge in review | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 | L2 hardening | 2 / 17 | S2-S16 | order set; nothing started |
 | MKT Part B | 0 / 13 | B1-B13 | starts when L1.5 closes; B1, B2, B4 first |
 
@@ -38,9 +38,9 @@ Play it now: compose stack at http://localhost:8080 (kiosk `/?k=dev-kiosk-secret
 | B14 | L1.5 | Blind five-win streak tests, kiosk and web | gpt-5.6-luna | done | coupon row, session_over, exhausted pool, WIN modal E2E; merged `e4efdd0` | |
 | B16 | L1.5 | E2E regression after the profile merge | Sonnet + orchestrator | done | kiosk crashed on the avatar's missing action; 13/13 E2E; merged `92bd000` | |
 | D1 | OPS | Monitoring: `/status`, `/ops`, `/logs`, alerts | Sonnet | done | merged `4839072`; `$` doubling trap documented | |
-| D2 | OPS | One-command deploy, auto-deploy on push, install, rollback | Sonnet (CB, Orca) | building | earlier "done" was only the ticket line; real scripts in progress in `d2-deploy` | verify, merge |
+| D2 | OPS | One-command deploy, auto-deploy on push, install, rollback | Sonnet | done | `deploy/*.sh`, `client.Dockerfile` (bundle built in Docker, verified: no dev socket address); box behaviour of install/cron/ufw untestable on Windows, to be rehearsed on the real box | rehearse on the box |
 | S17 | FEED | MT5 via MetaApi | orchestrator | blocked | code merged and reaches MetaApi; refused by token scope | admin: account UUID, token with account read, quote interval 0 |
-| B15 | FEED | MT5 terminal + tick bridge in Docker | Sonnet (CB, Orca) | building | ticket in `b15-mt5-docker`; review, harden and blind-test tasks chained in Orca run `run_bc01cfb97f5d` | |
+| B15 | FEED | MT5 terminal + tick bridge in Docker | Sonnet | verifying | build committed on `nightmareinc/b15-mt5-docker` (74 unit, 11 Python tests); base image pull truncated in the sandbox; independent review running on cb (`b15-review`), then harden, then blind tests | review, harden, tests, merge |
 | F1 | FEED | Finnhub + PAXG continuous series, 3 decimals | | done | measured 9 moves / 5 s vs 1-2 on PAXG | |
 | S1 | L2 | Secret rotation procedure | | queued | folded into C3a except the procedure | |
 | S2 | L2 | Per-socket rate limits (play, request_otp per email and IP, flood cut-off) | | queued | first hardening ticket | |
