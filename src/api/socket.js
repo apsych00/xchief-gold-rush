@@ -64,6 +64,7 @@ const priceEmitter = makeEmitter();
 const statusEmitter = makeEmitter();
 const settledEmitter = makeEmitter();
 const identityEmitter = makeEmitter();
+const kioskSessionEmitter = makeEmitter();
 
 let ws = null;
 let started = false;
@@ -101,6 +102,10 @@ function devSnapshot(frame) {
   g.mode = 'server';
   g.lastFrame = frame;
   g.token = token;
+  // Ticket C2: lets a test drive a scenario that is rare to hit for real (a kiosk five-win
+  // streak) by feeding a synthetic frame through the exact same path a real server frame takes -
+  // it is not a shortcut that skips any client logic, just a way to supply the input.
+  g.inject = g.inject || handleMessage;
 }
 
 function send(frame) {
@@ -192,6 +197,11 @@ function handleMessage(frame) {
     case 'me':
       handleMe(frame);
       settlePending(frame);
+    case 'kiosk_session':
+      // Pushed after auth, after every settled kiosk round, after kiosk_reset, and by the
+      // server's own 60 s idle sweep (server/kiosk.js) - the one source of truth for which
+      // screen a kiosk should be showing (docs/layers.md C2).
+      kioskSessionEmitter.emit(payloadOf(frame));
       break;
     case 'ping':
       // ws-level pongs answer the server's heartbeat automatically; nothing to send back.
@@ -276,6 +286,17 @@ export function onSettled(cb) {
  * player (docs/layers.md C3a) - never on an ordinary get_me/claim_task/free_refill reply. */
 export function onIdentityChange(cb) {
   return identityEmitter.on(cb);
+}
+
+export function onKioskSession(cb) {
+  return kioskSessionEmitter.on(cb);
+}
+
+/** Ends the current visitor's session (Claim/Done, or the client's own abandon flush). The
+ * server clears coins/streak and the reply is a kiosk_session frame with state 'idle', caught
+ * by onKioskSession like any other - this never asserts the new state itself. */
+export function kioskReset() {
+  send({ type: 'kiosk_reset' });
 }
 
 /** Resolves with round_opened; rejects with an Error whose .code is the server's error code. */

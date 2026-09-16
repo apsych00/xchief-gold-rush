@@ -7,6 +7,8 @@ import { readLead, readSignup } from './leads.js';
 import SignupForm from './SignupForm.jsx';
 import Logo from './Logo.jsx';
 import Tasks from './Tasks.jsx';
+import { IS_KIOSK } from './api/kiosk.js';
+import KioskApp from './KioskApp.jsx';
 
 const SIGNUP_REWARD = TASKS.find((t) => t.id === 'signup')?.reward ?? 1000;
 import { LEVERS, maxAffordableLever, stakeFor, useGame } from './useGame.js';
@@ -114,7 +116,7 @@ function CoinDot() {
 
 /* ---------- chrome ---------- */
 
-function TopBar({ profile }) {
+export function TopBar({ profile }) {
   const { t, lang, setLang } = useLang();
   return (
     <header className="topbar">
@@ -303,7 +305,8 @@ function Display({ state, profile, actions }) {
   const potential = Math.round(stake * curMult);
   // Ask for the email once, right after the first win: the player now has a
   // score worth saving. Never shown again after it has been answered/skipped.
-  const emailPrompt = isResult && !readLead() && !profile.prompts.email_win && profile.wins >= 1;
+  // Kiosk visitors are anonymous by design (docs/layers.md): no email prompt ever.
+  const emailPrompt = !IS_KIOSK && isResult && !readLead() && !profile.prompts.email_win && profile.wins >= 1;
   // Once shown it counts as asked, even if the player just moves on.
   const markPromptRef = useRef(actions.markPrompt);
   markPromptRef.current = actions.markPrompt;
@@ -464,9 +467,11 @@ function Display({ state, profile, actions }) {
                   {t('result.tasks')}
                 </button>
               )}
-              <button type="button" className="btn-lb" onClick={actions.goLeaderboard}>
-                {t('result.lb')}
-              </button>
+              {!IS_KIOSK && (
+                <button type="button" className="btn-lb" onClick={actions.goLeaderboard}>
+                  {t('result.lb')}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -475,7 +480,7 @@ function Display({ state, profile, actions }) {
   );
 }
 
-function Console({ state, profile, actions, trackRef }) {
+export function Console({ state, profile, actions, trackRef }) {
   const { t, lang } = useLang();
   const { phase, lev, dir, result, price } = state;
   const isIdle = phase === 'idle';
@@ -491,8 +496,10 @@ function Console({ state, profile, actions, trackRef }) {
 
   // Offer the signup once when the player first reaches the Trader level:
   // a proud moment for a good player who never goes broke.
+  // Kiosk visitors never see this either - no lead capture in kiosk mode (docs/layers.md).
   const emailAsked = !!readLead() || !!profile.prompts.email_win;
   const traderPrompt =
+    !IS_KIOSK &&
     isResult &&
     result?.outcome === 'win' &&
     emailAsked && // never stack on the first-win email prompt
@@ -619,7 +626,11 @@ function Console({ state, profile, actions, trackRef }) {
             {hint}
           </div>
 
-          {broke && !signupDone && (
+          {/* The web's own broke messaging (signup/refill/tasks CTAs) never applies to a kiosk
+              visitor: a kiosk session that runs out of coins ends outright (the full-screen
+              BROKE modal in KioskApp.jsx, driven by the server's kiosk_session state), never
+              "do a task for more coins" - see docs/layers.md C2. */}
+          {!IS_KIOSK && broke && !signupDone && (
             <div className="broke">
               <div className="broke-title">{t('signup.brokeTitle')}</div>
               <div className="broke-sub">{t('signup.brokeSub', { n: num(SIGNUP_REWARD, lang) })}</div>
@@ -637,7 +648,7 @@ function Console({ state, profile, actions, trackRef }) {
               )}
             </div>
           )}
-          {broke && signupDone && !profile.freeRefillUsed && (
+          {!IS_KIOSK && broke && signupDone && !profile.freeRefillUsed && (
             <div className="broke">
               <div className="broke-title">{t('game.freeTitle')}</div>
               <div className="broke-sub">{t('game.freeSub')}</div>
@@ -646,7 +657,7 @@ function Console({ state, profile, actions, trackRef }) {
               </button>
             </div>
           )}
-          {broke && signupDone && profile.freeRefillUsed && (
+          {!IS_KIOSK && broke && signupDone && profile.freeRefillUsed && (
             <div className="broke">
               <div className="broke-title">{t('game.brokeTitle')}</div>
               <div className="broke-sub">{t('game.brokeSub')}</div>
@@ -657,7 +668,7 @@ function Console({ state, profile, actions, trackRef }) {
           )}
         </div>
       </div>
-      {signupFor && (
+      {!IS_KIOSK && signupFor && (
         <SignupForm
           source={signupFor}
           balance={profile.coins}
@@ -802,14 +813,24 @@ export default function App() {
     <LangContext.Provider value={langCtx}>
       <div className="app" dir={dir} data-lang={lang}>
         <div className="phone" ref={phoneRef}>
-          <TopBar profile={profile} />
-          {screen === 'home' && <Home profile={profile} actions={actions} />}
-          {screen === 'game' && <Console state={state} profile={profile} actions={actions} trackRef={trackRef} />}
-          {screen === 'lb' && <Leaderboard others={state.others} profile={profile} />}
-          {screen === 'tasks' && (
-            <Tasks profile={profile} onClaim={actions.claimTask} onToast={(txt) => actions.toast?.(txt)} />
+          {IS_KIOSK ? (
+            // The booth visitor flow is a separate tree, not a screen among the web's home/
+            // game/lb/tasks - it never mounts Home, Leaderboard, Tasks, Nav, LeadCapture or
+            // SignupForm (docs/layers.md C2's hard guarantee), it just reuses TopBar and
+            // Console from here for the chrome and the play screen itself.
+            <KioskApp state={state} profile={profile} actions={actions} trackRef={trackRef} />
+          ) : (
+            <>
+              <TopBar profile={profile} />
+              {screen === 'home' && <Home profile={profile} actions={actions} />}
+              {screen === 'game' && <Console state={state} profile={profile} actions={actions} trackRef={trackRef} />}
+              {screen === 'lb' && <Leaderboard others={state.others} profile={profile} />}
+              {screen === 'tasks' && (
+                <Tasks profile={profile} onClaim={actions.claimTask} onToast={(txt) => actions.toast?.(txt)} />
+              )}
+              {screen !== 'game' && <Nav screen={screen} actions={actions} />}
+            </>
           )}
-          {screen !== 'game' && <Nav screen={screen} actions={actions} />}
           <Toast toast={state.toast} />
           <UpdateBanner />
         </div>
