@@ -197,6 +197,7 @@ function handleMessage(frame) {
     case 'me':
       handleMe(frame);
       settlePending(frame);
+      break;
     case 'kiosk_session':
       // Pushed after auth, after every settled kiosk round, after kiosk_reset, and by the
       // server's own 60 s idle sweep (server/kiosk.js) - the one source of truth for which
