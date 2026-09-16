@@ -27,6 +27,8 @@ const STATUS_CACHE_MS = 5000; // /status does one DB round-trip; cache it so pol
 const TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days (docs/layers.md C3a)
 const TOKEN_RENEW_AFTER_SECONDS = 7 * 24 * 60 * 60; // sliding renewal: reissue once a token is older than this
 
+const LEADERBOARD_DEBOUNCE_MS = 1000; // docs/layers.md C4: "debounced to at most once per second"
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE_RE = /^\+?[0-9 ()-]{7,20}$/;
@@ -204,6 +206,9 @@ export function createApp({
   // 60 s / 10 s defaults apply; tests shrink both so they do not wait on a real minute.
   kioskIdleMs = undefined,
   kioskSweepIntervalMs = undefined,
+  // Live leaderboard push (docs/layers.md C4). Left at the default in production; tests shrink
+  // it so a settle's broadcast does not sit in an in-progress test for a full second.
+  leaderboardDebounceMs = LEADERBOARD_DEBOUNCE_MS,
 } = {}) {
   const playerSockets = new Map(); // playerId -> ws
   const kioskSockets = new Map(); // kioskId -> ws
@@ -226,11 +231,60 @@ export function createApp({
     }
   }
 
+  // Live, masked leaderboard (docs/layers.md C4): recomputed after every player round settle
+  // and pushed to every WEB socket - never a kiosk, which has no email and is never ranked -
+  // whenever the top 10 actually changed. `runAt` throttles this to at most one query and one
+  // broadcast per `leaderboardDebounceMs`: the first settle after a quiet spell runs the query
+  // immediately, a burst of settles inside that window collapses into one more run right after
+  // it closes.
+  let leaderboardLastRunAt = 0;
+  let leaderboardTimer = null;
+  let leaderboardRunPending = false;
+  let leaderboardLastJson = null;
+
+  async function runLeaderboardRefresh() {
+    leaderboardLastRunAt = Date.now();
+    let rows;
+    try {
+      rows = await ledger.leaderboard();
+    } catch (err) {
+      console.error('[leaderboard] refresh failed', err);
+      return;
+    }
+    const json = JSON.stringify(rows);
+    if (json === leaderboardLastJson) return;
+    leaderboardLastJson = json;
+    const frame = JSON.stringify({ type: 'leaderboard', rows });
+    for (const ws of playerSockets.values()) {
+      if (ws.readyState === ws.OPEN) ws.send(frame);
+    }
+  }
+
+  function scheduleLeaderboardRefresh() {
+    const elapsed = Date.now() - leaderboardLastRunAt;
+    if (elapsed >= leaderboardDebounceMs && !leaderboardTimer) {
+      runLeaderboardRefresh().catch((err) => console.error('[leaderboard] refresh failed', err));
+      return;
+    }
+    leaderboardRunPending = true;
+    if (leaderboardTimer) return;
+    leaderboardTimer = setTimeout(
+      () => {
+        leaderboardTimer = null;
+        if (!leaderboardRunPending) return;
+        leaderboardRunPending = false;
+        runLeaderboardRefresh().catch((err) => console.error('[leaderboard] refresh failed', err));
+      },
+      Math.max(0, leaderboardDebounceMs - elapsed),
+    );
+  }
+
   const feed = createFeed({ finnhubToken, onTick: broadcastPrice });
   const rounds = createRoundManager({
     feed,
     ledger,
     getSocket,
+    onPlayerSettled: scheduleLeaderboardRefresh,
     log: (line) => console.log(`[round] ${line}`),
   });
   const alerts = createAlerts({ latest: feed.latest, log: (line) => console.log(line) });
@@ -460,9 +514,11 @@ export function createApp({
               ledger.getMe(loggedIn),
               ledger.getTokenVersion(loggedIn),
             ]);
-            send(ws, { type: 'me', ...me, email_verified: true, token: signToken(loggedIn, loggedInVersion ?? 1) });
+            // get_me() already reports email_verified true here - that player's email was set
+            // (and confirmed) before this code could have proved ownership of it.
+            send(ws, { type: 'me', ...me, token: signToken(loggedIn, loggedInVersion ?? 1) });
           } else {
-            send(ws, { type: 'me', ...(await ledger.getMe(id)), email_verified: true });
+            send(ws, { type: 'me', ...(await ledger.getMe(id)) });
           }
           break;
         }
@@ -558,6 +614,7 @@ export function createApp({
 
     async close() {
       kioskIdleSweep.stop();
+      clearTimeout(leaderboardTimer);
       clearInterval(heartbeat);
       alerts.stop();
       try {

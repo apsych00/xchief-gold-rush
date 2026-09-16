@@ -47,6 +47,18 @@ function storeToken(token) {
   }
 }
 
+/** Sign out (docs/layers.md C3): drop the stored token so the next `auth` frame starts a fresh
+ * anonymous player. Does not touch the live socket - the caller reloads the page right after,
+ * which is what actually re-runs `auth` with nothing to send. */
+export function clearToken() {
+  token = null;
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* storage unavailable: nothing was persisted to begin with */
+  }
+}
+
 function makeEmitter() {
   const subs = new Set();
   return {
@@ -64,6 +76,7 @@ const priceEmitter = makeEmitter();
 const statusEmitter = makeEmitter();
 const settledEmitter = makeEmitter();
 const identityEmitter = makeEmitter();
+const leaderboardEmitter = makeEmitter();
 
 let ws = null;
 let started = false;
@@ -193,6 +206,13 @@ function handleMessage(frame) {
       handleMe(frame);
       settlePending(frame);
       break;
+    case 'leaderboard':
+      // Both a reply to this socket's own `leaderboard` request (getLeaderboard()) and an
+      // unsolicited push whenever the top 10 changes (docs/layers.md C4) arrive as this same
+      // frame shape; settlePending() is a no-op when nothing is waiting on it.
+      leaderboardEmitter.emit(frame.rows);
+      settlePending(frame);
+      break;
     case 'ping':
       // ws-level pongs answer the server's heartbeat automatically; nothing to send back.
       break;
@@ -276,6 +296,14 @@ export function onSettled(cb) {
  * player (docs/layers.md C3a) - never on an ordinary get_me/claim_task/free_refill reply. */
 export function onIdentityChange(cb) {
   return identityEmitter.on(cb);
+}
+
+/** Fires with the fresh top-10 `rows` every time the server pushes a `leaderboard` frame -
+ * on request (getLeaderboard's own reply also lands here) and, unsolicited, whenever the top
+ * 10 changes (docs/layers.md C4). Never fires for a kiosk socket: the server never sends it
+ * one. */
+export function onLeaderboard(cb) {
+  return leaderboardEmitter.on(cb);
 }
 
 /** Resolves with round_opened; rejects with an Error whose .code is the server's error code. */

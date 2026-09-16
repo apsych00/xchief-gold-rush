@@ -9,7 +9,14 @@
  * what carries over then) and socket.js stores the fresh token that answer carries.
  */
 import { enabled } from './client.js';
-import { connect, onStatus, requestOtp as socketRequestOtp, state, verifyOtp as socketVerifyOtp } from './socket.js';
+import {
+  clearToken,
+  connect,
+  onStatus,
+  requestOtp as socketRequestOtp,
+  state,
+  verifyOtp as socketVerifyOtp,
+} from './socket.js';
 
 let inflight = null;
 
@@ -52,4 +59,14 @@ export function requestOtp(email) {
 export function verifyOtp(email, code) {
   if (!enabled) throw Object.assign(new Error('api_disabled'), { code: 'api_disabled' });
   return socketVerifyOtp(email, code);
+}
+
+/** Drops the stored token and reloads: the next load's `auth` frame carries nothing, so the
+ * server starts a brand-new anonymous player (docs/layers.md C3). The player can log back into
+ * the same verified player from any device by requesting a fresh code for the same email
+ * (docs/layers.md C3a: OTP on a known email is a login, not an error). */
+export function signOut() {
+  if (!enabled) return;
+  clearToken();
+  window.location.reload();
 }

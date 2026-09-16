@@ -22,8 +22,12 @@ const IDLE_MS = 2000;
  * @param {(kind: 'player'|'kiosk', id: string) => import('ws').WebSocket | undefined} deps.getSocket
  * @param {(line: string) => void} [deps.log]
  * @param {() => number} [deps.now]
+ * @param {() => void} [deps.onPlayerSettled] called after every player round settles (win,
+ *   lose or flat) - never for a kiosk round, which is not on the leaderboard. index.js uses it
+ *   to schedule a debounced leaderboard recompute (docs/layers.md C4); a round is never voided
+ *   here without settling, so a voided round does not trigger it.
  */
-export function createRoundManager({ feed, ledger, getSocket, log = console.log, now = Date.now }) {
+export function createRoundManager({ feed, ledger, getSocket, log = console.log, now = Date.now, onPlayerSettled }) {
   const pending = new Map(); // `${kind}:${id}` -> the round_settled frame not yet delivered
   let openCount = 0;
   let idleTimer = null;
@@ -96,6 +100,7 @@ export function createRoundManager({ feed, ledger, getSocket, log = console.log,
         return;
       }
       roundClosed();
+      if (kind === 'player') onPlayerSettled?.();
 
       const ms = now() - startedAt;
       log(`round ${roundId} ${kind}:${id} ${settled.outcome} ${p.price}->${end.price} ${ms}ms`);

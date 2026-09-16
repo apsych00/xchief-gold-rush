@@ -4,9 +4,9 @@ import { startPriceFeed } from './priceFeed.js';
 import { loadProfile, saveProfile } from './profile.js';
 import { enabled as apiEnabled } from './api/client.js';
 import * as api from './api/game.js';
-import { ensureSession } from './api/session.js';
+import { ensureSession, requestOtp as sessionRequestOtp, signOut as sessionSignOut, verifyOtp as sessionVerifyOtp } from './api/session.js';
 import { getKioskSecret, playKioskRound } from './api/kiosk.js';
-import { connect as connectSocket, onIdentityChange, onSettled } from './api/socket.js';
+import { connect as connectSocket, onIdentityChange, onLeaderboard, onSettled } from './api/socket.js';
 
 export const ROUND_SECONDS = 5;
 export const LEVERS = ECON.levers;
@@ -74,6 +74,33 @@ export function useGame() {
 
   useEffect(() => saveProfile(profile), [profile]);
 
+  // Shared by the initial hydrate below, the re-login case (docs/layers.md C3a: verifying an
+  // email that already belongs to a different player switches this socket's identity there),
+  // and the OTP actions further down - every one of them lands a fresh players row and rebuilds
+  // the profile from it the same way. `email`/`emailVerified`/`display` are ticket C3/C4's own
+  // additions: display is this player's own masked email (docs/layers.md, "playing as
+  // k****i@gmail.com"), the same string leaderboard rows use so matching "is this my row" is a
+  // plain equality check.
+  const applyMe = useCallback((row) => {
+    const next = {
+      ...profileRef.current,
+      coins: row.coins,
+      record: row.record,
+      streak: row.streak,
+      bestStreak: row.best_streak,
+      wins: row.wins,
+      rounds: row.rounds,
+      freeRefillUsed: row.free_refill_used,
+      displayName: row.display_name,
+      email: row.email ?? null,
+      emailVerified: !!row.email_verified,
+      display: row.display ?? null,
+    };
+    profileRef.current = next;
+    setProfile(next);
+    return next;
+  }, []);
+
   // Hydrate from the server once on load: sign in anonymously (or resume the
   // existing session) then pull the real balance/streak/record. Kiosk mode
   // has no session of its own - its identity is the bearer secret checked on
@@ -86,36 +113,35 @@ export function useGame() {
       return undefined;
     }
     let cancelled = false;
-    // Shared with the re-login case below (docs/layers.md C3a): verifying an email that
-    // already belongs to a different player switches this socket's identity there, and the
-    // profile has to be rebuilt from that player's row exactly as it is on first load.
-    const applyMe = (row) => {
-      if (cancelled) return;
-      const next = {
-        ...profileRef.current,
-        coins: row.coins,
-        record: row.record,
-        streak: row.streak,
-        bestStreak: row.best_streak,
-        wins: row.wins,
-        rounds: row.rounds,
-        freeRefillUsed: row.free_refill_used,
-        displayName: row.display_name,
-      };
-      profileRef.current = next;
-      setProfile(next);
+    const guardedApplyMe = (row) => {
+      if (!cancelled) applyMe(row);
     };
     ensureSession()
       .then(() => api.getMe())
-      .then(applyMe)
+      .then(guardedApplyMe)
       .catch((err) => {
         console.error('[api] session bootstrap failed', err);
       });
-    const offIdentityChange = onIdentityChange(applyMe);
+    const offIdentityChange = onIdentityChange(guardedApplyMe);
     return () => {
       cancelled = true;
       offIdentityChange();
     };
+  }, [applyMe]);
+
+  // Live, masked leaderboard (docs/layers.md C4): re-renders `others` from whichever `me` this
+  // socket currently is, so the own-row match below stays correct across a re-login mid-view.
+  useEffect(() => {
+    if (!apiEnabled || IS_KIOSK) return undefined;
+    return onLeaderboard((rows) => {
+      const myDisplay = profileRef.current.display;
+      const mapped = rows.map((r) => ({
+        name: r.display,
+        s: r.record,
+        me: myDisplay != null && r.display === myDisplay,
+      }));
+      setState((s) => ({ ...s, others: mapped }));
+    });
   }, []);
 
   const stopTimer = useCallback(() => {
@@ -459,20 +485,51 @@ export function useGame() {
     return true;
   }, [toast]);
 
-  // The public top-10; refetched each time the leaderboard screen opens so it
-  // reflects the latest server state. Excludes the current player's own row
-  // (identified by display_name) since the screen appends "you" itself.
+  // The public top-10; refetched each time the leaderboard screen opens so it reflects the
+  // latest server state (docs/layers.md C4). Rows are masked emails, not names: the current
+  // player's own row is marked `me` by an exact match on its own masked email (profile.display)
+  // rather than excluded, so a verified player in the top 10 sees themself highlighted in
+  // place, same as the live push in the effect above.
   const refreshLeaderboard = useCallback(() => {
     if (!apiEnabled || IS_KIOSK) return;
     api
       .getLeaderboard()
       .then((rows) => {
-        const me = profileRef.current.displayName;
-        const mapped = rows.filter((r) => r.display_name !== me).map((r) => ({ name: r.display_name, s: r.record }));
+        const myDisplay = profileRef.current.display;
+        const mapped = rows.map((r) => ({
+          name: r.display,
+          s: r.record,
+          me: myDisplay != null && r.display === myDisplay,
+        }));
         setState((s) => ({ ...s, others: mapped }));
       })
       .catch((err) => console.error('[api] leaderboard fetch failed', err));
   }, []);
+
+  /** Requests an 8-digit code for `email` (docs/layers.md C3). */
+  const requestOtp = useCallback((email) => sessionRequestOtp(email), []);
+
+  /** Verifies the code and applies whatever `me` came back - the same player with its score
+   * kept, or, on a re-login (docs/layers.md C3a), the existing verified player that email
+   * already belongs to. `identityChanged` tells the OTP screen which one happened: it is true
+   * exactly when the server's `me` carried a fresh token, its own signal for a re-login
+   * (src/api/socket.js's handleMe).
+   *
+   * The OTP entry point lives on the leaderboard screen itself (the guest row); a live push
+   * only arrives after this player's next round settles, so without this the leaderboard
+   * behind the modal would keep showing the pre-verification guest row until the player left
+   * the screen and came back. A verify is rare enough that one extra fetch here is free. */
+  const verifyOtp = useCallback(
+    (email, code) =>
+      sessionVerifyOtp(email, code).then((me) => {
+        const next = applyMe(me);
+        refreshLeaderboard();
+        return { ...next, identityChanged: !!me.token };
+      }),
+    [applyMe, refreshLeaderboard],
+  );
+
+  const signOut = useCallback(() => sessionSignOut(), []);
 
   /** Record that an automatic prompt was shown so it is never repeated. */
   const markPrompt = useCallback((id) => {
@@ -524,7 +581,10 @@ export function useGame() {
     },
     claimTask,
     toast,
+    requestOtp,
+    verifyOtp,
+    signOut,
   };
 
-  return { state, profile, actions, trackRef };
+  return { state, profile, actions, trackRef, isKiosk: IS_KIOSK };
 }
