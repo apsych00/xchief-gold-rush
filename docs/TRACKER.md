@@ -13,10 +13,22 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | L1.5 client experience | 13 / 16 | C9 WIN reveal (proposed), C4b animation, Q1 rest | the booth and the web flows are built and verified end to end |
 | OPS | 2 / 2 | 0 | deploy scripts built; first real run happens on the box |
 | FEED | 3 / 5 | MetaApi blocked on admin; Docker bridge in review | Finnhub live with PAXG fallbacks, 3-decimal publishing |
-| L2 hardening | 2 / 17 | S2-S16 | order set; nothing started |
-| MKT Part B | 0 / 13 | B1-B13 | starts when L1.5 closes; B1, B2, B4 first |
+| L2 hardening | 5 / 18 | S2 and S18 ready to dispatch; S3, S5, S6, S10, S12 next | audit 2026-09-16: S7, S9, S16 were already done by other tickets |
+| MKT Part B | 0 / 13 | B1+B4, B5, B10+B11 ready to dispatch; B2 after B1 | tickets written 2026-09-16 night |
 
 Play it now: compose stack at http://localhost:8080 (kiosk `/?k=dev-kiosk-secret-0001`), operator pages `/ops` and `/logs`.
+
+## Night handover 2026-09-16
+
+Running at shutdown (their files stay in the worktrees; resume each with a RESUME NOTE at the top of its TICKET.md):
+- **B15 harden** on cb in Orca terminal "B15 harden", worktree `b15-review` (branch `nightmareinc/b15-review`, review committed, hardening uncommitted). Known blocker and the fix direction are in its TICKET.md.
+- **Opus demo + red team**, worktree `demo-redteam`: `demo/showcase.mjs`, `demo/redteam.mjs`, `docs/showcase.md`, `docs/reports/showcase-results.md`, `docs/reports/redteam.md` already on disk, uncommitted; the agent was finishing when the session closed. First thing tomorrow: read `docs/reports/redteam.md`, card every loophole, dispatch fixes to cb Sonnet workers.
+
+Tomorrow's dispatch order (all on cb; switch to this account's Sonnet when cb hits its 5-hour or weekly cap): S2 rate limits, B1+B4 tournaments, B5 device identity, B10+B11, then S18 after S2, B2 after B1, C9 after the owner's yes. Tickets are in `docs/tickets/`.
+
+Awaiting the owner: MetaApi account UUID + broader token + quote interval 0; OpenCode Go top-up (cap is account-wide, every model refused); C9 decision (coupon reserved at win, released if never revealed).
+
+Local stack: compose on http://localhost:8080 comes back by itself after boot (`restart: unless-stopped`); rebuild from `dev` with the compose command in `box-deploy.md` if it looks stale. Kept test DB `goldrush-box-keep` on 55432.
 
 ## Tickets
 
@@ -44,32 +56,33 @@ Play it now: compose stack at http://localhost:8080 (kiosk `/?k=dev-kiosk-secret
 | B15 | FEED | MT5 terminal + tick bridge in Docker | Sonnet | verifying | build committed on `nightmareinc/b15-mt5-docker` (74 unit, 11 Python tests); base image pull truncated in the sandbox; independent review running on cb (`b15-review`), then harden, then blind tests | review, harden, tests, merge |
 | F1 | FEED | Finnhub + PAXG continuous series, 3 decimals | | done | measured 9 moves / 5 s vs 1-2 on PAXG | |
 | S1 | L2 | Secret rotation procedure | | queued | folded into C3a except the procedure | |
-| S2 | L2 | Per-socket rate limits (play, request_otp per email and IP, flood cut-off) | | queued | first hardening ticket | |
-| S3 | L2 | Kiosk secret out of the URL; scrub `k=` from Caddy logs | | queued | | |
+| S2 | L2 | Per-socket AND per-IP rate limits (sockets per IP, connections per minute, anonymous signups, OTP per IP, frame flood, frame size, play cadence), 15-minute IP block | | ready | audit 2026-09-16: only the SQL 400 rounds/hour per identity exists; ticket `docs/tickets/s2-rate-limits.md` | dispatch first tomorrow |
+| S3 | L2 | Kiosk secret out of the URL; scrub `k=` from Caddy logs | | queued | audit: not done, secret still in `?k=` | |
 | S4 | L2 | OTP on a known email logs into that player | | done | in C3a | |
-| S5 | L2 | Postgres least privilege: an `app` role | | queued | | |
-| S6 | L2 | Nightly `pg_dump` to object storage, one rehearsed restore | | queued | | |
-| S7 | L2 | Ops runbook for a non-engineer | | queued | D1 gives the plumbing | |
-| S8 | L2 | Campaign end: freeze the leaderboard, export the top 10 | | queued | becomes per-tournament with B1 | |
-| S9 | L2 | Coupon exhaustion wording | | queued | | |
-| S10 | L2 | Origin pinning on the socket, security headers, TLS-only cookies | | queued | | |
-| S11 | L2 | Email consent text and code retention | | queued | | |
-| S12 | L2 | Coupon audit and reconciliation, alert at N codes left | | queued | | |
+| S5 | L2 | Postgres least privilege: an `app` role | | queued | audit: the server still connects as `postgres`; the compat roles exist only for pgTAP | |
+| S6 | L2 | Nightly `pg_dump` to object storage, one rehearsed restore | | queued | audit: nothing yet | |
+| S7 | L2 | Ops runbook for a non-engineer | | done | `docs/box-deploy.md` rewritten by D2 (install, deploy, rollback, daily habits, monitoring) | add "if attacked" with S18 |
+| S8 | L2 | Campaign end: freeze the leaderboard, export the top 10 | | queued | audit: only `scripts/export-coupons.mjs` exists; becomes per-tournament with B1 (a tournament's end is its freeze) | with B1 |
+| S9 | L2 | Coupon exhaustion wording | | done | C8's modal copy | |
+| S10 | L2 | Origin pinning on the socket, security headers, TLS-only cookies | | queued | audit: not done (Caddyfile comment marks the spot; no origin check in `server/index.js`) | with S2 |
+| S11 | L2 | Email consent text and code retention | | partly | audit: the lead forms carry "No spam. Unsubscribe anytime."; OTP code retention/cleanup not verified | |
+| S12 | L2 | Coupon audit and reconciliation, alert at N codes left | | queued | audit: `codes_left` now on every kiosk frame (C8) and `/status` has the counts; the low-stock alert is missing | small; with S2 |
 | S13 | L2 | OTP verify-attempt limiting | | done | in L1 (5 tries per code) | |
-| S14 | L2 | Kiosk hygiene: no player token on a kiosk, clean state between visitors | | queued | mostly covered by C1/C2; audit | |
+| S14 | L2 | Kiosk hygiene: no player token on a kiosk, clean state between visitors | | queued | audit: state clears on every reset (C1/C2); whether `ensureSession` still mints a player token in kiosk mode is unverified | verify in the red-team follow-up |
 | S15 | L2 | Least privilege, extended | | queued | with S5 | |
-| S16 | L2 | Leaderboard integrity at prize time: one row per verified email | | queued | | |
-| B1 | MKT | Tournaments as data (dates, prize image and title, broker bonus), adjustable without code | | queued | first of Part B | |
+| S16 | L2 | Leaderboard integrity at prize time: one row per verified email | | done | `players.email` is unique and `leaderboard()` ranks verified emails only; the export becomes per-tournament with B1 | |
+| S18 | L2 | Safe mode: guarded and locked levels, automatic escalation on connection and signup spikes, operator command, Cloudflare Under Attack runbook | | ready | design in `docs/tickets/s18-safe-mode.md`; depends on S2 | after S2 |
+| B1 | MKT | Tournaments as data (dates, prize image and title, broker bonus), adjustable without code | | ready | ticket `docs/tickets/b1-b4-tournaments.md` (with B4) | dispatch tomorrow |
 | B2 | MKT | Leaderboard API: 20 per page, own rank and row in every response, live top 20 | | queued | closes gap G3 | |
 | B3 | MKT | Badge tiers and the legend endpoint | | queued | | |
-| B4 | MKT | Name and phone removed from lead capture | | queued | small, with B1 | |
-| B5 | MKT | Per-device identity for anonymous players | | queued | the fraud surface for every reward | |
+| B4 | MKT | Name and phone removed from lead capture | | ready | in the B1 ticket | dispatch tomorrow |
+| B5 | MKT | Per-device identity for anonymous players | | ready | ticket `docs/tickets/b5-device-identity.md` | dispatch tomorrow |
 | B6 | MKT | Reward: video watched (90 %) once per device | | queued | | |
 | B7 | MKT | Reward: redirect and return (Trustpilot, YouTube, Telegram), 5 s window | | queued | lenient by design until B13 | |
 | B8 | MKT | Reward: Instagram follow verified through the Instagram API | | queued | needs an Instagram app and token | |
 | B9 | MKT | Reward: email verified | | queued | login already works | |
-| B10 | MKT | Tour-seen flag per device (web) and per boot (kiosk) | | queued | | |
-| B11 | MKT | Ad banner list served to the client | | queued | | |
+| B10 | MKT | Tour-seen flag per device (web) and per boot (kiosk) | | ready | ticket `docs/tickets/b10-b11-tour-banners.md` (with B11) | dispatch tomorrow |
+| B11 | MKT | Ad banner list served to the client | | ready | in the B10 ticket | dispatch tomorrow |
 | B12 | MKT | Curate the YouTube list (under one minute each) | | queued | content task | |
 | B13 | MKT | Hardening pass on rewards and device identity | | queued | after B5-B9 | |
 | A1-A8 | MKT | Screens and copy: ad zone, paged leaderboard, tournaments, profile, tours, rewards rework | marketing lead | queued | brief sent: `tasks-marketing-lead.md` / `.fa.md` | |
