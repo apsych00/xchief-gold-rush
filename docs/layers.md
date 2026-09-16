@@ -44,7 +44,7 @@ Order: C1 -> C2 (the booth), then C3 -> C3a -> C4 -> C5 -> C6 -> C7 (the web), D
 
 **Design fidelity rule for every client ticket:** new screens and states reuse the existing components, classes, colour tokens and typography only - no new colours, fonts or layout systems; every ticket attaches screenshots of each new screen next to an existing one for review.
 
-Product defaults taken (say if wrong): kiosk starts each visitor at 1000 coins with the same levers as web; WIN modal 30 s; EXIT modal 20 s; abandon countdown shows after 30 s idle and flushes at 60 s (matching the server's reset); masked email keeps the first and last character of the local part and the full domain, with three to four asterisks between (capped so a long address cannot push the score off a row).
+Product defaults taken (say if wrong): kiosk starts each visitor at 1000 coins with the same levers as web; WIN modal 30 s; EXIT modal 20 s; abandon countdown shows after 20 s without any activity, any activity cancels and restarts it, flush 20 s later (40 s total, ahead of the server's 60 s reset); masked email keeps the first and last character of the local part and the full domain, with three to four asterisks between (capped so a long address cannot push the score off a row).
 
 ---
 

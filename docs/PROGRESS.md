@@ -62,7 +62,7 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 | C3a session policy (30-day versioned token, renewal, OTP re-login, revocation) | done | merged fast-forward `abdec28` |
 | C5 tasks and gifts, server-owned rewards | done | `get_tasks()`, `reward` on claim and refill, `already_claimed` / `already_refilled`, `tasks` frame; 172 pgTAP, 33 integration, 12 E2E on my run; merged `966068b` |
 | C6 + C7 web verdict audit and broke path | building | Sonnet builder (OpenCode Go hit its monthly limit) |
-| C2b kiosk idle rework (20 s idle, activity cancels, 20 s countdown) | building | Sonnet builder resuming the partial work (OpenCode Go hit its monthly limit) |
+| C2b kiosk idle rework (20 s idle, activity cancels, 20 s countdown) | done | built by qwen3.8-max before the cap, verified by Sonnet and by me: kiosk E2E 5/5 incl. the idle test; merged |
 | C4b leaderboard row animation | queued | after C5-C7 |
 | D1 monitoring | done | `/status`, `/ops`, `/logs`; merged `4839072` |
 | D2 one-command deploy + auto-deploy | done | `deploy/`; merged `acc3b0d` |
