@@ -47,6 +47,10 @@ const initialGame = {
   // last settled round
   result: null, // { outcome:'win'|'lose'|'flat', stake, delta, mult, streak, badge, coupon? }
   toast: null, // { id, text } transient notice
+  // Task definitions plus this player's own claimed state, computed server-side by
+  // public.get_tasks() (docs/layers.md C5). Empty until the first fetch; kiosk and offline
+  // (apiEnabled false) modes never populate it and fall back to src/config.js's own TASKS list.
+  tasksRows: [],
 };
 
 export function useGame() {
@@ -97,6 +101,17 @@ export function useGame() {
     return next;
   }, []);
 
+  // Task definitions plus this player's own claimed state (docs/layers.md C5): fetched on
+  // hydrate, on every visit to the tasks screen, and refreshed locally right after a claim -
+  // never assembled from localStorage or src/config.js's reward numbers.
+  const refreshTasks = useCallback(() => {
+    if (!apiEnabled || IS_KIOSK) return;
+    api
+      .getTasks()
+      .then((rows) => setState((s) => ({ ...s, tasksRows: rows })))
+      .catch((err) => console.error('[api] tasks fetch failed', err));
+  }, []);
+
   // Hydrate from the server once on load: sign in anonymously (or resume the
   // existing session) then pull the real balance/streak/record. Kiosk mode
   // has no session of its own - its identity is the bearer secret checked on
@@ -115,6 +130,9 @@ export function useGame() {
     ensureSession()
       .then(() => api.getMe())
       .then(guardedApplyMe)
+      .then(() => {
+        if (!cancelled) refreshTasks();
+      })
       .catch((err) => {
         console.error('[api] session bootstrap failed', err);
       });
@@ -123,7 +141,7 @@ export function useGame() {
       cancelled = true;
       offIdentityChange();
     };
-  }, [applyMe]);
+  }, [applyMe, refreshTasks]);
 
   // Live, masked leaderboard (docs/layers.md C4): re-renders `others` from whichever `me` this
   // socket currently is, so the own-row match below stays correct across a re-login mid-view.
@@ -416,21 +434,16 @@ export function useGame() {
         api
           .claimTask(taskId)
           .then((res) => {
-            const p = profileRef.current;
-            // The socket's claim_task reply is the player's current state, not the reward
-            // amount (server/index.js sends `me`, not the claim_task RPC's own {coins, reward}
-            // json) - the coin delta the server actually applied is what res.coins - p.coins
-            // says, so the toast reads that rather than guessing at a reward figure.
-            const gained = res.coins - p.coins;
-            const next = {
-              ...p,
-              coins: res.coins,
-              record: Math.max(p.record, res.coins),
-              taskClaims: { ...p.taskClaims, [taskId]: Date.now() },
-            };
-            profileRef.current = next;
-            setProfile(next);
-            toast(`+${gained}`);
+            // server/index.js's claim_task reply is `{type:'me', ...me, reward, task}`: the
+            // full player row (applied the same way get_me's own reply is) plus the exact
+            // reward the ledger just granted (docs/layers.md C5) - never guessed from a coin
+            // delta or a client-side reward table.
+            applyMe(res);
+            setState((s) => ({
+              ...s,
+              tasksRows: s.tasksRows.map((r) => (r.id === res.task ? { ...r, claimed: true } : r)),
+            }));
+            toast(`+${res.reward}`);
           })
           .catch((err) => toast(err?.code || 'error'));
         return true;
@@ -452,7 +465,7 @@ export function useGame() {
       toast(`+${task.reward}`);
       return true;
     },
-    [toast],
+    [applyMe, toast],
   );
 
   const freeRefill = useCallback(() => {
@@ -460,12 +473,10 @@ export function useGame() {
       api
         .freeRefill()
         .then((res) => {
-          const p = profileRef.current;
-          const gained = res.coins - p.coins; // see the same note in claimTask above
-          const next = { ...p, coins: res.coins, record: Math.max(p.record, res.coins), freeRefillUsed: true };
-          profileRef.current = next;
-          setProfile(next);
-          toast(`+${gained}`);
+          // server/index.js's free_refill reply is `{type:'me', ...me, reward}` - same shape
+          // and same reasoning as claim_task's above.
+          applyMe(res);
+          toast(`+${res.reward}`);
         })
         .catch((err) => toast(err?.code || 'error'));
       return true;
@@ -478,7 +489,7 @@ export function useGame() {
     setProfile(next);
     toast(`+${ECON.freeRefill}`);
     return true;
-  }, [toast]);
+  }, [applyMe, toast]);
 
   // The public top-10; refetched each time the leaderboard screen opens so it reflects the
   // latest server state (docs/layers.md C4). Rows are masked emails, not names: the current
@@ -538,6 +549,7 @@ export function useGame() {
   const actions = {
     go: (screen) => patch({ screen }),
     freeRefill,
+    refreshTasks,
     markPrompt,
     startGame: () => patch({ screen: 'game' }),
     goHome: () => {
@@ -566,6 +578,7 @@ export function useGame() {
     },
     goTasks: () => {
       stopTimer();
+      refreshTasks();
       patch({ screen: 'tasks', ...reset });
     },
     playAgain: () => patch(reset),

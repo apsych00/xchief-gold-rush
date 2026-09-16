@@ -13,8 +13,13 @@ import { enabled as apiEnabled } from './api/client.js';
 import OtpModal, { IdentityBar } from './Identity.jsx';
 import Profile, { initialsOf } from './Profile.jsx';
 
-const SIGNUP_REWARD = TASKS.find((t) => t.id === 'signup')?.reward ?? 1000;
 import { LEVERS, maxAffordableLever, stakeFor, useGame } from './useGame.js';
+
+// Offline-only fallback (docs/layers.md C5): src/config.js's own TASKS list, used solely for
+// the no-backend preview mode (VITE_GAME_WS unset - see src/api/client.js). Whenever a real
+// server is connected, the signup reward shown here always comes from state.tasksRows (the
+// `tasks` frame, docs/layers.md C5) instead - never this constant.
+const FALLBACK_SIGNUP_REWARD = TASKS.find((t) => t.id === 'signup')?.reward ?? 1000;
 
 const GREEN = '#35E36F';
 const GOLD = '#E9B62A';
@@ -519,6 +524,10 @@ export function Console({ state, profile, actions, trackRef }) {
   const onGold = !isResult;
   const signupDone = !!readSignup();
   const [signupFor, setSignupFor] = useState(null); // 'signup_broke' | 'signup_trader' | null
+  // The signup task's reward (docs/layers.md C5): from the server's own tasks frame once it has
+  // arrived (state.tasksRows), the offline-only fallback otherwise - never a number baked into
+  // this file.
+  const signupReward = state.tasksRows.find((r) => r.id === 'signup')?.reward ?? FALLBACK_SIGNUP_REWARD;
 
   // Offer the signup once when the player first reaches the Trader level:
   // a proud moment for a good player who never goes broke.
@@ -659,9 +668,9 @@ export function Console({ state, profile, actions, trackRef }) {
           {!IS_KIOSK && broke && !signupDone && (
             <div className="broke">
               <div className="broke-title">{t('signup.brokeTitle')}</div>
-              <div className="broke-sub">{t('signup.brokeSub', { n: num(SIGNUP_REWARD, lang) })}</div>
+              <div className="broke-sub">{t('signup.brokeSub', { n: num(signupReward, lang) })}</div>
               <button type="button" className="btn-primary" onClick={() => setSignupFor('signup_broke')}>
-                {t('signup.cta', { n: num(SIGNUP_REWARD, lang) })}
+                {t('signup.cta', { n: num(signupReward, lang) })}
               </button>
               {!profile.freeRefillUsed ? (
                 <button type="button" className="link-btn broke-alt" onClick={actions.freeRefill}>
@@ -698,7 +707,7 @@ export function Console({ state, profile, actions, trackRef }) {
         <SignupForm
           source={signupFor}
           balance={profile.coins}
-          reward={num(SIGNUP_REWARD, lang)}
+          reward={num(signupReward, lang)}
           onDone={() => {
             actions.markPrompt(signupFor);
             actions.claimTask('signup');
@@ -882,7 +891,13 @@ export default function App() {
                 <Profile profile={profile} actions={actions} onToast={(txt) => actions.toast?.(txt)} />
               )}
               {screen === 'tasks' && (
-                <Tasks profile={profile} onClaim={actions.claimTask} onToast={(txt) => actions.toast?.(txt)} />
+                <Tasks
+                  profile={profile}
+                  tasksRows={state.tasksRows}
+                  onClaim={actions.claimTask}
+                  onRefreshTasks={actions.refreshTasks}
+                  onToast={(txt) => actions.toast?.(txt)}
+                />
               )}
               {screen !== 'game' && <Nav screen={screen} actions={actions} />}
             </>

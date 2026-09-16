@@ -8,6 +8,7 @@ import {
   TASK_WAIT_MS,
   VERIFY_MODE,
 } from './config.js';
+import { enabled as apiEnabled } from './api/client.js';
 import { num, useLang } from './i18n.js';
 import LeadCapture from './LeadCapture.jsx';
 import { readLead, readSignup } from './leads.js';
@@ -108,7 +109,7 @@ function VideoModal({ onDone, onCancel }) {
   );
 }
 
-export default function Tasks({ profile, onClaim, onToast }) {
+export default function Tasks({ profile, tasksRows = [], onClaim, onRefreshTasks, onToast }) {
   const { t, lang } = useLang();
   const [now, setNow] = useState(Date.now());
   const [waiting, setWaiting] = useState({}); // task id -> unlock timestamp
@@ -118,27 +119,55 @@ export default function Tasks({ profile, onClaim, onToast }) {
   const [signupOpen, setSignupOpen] = useState(false);
   const leadSaved = !!readLead();
   const signupSaved = !!readSignup();
+  const online = apiEnabled; // false only in the no-backend preview mode (VITE_GAME_WS unset)
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(id);
   }, []);
 
+  // A repeatable task's `claimed` flips back to false server-side once its cooldown passes
+  // (public.get_tasks(), docs/layers.md C5); refetch periodically while this screen is open so
+  // that happens without the player having to leave and come back.
+  useEffect(() => {
+    if (!apiEnabled || !onRefreshTasks) return undefined;
+    const id = setInterval(onRefreshTasks, 5000);
+    return () => clearInterval(id);
+  }, [onRefreshTasks]);
+
+  // Reward and claimed state (docs/layers.md C5): computed server-side by public.get_tasks()
+  // and delivered on the `tasks` frame (tasksRows, refreshed by useGame's goTasks/refreshTasks)
+  // - never assembled here from localStorage or a hardcoded reward table. The offline preview
+  // mode (no server to ask) is the one exception, kept on the old localStorage-timestamp path.
+  const rowFor = (id) => tasksRows.find((r) => r.id === id);
+  const rewardOf = (task) => (online ? (rowFor(task.id)?.reward ?? task.reward) : task.reward);
+  const isClaimed = (id) => (online ? !!rowFor(id)?.claimed : !!profile.taskClaims[id]);
+
   // Email and signup tasks auto-claim once the matching lead exists
   // (they may have been captured from a prompt elsewhere in the game).
   useEffect(() => {
-    if (leadSaved && !profile.taskClaims.email) onClaim('email');
-  }, [leadSaved, profile.taskClaims.email, onClaim]);
+    if (leadSaved && !isClaimed('email')) onClaim('email');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadSaved, tasksRows, profile.taskClaims.email, onClaim]);
   useEffect(() => {
-    if (signupSaved && !profile.taskClaims.signup) onClaim('signup');
-  }, [signupSaved, profile.taskClaims.signup, onClaim]);
+    if (signupSaved && !isClaimed('signup')) onClaim('signup');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signupSaved, tasksRows, profile.taskClaims.signup, onClaim]);
 
   const statusOf = (task) => {
-    const last = profile.taskClaims[task.id];
-    if (last) {
-      if (!task.repeatMs) return { kind: 'claimed' };
-      const left = task.repeatMs - (now - last);
-      if (left > 0) return { kind: 'cooldown', left };
+    if (online) {
+      // The `tasks` frame's `claimed` is a plain boolean (docs/layers.md C5), not a claimed-
+      // until timestamp, so a repeatable task on cooldown shows the same "claimed" state as a
+      // one-time task rather than a precise countdown - it clears itself the next time this
+      // screen refetches (goTasks, or the periodic refresh below).
+      if (rowFor(task.id)?.claimed) return { kind: 'claimed' };
+    } else {
+      const last = profile.taskClaims[task.id];
+      if (last) {
+        if (!task.repeatMs) return { kind: 'claimed' };
+        const left = task.repeatMs - (now - last);
+        if (left > 0) return { kind: 'cooldown', left };
+      }
     }
     const unlockAt = waiting[task.id];
     if (unlockAt) {
@@ -221,7 +250,7 @@ export default function Tasks({ profile, onClaim, onToast }) {
                   <SignupForm
                     source="task"
                     balance={profile.coins}
-                    reward={num(task.reward, lang)}
+                    reward={num(rewardOf(task), lang)}
                     variant="inline"
                     onCancel={() => setSignupOpen(false)}
                   />
@@ -229,7 +258,7 @@ export default function Tasks({ profile, onClaim, onToast }) {
               </div>
               <div className="task-side">
                 <div className="task-reward" dir="ltr">
-                  {t('tasks.reward', { n: num(task.reward, lang) })}
+                  {t('tasks.reward', { n: num(rewardOf(task), lang) })}
                 </div>
                 {st.kind === 'claimed' && <div className="task-state">{t('tasks.claimed')}</div>}
                 {st.kind === 'cooldown' && (

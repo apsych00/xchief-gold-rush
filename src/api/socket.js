@@ -220,6 +220,11 @@ function handleMessage(frame) {
       // screen a kiosk should be showing (docs/layers.md C2).
       kioskSessionEmitter.emit(payloadOf(frame));
       break;
+    case 'tasks':
+      // A reply to this socket's own `tasks` request only - nothing pushes this unsolicited
+      // (docs/layers.md C5), unlike `leaderboard` below.
+      settlePending(frame);
+      break;
     case 'leaderboard':
       // Both a reply to this socket's own `leaderboard` request (getLeaderboard()) and an
       // unsolicited push whenever the top 10 changes (docs/layers.md C4) arrive as this same
@@ -346,6 +351,13 @@ export function claimTask(id) {
 
 export function freeRefill() {
   return request(['me'], { type: 'free_refill' }).then(payloadOf);
+}
+
+/** Task definitions plus this player's own claimed state (docs/layers.md C5), computed
+ * server-side by public.get_tasks() - the tasks screen renders from this, never from a local
+ * reward table. */
+export function getTasks() {
+  return request(['tasks'], { type: 'tasks' }).then((frame) => frame.rows);
 }
 
 export function getLeaderboard() {

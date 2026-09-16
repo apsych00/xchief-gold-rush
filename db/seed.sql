@@ -1,18 +1,22 @@
 -- Dev seed. Production uses real coupon codes and a generated kiosk secret (see docs/switch-environment.md).
 
--- Task rewards mirror src/config.js. 'signup' is the email verification itself, so it needs a confirmed email.
-insert into public.tasks (id, reward, repeat_ms, requires_email) values
-  ('signup',            1000, null,        true),
-  ('video',             100,  300000,      false),
-  ('email',             200,  null,        false),
-  ('instagram',         300,  null,        false),
-  ('telegram',          300,  null,        false),
-  ('youtube',           300,  null,        false),
-  ('story',             300,  86400000,    false),
-  ('review_trustpilot', 500,  null,        false),
-  ('review_google',     500,  null,        false),
-  ('review_fpa',        500,  null,        false)
-on conflict (id) do update set reward = excluded.reward, repeat_ms = excluded.repeat_ms, requires_email = excluded.requires_email;
+-- Task definitions the server owns (docs/layers.md C5): id, title and reward all come from
+-- here, never duplicated as numbers in src/. Titles are plain English; the client's own i18n
+-- (src/i18n.js, keyed by id) still owns the localized copy shown on screen. 'signup' is the
+-- email verification itself, so it needs a confirmed email.
+insert into public.tasks (id, title, reward, repeat_ms, requires_email) values
+  ('signup',            'Create an xChief account',        1000, null,        true),
+  ('video',             'xChief video',                    100,  300000,      false),
+  ('email',             'Save your email',                 200,  null,        false),
+  ('instagram',         'Follow Instagram',                300,  null,        false),
+  ('telegram',          'Join Telegram',                   300,  null,        false),
+  ('youtube',           'Subscribe on YouTube',             300,  null,        false),
+  ('story',             'Share your record',                300,  86400000,    false),
+  ('review_trustpilot', 'Review on Trustpilot',            500,  null,        false),
+  ('review_google',     'Review on Google',                500,  null,        false),
+  ('review_fpa',        'Review on Forex Peace Army',      500,  null,        false)
+on conflict (id) do update set
+  title = excluded.title, reward = excluded.reward, repeat_ms = excluded.repeat_ms, requires_email = excluded.requires_email;
 
 -- 100 generated promo codes, e.g. XG-7F3A9C2B1D. Export the list for marketing with:
 --   select code from public.coupons order by created_at;

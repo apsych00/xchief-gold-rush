@@ -14,5 +14,8 @@ export const claimTask = (id) => socket.claimTask(id);
 
 export const freeRefill = () => socket.freeRefill();
 
+/** Task definitions plus this player's own claimed state, computed server-side. */
+export const getTasks = () => socket.getTasks();
+
 /** The public top-10, ranked by peak balance. */
 export const getLeaderboard = () => socket.getLeaderboard();

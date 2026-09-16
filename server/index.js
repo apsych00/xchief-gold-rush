@@ -459,21 +459,34 @@ export function createApp({
           break;
         }
         case 'claim_task': {
+          // Kiosks have no email, no tasks and no gifts (docs/layers.md C5): denied the same
+          // way request_otp/verify_otp already are, not the bare 'unauthenticated' a player
+          // would get for a stale/bad session.
           if (kind !== 'player') {
-            send(ws, { type: 'error', code: 'unauthenticated' });
+            send(ws, { type: 'error', code: 'not_available' });
             break;
           }
-          await ledger.claimTask(id, frame.task_id);
-          send(ws, { type: 'me', ...(await ledger.getMe(id)) });
+          const claimed = await ledger.claimTask(id, frame.task_id);
+          const me = await ledger.getMe(id);
+          send(ws, { type: 'me', ...me, reward: claimed.reward, task: frame.task_id });
           break;
         }
         case 'free_refill': {
           if (kind !== 'player') {
-            send(ws, { type: 'error', code: 'unauthenticated' });
+            send(ws, { type: 'error', code: 'not_available' });
             break;
           }
-          await ledger.freeRefill(id);
-          send(ws, { type: 'me', ...(await ledger.getMe(id)) });
+          const refilled = await ledger.freeRefill(id);
+          const me = await ledger.getMe(id);
+          send(ws, { type: 'me', ...me, reward: refilled.reward });
+          break;
+        }
+        case 'tasks': {
+          if (kind !== 'player') {
+            send(ws, { type: 'error', code: 'not_available' });
+            break;
+          }
+          send(ws, { type: 'tasks', rows: await ledger.getTasks(id) });
           break;
         }
         case 'leaderboard': {

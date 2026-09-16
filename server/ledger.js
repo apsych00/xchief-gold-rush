@@ -36,6 +36,7 @@ const KNOWN_ERROR_CODES = [
   'already_claimed',
   'email_required',
   'refill_unavailable',
+  'already_refilled',
   'unknown_task',
   'unauthenticated',
   'invalid_code',
@@ -159,6 +160,15 @@ export async function freeRefill(playerId) {
   return withPlayer(playerId, async (client) => {
     const { rows } = await client.query('select public.free_refill() as result');
     return rows[0].result;
+  });
+}
+
+/** Task definitions plus this player's own claimed state (docs/layers.md C5), computed by
+ * get_tasks() - never assembled here from anything the client sent. */
+export async function getTasks(playerId) {
+  return withPlayer(playerId, async (client) => {
+    const { rows } = await client.query('select * from public.get_tasks()');
+    return rows;
   });
 }
 

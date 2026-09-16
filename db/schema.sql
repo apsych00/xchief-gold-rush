@@ -133,9 +133,13 @@ create table public.rounds (
   check (player_id is not null or kiosk_id is not null)
 );
 
--- Server-side mirror of the task rewards in src/config.js.
+-- Task definitions (docs/layers.md C5): id, title and reward are the server's own, never
+-- duplicated as numbers in src/ - get_tasks() below is what the client's tasks screen renders
+-- from. title is plain English; the client's own i18n (src/i18n.js) still owns the localized
+-- copy keyed by id, the same way it already does for every other piece of task copy.
 create table public.tasks (
   id text primary key,
+  title text not null,
   reward int not null,
   repeat_ms bigint, -- null = one-time
   requires_email boolean not null default false
@@ -242,7 +246,7 @@ create policy tasks_select_all on public.tasks
 --       verify_kiosk, open_kiosk_round, settle_kiosk_round,
 --       request_otp_code, verify_otp_code, revoke_player_sessions
 --   * callable by a signed-in client (identity taken from auth.uid(), never from
---       arguments): get_me, claim_task, free_refill
+--       arguments): get_me, claim_task, free_refill, get_tasks
 -- The access rules for all of them are stated once in the Grants section.
 
 -- --------------------------------------------------------------------------- economy --
@@ -680,7 +684,10 @@ begin
   if v_uid is null then raise exception 'unauthenticated'; end if;
   perform public.ensure_player(v_uid);
   select * into p from public.players where id = v_uid for update;
-  if p.free_refill_used or p.coins >= 100 then raise exception 'refill_unavailable'; end if;
+  -- Two distinct reasons this refuses, so the caller can tell "you already used yours" from
+  -- "you don't need it yet" (docs/layers.md C5: a second free_refill is `already_refilled`).
+  if p.free_refill_used then raise exception 'already_refilled'; end if;
+  if p.coins >= 100 then raise exception 'refill_unavailable'; end if;
   update public.players set
     coins = coins + 300,
     record = greatest(record, coins + 300),
@@ -689,6 +696,33 @@ begin
   where id = v_uid
   returning coins into v_coins;
   return json_build_object('coins', v_coins, 'reward', 300);
+end $$;
+
+-- Task definitions plus this player's own claim state (docs/layers.md C5): reward and claimed
+-- both come from here, never from client-side config, so the tasks screen can never show a
+-- number the ledger did not actually grant. The `claimed` predicate mirrors claim_task's own
+-- eligibility check exactly (repeat_ms null = one-time; otherwise still inside the cooldown
+-- window since the last claim) so the two can never disagree.
+create function public.get_tasks()
+returns table (id text, title text, reward int, claimed boolean)
+language plpgsql security definer set search_path = public as $$
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null then raise exception 'unauthenticated'; end if;
+  perform public.ensure_player(v_uid);
+  return query
+    select
+      t.id,
+      t.title,
+      t.reward,
+      exists (
+        select 1 from public.task_claims c
+        where c.player_id = v_uid and c.task_id = t.id
+          and (t.repeat_ms is null or c.claimed_at > now() - make_interval(secs => t.repeat_ms / 1000.0))
+      ) as claimed
+    from public.tasks t
+    order by t.reward desc, t.id;
 end $$;
 
 -- --------------------------------------------------------------------- leaderboard --
@@ -802,8 +836,8 @@ revoke select on public.kiosks, public.coupons from anon, authenticated;
 revoke all on public.dev_otps, public.otp_codes from public, anon, authenticated;
 
 -- Client-callable, identity from the JWT (set per transaction by the server).
-revoke execute on function public.get_me(), public.claim_task(text), public.free_refill() from public, anon;
-grant execute on function public.get_me(), public.claim_task(text), public.free_refill() to authenticated;
+revoke execute on function public.get_me(), public.claim_task(text), public.free_refill(), public.get_tasks() from public, anon;
+grant execute on function public.get_me(), public.claim_task(text), public.free_refill(), public.get_tasks() to authenticated;
 
 -- Any visitor may read the top 10; no other role besides the two client roles
 -- gets it.

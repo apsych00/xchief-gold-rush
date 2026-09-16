@@ -205,4 +205,41 @@ test.describe('player-visible promises', () => {
         : 'no email/signup prompt may appear in kiosk mode (no win was observed, so this is the weak pass)',
     ).toHaveCount(0);
   });
+
+  test('4. claiming a task credits exactly the reward the server granted, and the balance shown matches the server (docs/layers.md C5)', async ({
+    page,
+  }) => {
+    // Land on Home, not Game: the nav bar (and so the tasks tab) is hidden while a round is on
+    // screen (App.jsx renders Nav only outside the 'game' screen) - see startGame() above for
+    // the flow the other tests use instead.
+    await page.goto('/');
+    await expect
+      .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
+        message: 'window.__xchief.mode must be "server" - the client is not wired to the game socket',
+        timeout: 10000,
+      })
+      .toBe('server');
+    const before = await getMe(page);
+
+    // Nav order is fixed (home, game, tasks, lb) - see App.jsx's Nav component.
+    await page.locator('.nav-btn').nth(2).click();
+    await expect(page.locator('.tasks')).toBeVisible({ timeout: 5000 });
+
+    // TASKS order is fixed (config.js): index 3 is 'instagram', a plain link task with no
+    // form/modal of its own - open it, wait out the task's timer, then claim it.
+    const task = page.locator('.task').nth(3);
+    await expect(task).toBeVisible({ timeout: 5000 });
+    await task.locator('.task-btn').click();
+    const claimBtn = task.locator('.task-btn-ready');
+    await expect(claimBtn, 'the task must become claimable after its wait timer').toBeVisible({ timeout: 20000 });
+    await claimBtn.click();
+
+    // The reward is the server's number, not a client guess (docs/layers.md C5): once the
+    // claim reply lands the task shows "claimed" and the balance chip reflects the new coins.
+    await expect(task.locator('.task-state')).toBeVisible({ timeout: 10000 });
+
+    const after = await getMe(page);
+    expect(after.coins, 'the server must have actually granted a reward').toBeGreaterThan(before.coins);
+    expect(await screenCoins(page), 'coins on screen must equal the server coins after the claim').toBe(after.coins);
+  });
 });
