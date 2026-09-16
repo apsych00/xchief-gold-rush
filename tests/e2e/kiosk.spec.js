@@ -215,4 +215,61 @@ test.describe.serial('kiosk visitor flow', () => {
     await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 15000 });
     await expect(forbiddenUi(page)).toHaveCount(0);
   });
+
+  test('6. an empty coupon pool shows the no-codes modal, and it clears itself once one is restocked', async ({
+    page,
+  }) => {
+    // The pool is shared across every kiosk (ticket C8, docs/layers.md), not per-kiosk state:
+    // emptied and restored straight through the database, exactly like setSessionCoins does for
+    // a kiosk's own coins, and restored in `finally` so no other test in this file ever sees an
+    // empty pool it did not ask for.
+    const { default: pg } = await import('pg');
+    const pool = new pg.Pool({ connectionString: DATABASE_URL });
+    let availableBefore;
+    try {
+      const { rows } = await pool.query("select id from public.coupons where status = 'available'");
+      availableBefore = rows;
+      await pool.query("update public.coupons set status = 'claimed', claimed_at = now() where status = 'available'");
+
+      await page.goto(KIOSK_URL);
+      await expect
+        .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
+          message: 'window.__xchief.mode must be "server" - the client is not wired to the game socket',
+          timeout: 10000,
+        })
+        .toBe('server');
+
+      await expect(page.getByText('All the prizes are gone')).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText(/Every \$100 code for today has been won/)).toBeVisible();
+      await expect(page.locator('.btn-start')).toHaveCount(0);
+      await expect(forbiddenUi(page)).toHaveCount(0);
+
+      await page.screenshot({ path: 'docs/reports/c8/no-codes.png' });
+
+      // The sweep (server/kiosk.js) only pushes on a crossing it actually observes between two
+      // ticks, exactly like a member of staff restocking would hit in reality: it cannot see an
+      // empty-then-refilled pool if both happen inside the same ~10 s tick. Give it one full
+      // cycle to record the empty pool first, so the restock below is a genuine crossing on the
+      // next tick, not a flicker invisible to a poll.
+      await page.waitForTimeout(11000);
+
+      await pool.query("update public.coupons set status = 'available', claimed_at = null where id = $1", [
+        availableBefore[0].id,
+      ]);
+
+      // Not a page reload - the sweep's own next tick (server/kiosk.js) is what clears this,
+      // well inside 15 s on the dev recipe's default 10 s interval.
+      await expect(page.getByText('All the prizes are gone')).toBeHidden({ timeout: 15000 });
+      await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 15000 });
+      await page.locator('.btn-start').click();
+      await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
+    } finally {
+      if (availableBefore && availableBefore.length) {
+        await pool.query("update public.coupons set status = 'available', claimed_at = null where id = any($1)", [
+          availableBefore.map((r) => r.id),
+        ]);
+      }
+      await pool.end();
+    }
+  });
 });

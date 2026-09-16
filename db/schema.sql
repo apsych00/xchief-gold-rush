@@ -461,34 +461,43 @@ end $$;
 -- Start a fresh visitor session on this kiosk: full coins, no streak, playing. Called
 -- directly for the explicit `kiosk_session` bootstrap (welcome) and inline by
 -- open_kiosk_round whenever a session is idle or has idled out.
+--
+-- codes_left (docs/layers.md C8) rides along on every kiosk_session-shaped reply so the
+-- client can tell an empty prize pool apart from an ordinary idle kiosk without a second
+-- round trip.
 create function public.start_kiosk_session(p_kiosk uuid)
 returns json language plpgsql security definer set search_path = public as $$
 declare
   k public.kiosks%rowtype;
+  v_codes_left int;
 begin
   update public.kiosks
   set session_coins = 1000, streak = 0, session_state = 'playing', session_started_at = now()
   where id = p_kiosk and status = 'active'
   returning * into k;
   if not found then raise exception 'kiosk_unauthorized'; end if;
-  return json_build_object('coins', k.session_coins, 'streak', k.streak, 'state', k.session_state);
+  select count(*) into v_codes_left from public.coupons where status = 'available';
+  return json_build_object('coins', k.session_coins, 'streak', k.streak, 'state', k.session_state, 'codes_left', v_codes_left);
 end $$;
 
 -- kiosk_reset frame (Claim or Done pressed, or the idle sweep in server/kiosk.js): back to
 -- attract mode. Coins and streak are cleared with it so nothing is ever owed to a walked-away
 -- visitor - the next start_kiosk_session (or the idle-triggered reset inside
--- open_kiosk_round) is what actually begins their session.
+-- open_kiosk_round) is what actually begins their session. codes_left rides along, see
+-- start_kiosk_session's comment above.
 create function public.reset_kiosk_session(p_kiosk uuid)
 returns json language plpgsql security definer set search_path = public as $$
 declare
   k public.kiosks%rowtype;
+  v_codes_left int;
 begin
   update public.kiosks
   set session_coins = 1000, streak = 0, session_state = 'idle', session_started_at = now()
   where id = p_kiosk and status = 'active'
   returning * into k;
   if not found then raise exception 'kiosk_unauthorized'; end if;
-  return json_build_object('coins', k.session_coins, 'streak', k.streak, 'state', k.session_state);
+  select count(*) into v_codes_left from public.coupons where status = 'available';
+  return json_build_object('coins', k.session_coins, 'streak', k.streak, 'state', k.session_state, 'codes_left', v_codes_left);
 end $$;
 
 -- The same orphan-round self-healing as open_round, plus the box rule that a session that has
@@ -503,6 +512,14 @@ end $$;
 -- case returns {error: 'insufficient_coins'} instead of raising; server/ledger.js's
 -- openKioskRound() turns it into the same thrown-Error-with-.code shape every other case here
 -- produces by raising directly.
+--
+-- An empty prize pool is a product state, not an edge case (docs/layers.md C8): no new round
+-- opens at all while no coupon is available - checked once the session itself is known playable
+-- (after the idle-triggered reset settles what "the session" even means, and after a genuinely
+-- terminal won/broke session has already been refused its own more specific session_over) so a
+-- kiosk cannot grind toward a 5th win it could never actually be paid for. A round that was
+-- already open when the pool ran dry is unaffected - it keeps running and settle_kiosk_round
+-- keeps its own exhausted handling below.
 create function public.open_kiosk_round(p_kiosk uuid, p_dir text, p_start_price numeric, p_source text default null, p_lever int default 1)
 returns json language plpgsql security definer set search_path = public as $$
 declare
@@ -527,6 +544,10 @@ begin
 
   if k.session_state in ('won', 'broke') then
     raise exception 'session_over';
+  end if;
+
+  if (select count(*) from public.coupons where status = 'available') = 0 then
+    raise exception 'coupons_exhausted';
   end if;
 
   update public.kiosks set last_round_at = now() where id = p_kiosk;

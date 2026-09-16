@@ -33,6 +33,7 @@ const KNOWN_ERROR_CODES = [
   'round_not_open',
   'kiosk_unauthorized',
   'session_over',
+  'coupons_exhausted',
   'already_claimed',
   'email_required',
   'refill_unavailable',
@@ -180,15 +181,26 @@ export async function leaderboard() {
 
 /**
  * The kiosk's visitor session as the `kiosk_session` frame shape (ticket C1,
- * docs/layers.md): {coins, streak, state}. Sent right after a kiosk `welcome` and mirrored
- * into every kiosk `round_settled`.
+ * docs/layers.md): {coins, streak, state, codes_left}. Sent right after a kiosk `welcome` and
+ * mirrored into every kiosk `round_settled`. codes_left (ticket C8) is the live available
+ * coupon count, computed here rather than cached, so it is always the number the kiosk would
+ * see if it tried to play right now.
  */
 export async function kioskSession(kioskId) {
   const { rows } = await getPool().query(
-    'select session_coins as coins, streak, session_state as state from public.kiosks where id = $1',
+    `select k.session_coins as coins, k.streak, k.session_state as state,
+       (select count(*)::int from public.coupons where status = 'available') as codes_left
+     from public.kiosks k where k.id = $1`,
     [kioskId],
   );
-  return rows[0] || { coins: 1000, streak: 0, state: 'idle' };
+  return rows[0] || { coins: 1000, streak: 0, state: 'idle', codes_left: 0 };
+}
+
+/** Live available-coupon count (ticket C8): the idle sweep polls this every tick to notice
+ * the pool crossing zero either way, independent of any one kiosk's session. */
+export async function availableCoupons() {
+  const { rows } = await getPool().query("select count(*)::int as n from public.coupons where status = 'available'");
+  return rows[0].n;
 }
 
 /** Starts a fresh visitor session (coins 1000, streak 0, playing). */

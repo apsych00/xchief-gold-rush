@@ -181,22 +181,39 @@ test('kiosk claims a coupon on the fifth win, ends, then reset starts a fresh se
 });
 
 test('an empty coupon pool keeps the fifth-win streak and the kiosk playing', async () => {
+  // open_kiosk_round now refuses a NEW round outright once the pool is empty (ticket C8,
+  // docs/layers.md), so the pool cannot start this test already empty the way it used to - the
+  // 5th round would never even open. It opens while a coupon is still there instead, and the
+  // pool is emptied out from under it before it settles: the same race a concurrent kiosk's own
+  // win would cause, and exactly the case docs/layers.md C8 says settles normally.
   const kiosk = await createKiosk('b14-kiosk-empty');
-  const claimed = await pool.query(
-    `update public.coupons
-     set status = 'claimed', claimed_by_kiosk = $1, claimed_at = now()
-     where status = 'available'
-     returning id`,
-    [kiosk.id],
-  );
   const ws = connect();
+  let claimed = { rows: [] };
   try {
     await authKiosk(ws, kiosk.secret);
-    let fifth;
-    for (let round = 1; round <= 5; round += 1) {
-      fifth = await playWin(ws, 5000 + round * 10);
+    for (let round = 1; round <= 4; round += 1) {
+      const settled = await playWin(ws, 5000 + round * 10);
+      assert.equal(settled.outcome, 'win');
+      assert.equal(settled.streak, round);
       await nextFrame(ws, (frame) => frame.type === 'kiosk_session');
     }
+
+    currentPrice = 5050;
+    await sleep(150);
+    send(ws, { type: 'play', dir: 'up', lever: 1 });
+    const opened = await nextFrame(ws, (frame) => frame.type === 'round_opened');
+    assert.ok(opened.round_id);
+
+    claimed = await pool.query(
+      `update public.coupons
+       set status = 'claimed', claimed_by_kiosk = $1, claimed_at = now()
+       where status = 'available'
+       returning id`,
+      [kiosk.id],
+    );
+
+    currentPrice = 5051;
+    const fifth = await nextFrame(ws, (frame) => frame.type === 'round_settled', 5500);
 
     assert.equal(fifth.outcome, 'win');
     assert.equal(fifth.coupons_exhausted, true);

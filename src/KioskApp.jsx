@@ -9,7 +9,9 @@
 import { Console, TopBar } from './App.jsx';
 import { useKioskFlow } from './useKioskFlow.js';
 
-function KioskAttract({ onTap }) {
+// showButton is false for the no_codes screen (ticket C8, docs/layers.md): same attract
+// screen, minus the Play button, while KioskNoCodesModal sits on top of it.
+function KioskAttract({ onTap, showButton = true }) {
   return (
     <section className="home kiosk-attract-in">
       <div className="home-question">Predict gold. Win a prize.</div>
@@ -25,14 +27,16 @@ function KioskAttract({ onTap }) {
           draggable={false}
         />
       </div>
-      <div className="home-cta">
-        <button type="button" className="btn-start" onClick={onTap}>
-          Tap to play
-        </button>
-        <div className="home-rules">
-          Predict whether gold goes up or down in 5 seconds. Five wins in a row wins a $100 code.
+      {showButton && (
+        <div className="home-cta">
+          <button type="button" className="btn-start" onClick={onTap}>
+            Tap to play
+          </button>
+          <div className="home-rules">
+            Predict whether gold goes up or down in 5 seconds. Five wins in a row wins a $100 code.
+          </div>
         </div>
-      </div>
+      )}
     </section>
   );
 }
@@ -91,6 +95,23 @@ function KioskAbandonOverlay({ secondsLeft, onTap }) {
   );
 }
 
+// No buttons, no countdown (ticket C8, docs/layers.md): this clears itself when the next
+// kiosk_session frame reports codes_left > 0, staff loading coupons is the only recovery.
+function KioskNoCodesModal() {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="No prizes left">
+      <div className="modal kiosk-modal">
+        <div className="modal-title">All the prizes are gone</div>
+        <div className="modal-sub">
+          Every $100 code for today has been won. Tell someone at the xChief booth you&apos;d like to play - they
+          can load more prizes in a minute.
+        </div>
+        <div className="modal-sub">This screen updates by itself.</div>
+      </div>
+    </div>
+  );
+}
+
 function KioskReconnecting() {
   return (
     <div className="modal-backdrop" role="status" aria-live="assertive">
@@ -103,12 +124,13 @@ function KioskReconnecting() {
 
 export default function KioskApp({ state, profile, actions, trackRef }) {
   const flow = useKioskFlow({ onReturnToAttract: actions.goHome });
+  const showAttractScreen = flow.screen === 'attract' || flow.screen === 'no_codes';
 
   return (
     <>
       <TopBar profile={profile} />
-      {flow.screen === 'attract' && <KioskAttract onTap={flow.startPlaying} />}
-      {flow.screen !== 'attract' && (
+      {showAttractScreen && <KioskAttract onTap={flow.startPlaying} showButton={flow.screen === 'attract'} />}
+      {!showAttractScreen && (
         <Console state={state} profile={profile} actions={actions} trackRef={trackRef} />
       )}
       {flow.screen === 'won' && (
@@ -117,6 +139,7 @@ export default function KioskApp({ state, profile, actions, trackRef }) {
       {flow.screen === 'broke' && (
         <KioskBrokeModal secondsLeft={flow.modalSecondsLeft} onDone={flow.claimOrDone} />
       )}
+      {flow.screen === 'no_codes' && <KioskNoCodesModal />}
       {flow.abandonSecondsLeft !== null && (
         <KioskAbandonOverlay secondsLeft={flow.abandonSecondsLeft} onTap={flow.cancelAbandon} />
       )}

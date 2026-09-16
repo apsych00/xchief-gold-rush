@@ -5,7 +5,7 @@
 -- Runs in one transaction and rolls back, so the seeded 100 coupons are untouched afterwards.
 begin;
 
-select plan(27);
+select plan(31);
 
 -- start_kiosk_session: a fresh session, playing, full coins, no streak ---------------------
 select tests.create_kiosk('session-start', 'session-start-secret-00000') as k_start \gset
@@ -88,15 +88,48 @@ select throws_like(
   'a won session refuses another round until it is reset'
 );
 
--- coupons_exhausted: the pool C1-TEST-CODE just emptied keeps the streak, session stays playing
+-- coupons_exhausted: a round already open when the pool empties still settles normally
+-- (docs/layers.md C8) - open_kiosk_round now refuses a NEW round outright with an empty pool
+-- (below), so this round opens while one coupon is still there, and the pool is emptied out
+-- from under it before settling, same as a concurrent kiosk taking the last code mid-round.
+insert into public.coupons (code) values ('C8-EXHAUST-TEMP');
 select tests.create_kiosk('session-exhausted', 'session-exhausted-secret') as k_exh \gset
 update public.kiosks set streak = 4, session_state = 'playing' where id = :'k_exh';
 select (public.open_kiosk_round(:'k_exh'::uuid, 'up', 100)->>'round_id')::uuid as rd_exh \gset
+update public.coupons set status = 'claimed', claimed_at = now() where status = 'available';
 select public.settle_kiosk_round(:'rd_exh'::uuid, 101) as settle_exh \gset
 select ok((:'settle_exh'::json->>'coupon') is null, 'no coupon left in the pool to claim');
 select is((:'settle_exh'::json->>'coupons_exhausted'), 'true', 'reported as exhausted');
 select is((:'settle_exh'::json->>'streak')::int, 5, 'the streak is kept, not reset, when the pool is empty');
 select is((:'settle_exh'::json->>'state'), 'playing', 'the session keeps playing when exhausted');
+
+-- ticket C8: codes_left rides along on start/reset_kiosk_session, and open_kiosk_round refuses
+-- outright while the pool is empty, recovering by itself once staff load a coupon -----------
+-- the pool is still empty here (the coupons_exhausted block above just claimed the last one)
+select tests.create_kiosk('session-codes-left', 'session-codes-left-secret') as k_codes \gset
+select public.start_kiosk_session(:'k_codes'::uuid) as codes_start_json \gset
+select is(
+  (:'codes_start_json'::json->>'codes_left')::int, 0,
+  'start_kiosk_session reports codes_left 0 when the pool is empty'
+);
+
+select throws_like(
+  $$ select public.open_kiosk_round('$$ || :'k_codes' || $$'::uuid, 'up', 100) $$,
+  '%coupons_exhausted%',
+  'open_kiosk_round refuses to open any round while the pool is empty'
+);
+
+insert into public.coupons (code) values ('C8-RESTOCK-CODE');
+select public.reset_kiosk_session(:'k_codes'::uuid) as codes_reset_json \gset
+select is(
+  (:'codes_reset_json'::json->>'codes_left')::int, 1,
+  'reset_kiosk_session reports codes_left 1 once a coupon is restocked'
+);
+
+select lives_ok(
+  $$ select public.open_kiosk_round('$$ || :'k_codes' || $$'::uuid, 'up', 100) $$,
+  'open_kiosk_round opens again once a coupon is available'
+);
 
 -- the 60 s idle rule resets the whole session, coins included, not only the streak --------
 select tests.create_kiosk('session-idle', 'session-idle-secret-00000') as k_idle \gset

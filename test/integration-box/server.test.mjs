@@ -475,6 +475,100 @@ test('the idle sweep resets a stale kiosk session and pushes kiosk_session witho
   }
 });
 
+// --- kiosk: no prize codes left (ticket C8) ----------------------------------------------
+
+test('kiosk_session carries codes_left, the live available-coupon count', async () => {
+  const secret = 'kiosk-codes-left-secret-01';
+  await createTestKiosk('codes-left', secret);
+
+  const { rows } = await pool.query("select count(*)::int as n from public.coupons where status = 'available'");
+  const expected = rows[0].n;
+
+  const ws = connect();
+  await whenOpen(ws);
+  send(ws, { type: 'auth', kiosk: secret });
+  await nextFrame(ws, (f) => f.type === 'welcome');
+  const session = await nextFrame(ws, (f) => f.type === 'kiosk_session');
+  assert.equal(session.codes_left, expected, 'kiosk_session reports the live available coupon count');
+  ws.close();
+});
+
+test('play is refused with coupons_exhausted when the coupon pool is empty', async () => {
+  const secret = 'kiosk-codes-exhausted-secret-01';
+  await createTestKiosk('codes-exhausted', secret);
+
+  // Empty the pool for this test only; restore exactly the rows this test touched afterwards
+  // (a shared, long-lived database, not a per-test transaction - see this file's module doc).
+  const { rows: availableBefore } = await pool.query("select id from public.coupons where status = 'available'");
+  await pool.query("update public.coupons set status = 'claimed', claimed_at = now() where status = 'available'");
+  try {
+    const ws = connect();
+    await whenOpen(ws);
+    send(ws, { type: 'auth', kiosk: secret });
+    await nextFrame(ws, (f) => f.type === 'welcome');
+    const session = await nextFrame(ws, (f) => f.type === 'kiosk_session');
+    assert.equal(session.codes_left, 0, 'kiosk_session reports codes_left 0 with the pool emptied');
+
+    currentPrice = 3000;
+    await sleep(250);
+    send(ws, { type: 'play', dir: 'up' });
+    const err = await nextFrame(ws, (f) => f.type === 'error' || f.type === 'round_opened');
+    assert.equal(err.type, 'error');
+    assert.equal(err.code, 'coupons_exhausted');
+    ws.close();
+  } finally {
+    if (availableBefore.length) {
+      await pool.query("update public.coupons set status = 'available', claimed_at = null where id = any($1)", [
+        availableBefore.map((r) => r.id),
+      ]);
+    }
+  }
+});
+
+test('the coupon-pool sweep pushes kiosk_session with codes_left 0, then > 0, once the pool empties and refills', async () => {
+  const secret = 'kiosk-pool-sweep-secret-01';
+  await createTestKiosk('pool-sweep', secret);
+
+  const { rows: availableBefore } = await pool.query("select id from public.coupons where status = 'available'");
+  assert.ok(availableBefore.length > 0, 'the seeded pool has coupons available to start from');
+
+  // Its own app instance, own port, small sweep interval (docs/layers.md C8, createApp's
+  // kioskSweepIntervalMs option) - the same pattern the idle-sweep test above uses, so this
+  // fast sweep only ever pushes to this test's own kiosk.
+  const sweepApp = createApp({ finnhubToken: null, kioskSweepIntervalMs: 100 });
+  const sweepPort = await sweepApp.start(0, { startFeed: false });
+  try {
+    const ws = connect(`ws://localhost:${sweepPort}/ws`);
+    await whenOpen(ws);
+    send(ws, { type: 'auth', kiosk: secret });
+    await nextFrame(ws, (f) => f.type === 'welcome');
+    await nextFrame(ws, (f) => f.type === 'kiosk_session'); // the auth-time mirror, not the sweep
+
+    // Give the sweep at least one tick to record its zero/non-zero baseline (pool non-empty)
+    // before the pool is touched, so what follows are genuine crossings, not the sweep's own
+    // startup observation.
+    await sleep(250);
+
+    await pool.query("update public.coupons set status = 'claimed', claimed_at = now() where status = 'available'");
+    const emptied = await nextFrame(ws, (f) => f.type === 'kiosk_session', 2000);
+    assert.equal(emptied.codes_left, 0, 'the sweep pushes codes_left 0 once the pool crosses to empty');
+
+    await pool.query("update public.coupons set status = 'available', claimed_at = null where id = $1", [
+      availableBefore[0].id,
+    ]);
+    const refilled = await nextFrame(ws, (f) => f.type === 'kiosk_session', 2000);
+    assert.ok(refilled.codes_left > 0, 'the sweep pushes codes_left > 0 once the pool crosses back from empty');
+    ws.close();
+  } finally {
+    await sweepApp.close();
+    if (availableBefore.length) {
+      await pool.query("update public.coupons set status = 'available', claimed_at = null where id = any($1)", [
+        availableBefore.map((r) => r.id),
+      ]);
+    }
+  }
+});
+
 // --- session policy (ticket C3a) --------------------------------------------------------
 
 test('a token issued more than 7 days ago is renewed on welcome; a younger one is sent back unchanged', async () => {

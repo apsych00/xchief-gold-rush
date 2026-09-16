@@ -70,10 +70,13 @@ select is(
 );
 
 -- 5th win with an empty pool: keep the streak, report exhausted, session stays playing ------
-update public.coupons set status = 'claimed', claimed_at = now() where status = 'available';
+-- (docs/layers.md C8: open_kiosk_round now refuses a NEW round outright while the pool is
+-- empty, so this round opens while a coupon is still there, and the pool is emptied out from
+-- under it before settling - a round already open still settles normally.)
 select tests.create_kiosk('no-coupon', 'no-coupon-secret-00000000000') as k_nocoup \gset
 update public.kiosks set streak = 4, session_state = 'playing' where id = :'k_nocoup';
 select (public.open_kiosk_round(:'k_nocoup'::uuid, 'up', 100)->>'round_id')::uuid as rd_nocoup \gset
+update public.coupons set status = 'claimed', claimed_at = now() where status = 'available';
 select public.settle_kiosk_round(:'rd_nocoup'::uuid, 101) as settle_nocoup \gset
 select ok(
   (:'settle_nocoup'::json->>'coupon') is null,

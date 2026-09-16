@@ -337,6 +337,7 @@ export function createApp({
   const kioskIdleSweep = createKioskIdleSweep({
     ledger,
     getSocket,
+    listKioskSockets: () => kioskSockets.entries(),
     ...(kioskIdleMs !== undefined ? { idleMs: kioskIdleMs } : {}),
     ...(kioskSweepIntervalMs !== undefined ? { intervalMs: kioskSweepIntervalMs } : {}),
     log: (line) => console.log(`[kiosk] ${line}`),
