@@ -4,29 +4,52 @@
  * kiosk_reset, and from the server's own 60 s idle sweep, server/kiosk.js) and round_settled's
  * own `coupon` field. Nothing here decides a win, a loss, or coupon eligibility; it only routes
  * the screen and runs the two purely cosmetic countdowns (the WON/BROKE modal timers and the
- * abandon-warning overlay) that the product spec calls for on top of that server state.
+ * idle-countdown overlay) that the product spec calls for on top of that server state.
  *
- * `gamePhase` is useGame.js's own state.phase ('idle'|'running'|'result'): the abandon countdown
- * (docs/layers.md "walks away mid-game") only starts once a round is not in flight, and any new
- * round attempt cancels it, so this hook is told whenever a round starts.
+ * Idle (ticket C2b) means no activity at all - no tap, click, pointer move, key, or touch
+ * anywhere on the page - tracked with passive window listeners, at any point in the play screen
+ * including mid-verdict. After IDLE_BEFORE_COUNTDOWN_MS of idle the overlay appears and counts
+ * down from COUNTDOWN_MS; any activity hides it and restarts the idle window. The WON/BROKE
+ * modals keep their own timers and ignore pointer activity on purpose: a winner photographing
+ * the code must not keep the machine hostage by waving a hand at it.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { kioskReset, onKioskSession } from './api/kiosk.js';
 import { onSettled, onStatus } from './api/socket.js';
 
-// Product defaults (docs/layers.md "Product defaults taken"): WIN modal 30 s, EXIT modal 20 s,
-// abandon countdown shows after 30 s idle and flushes at 60 s total - matching the server's own
-// 60 s kiosk idle sweep (server/kiosk.js IDLE_MS) so the client's own flush never fights it.
+// Product defaults (docs/layers.md "Product defaults taken"): WIN modal 30 s, EXIT modal 20 s.
 export const KIOSK_WON_MODAL_MS = 30000;
 export const KIOSK_BROKE_MODAL_MS = 20000;
-export const KIOSK_ABANDON_SHOW_MS = 30000;
-export const KIOSK_ABANDON_FLUSH_MS = 60000;
+// Idle countdown (ticket C2b): 20 s of no activity shows the overlay, which then counts down
+// 20 s to the flush - 40 s total. The server's own idle sweep (server/kiosk.js IDLE_MS) resets a
+// session after 60 s without a round, so 20 + 20 = 40 s keeps the client's flush ahead of it and
+// the two never race.
+export const IDLE_BEFORE_COUNTDOWN_MS = 20000;
+export const COUNTDOWN_MS = 20000;
+
+// Runtime-configurable copies the interval below reads every tick, so the DEV-only
+// window.__xchief.kioskTiming hook can shrink them for E2E tests without a rebuild.
+let idleBeforeCountdownMs = IDLE_BEFORE_COUNTDOWN_MS;
+let countdownMs = COUNTDOWN_MS;
+
+if (import.meta.env.DEV) {
+  const g = (window.__xchief = window.__xchief || {});
+  g.kioskTiming = ({ idleMs, countdownMs: cdMs } = {}) => {
+    if (typeof idleMs === 'number') idleBeforeCountdownMs = idleMs;
+    if (typeof cdMs === 'number') countdownMs = cdMs;
+  };
+}
 
 const TICK_MS = 250;
 
+// Activity is anything a present human does anywhere on the page (ticket C2b): taps, clicks,
+// pointer moves, keys, touches. Passive listeners only - the game must never feel laggy because
+// the idle tracker is attached.
+const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'pointerup', 'click', 'keydown', 'touchstart', 'touchmove'];
+
 const SERVER_TO_SCREEN = { idle: 'attract', playing: 'playing', won: 'won', broke: 'broke' };
 
-export function useKioskFlow(gamePhase, { onReturnToAttract } = {}) {
+export function useKioskFlow({ onReturnToAttract } = {}) {
   const [screen, setScreen] = useState('attract');
   const [coupon, setCoupon] = useState(null);
   const [reconnecting, setReconnecting] = useState(false);
@@ -94,37 +117,42 @@ export function useKioskFlow(gamePhase, { onReturnToAttract } = {}) {
     [],
   );
 
-  // A new round attempt is activity: cancel any abandon warning in progress.
+  // Any activity anywhere restarts the idle window and hides an overlay that is already showing
+  // (ticket C2b). The listeners stay attached on every screen; only the PLAYING interval below
+  // reads the timestamp, so activity on ATTRACT/WON/BROKE is simply never consulted.
   useEffect(() => {
-    if (gamePhase === 'running') lastActivityRef.current = Date.now();
-  }, [gamePhase]);
+    const markActivity = () => {
+      lastActivityRef.current = Date.now();
+      setAbandonSecondsLeft(null);
+    };
+    for (const type of ACTIVITY_EVENTS) window.addEventListener(type, markActivity, { passive: true });
+    return () => {
+      for (const type of ACTIVITY_EVENTS) window.removeEventListener(type, markActivity);
+    };
+  }, []);
 
-  // The visible abandon countdown (docs/layers.md "walks away mid-game"): only while PLAYING and
-  // no round in flight. Flushes itself at KIOSK_ABANDON_FLUSH_MS, same threshold the server's own
-  // idle sweep uses, so the two never race for long.
+  // The visible idle countdown (docs/layers.md "walks away mid-game", reworked by ticket C2b):
+  // runs at any point in the play screen, mid-verdict included. At zero it flushes the session -
+  // kiosk_reset to the server, then ATTRACT with the existing rise-in animation.
   useEffect(() => {
     if (screen !== 'playing') {
       setAbandonSecondsLeft(null);
       return undefined;
     }
     const id = setInterval(() => {
-      if (gamePhase === 'running') {
-        setAbandonSecondsLeft(null);
-        return;
-      }
       const elapsed = Date.now() - lastActivityRef.current;
-      if (elapsed >= KIOSK_ABANDON_FLUSH_MS) {
+      if (elapsed >= idleBeforeCountdownMs + countdownMs) {
         setAbandonSecondsLeft(null);
         kioskReset();
         goToAttract();
         return;
       }
       setAbandonSecondsLeft(
-        elapsed >= KIOSK_ABANDON_SHOW_MS ? Math.ceil((KIOSK_ABANDON_FLUSH_MS - elapsed) / 1000) : null,
+        elapsed >= idleBeforeCountdownMs ? Math.ceil((idleBeforeCountdownMs + countdownMs - elapsed) / 1000) : null,
       );
     }, TICK_MS);
     return () => clearInterval(id);
-  }, [screen, gamePhase, goToAttract]);
+  }, [screen, goToAttract]);
 
   // The WON/EXIT modal's own countdown; either button or zero does the same kiosk_reset.
   useEffect(() => {
@@ -158,7 +186,7 @@ export function useKioskFlow(gamePhase, { onReturnToAttract } = {}) {
       setScreen('playing');
       lastActivityRef.current = Date.now();
     },
-    /** Any tap during the abandon countdown cancels it. */
+    /** The overlay's own tap handler; the window listeners already do this for any activity. */
     cancelAbandon: () => {
       lastActivityRef.current = Date.now();
       setAbandonSecondsLeft(null);
