@@ -12,6 +12,8 @@ The stack is running from `C:\Users\Kayhan Azadi\orca\workspaces\xchief-gold-rus
 
 To start it yourself after a reboot, in that folder: `bash db/run-tests.sh --keep` (local Postgres), then `npm run server` with `DATABASE_URL=postgresql://postgres:test@localhost:55432/postgres PLAYER_TOKEN_SECRET=dev-secret PORT=8787` **and `FINNHUB_TOKEN=<the Finnhub key from .env>`** in the environment (without the key the server falls back to PAXG, which barely moves - sluggish, mostly flat), then `npm run dev`. The `.env` there already has `VITE_GAME_WS` set.
 
+To watch the nine-browser demo yourself: `npm run demo -- --seconds 120` (headed, tiled on screen). Load: `npm run load -- --sockets 100 --seconds 120`.
+
 What to look for: one WebSocket in the console (ours), no exchange sockets, the badge reads LIVE or QUIET MARKET with no source name, the verdict lands as the countdown ends, and the server log (`/tmp/gamesrv.log`) shows each round settling at ~5.0 s.
 
 ## Tickets
@@ -24,9 +26,9 @@ What to look for: one WebSocket in the console (ours), no exchange sockets, the 
 | 4 | Login codes (OTP) with dev capture | done | 16 pgTAP + 4 integration tests |
 | 5 | Client on the socket, LIVE/QUIET badge, server verdicts | done | E2E 4/4 on the socket, re-run by orchestrator; local mode unchanged |
 | 6 | docker compose + Caddy + deploy doc + ops scripts | done | compose validated; migrate.mjs idempotent |
-| 6b | Schema squash into one clean db/schema.sql | done | 101/101 pgTAP; catalog diff old vs new: identical |
-| 7a | Acceptance runner: 9 browsers + 100-socket load script | building (OpenCode) | - |
-| 7 | Acceptance run: 5 kiosks + 4 web, 10 min; then 100 sockets | queued (after 7a) | - |
+| 6b | Schema squash into one clean db/schema.sql | done | 101/101 pgTAP on the squashed schema; catalog diff old vs new: identical |
+| 7a | Acceptance runner: 9 browsers + 100-socket load script | done | dry runs by orchestrator: load p95 open 22 ms / settle 5038 ms; browsers p95 click-to-verdict 5439 ms, 0 flats, 0 errors |
+| 7 | Acceptance run: 5 kiosks + 4 web, 10 min; then 100 sockets | running | five box kiosks created; see log |
 
 Also merged: the marketing lead's "Play screen polish" commit from the old remote, no conflicts.
 
@@ -40,14 +42,17 @@ Layer 2 (S1-S17, security and hardening) starts only after 7 passes. Spec: `box-
 - `verify_otp_code` could not both raise and persist an attempt counter. Returns a status instead. Found by the OTP builder.
 - Kiosk verdicts went to whichever socket authenticated last on that kiosk id. Now routed to the socket that opened the round. Found by the client builder.
 - pgTAP suites from the Supabase lane used `throws_ok` with the wrong argument order and assumed a seed coupon that no longer existed. Fixed; that is why they never went green before.
+- Local server started without `FINNHUB_TOKEN` ran on the PAXG fallback: sluggish, flat chart on first hands-on. Operator error; recipe corrected above.
 
 ## Known gaps (not blocking Layer 1)
 
 - No OTP code-entry screen exists in the UI yet (the marketing lead's side); the socket frames and server are ready.
 - `claim_task` / `free_refill` frames return a fresh `me` but no `reward` field; the client derives the toast from the coin delta.
+- `npm run format:check` is red on ~20 pre-existing files (docs, legacy Supabase functions); cosmetic, untouched to keep merges clean.
 
 ## Log
 
 - 2026-09-16 morning: layered spec, Opus review (4 Blockers, 10 Highs) folded into the plan before any code. Feed decision changed to one continuous series. MT5 feed card added.
-- 2026-09-16: tickets 1-6 built, verified, merged. Game playable locally on the box stack. 6b done. 7a in flight.
-- 2026-09-16: first hands-on: chart sluggish and flat - the local server had been started without FINNHUB_TOKEN and ran on the PAXG fallback. Restarted with the key: Finnhub connected, ~5-9 published changes per 5 s.
+- 2026-09-16: tickets 1-6 built, verified, merged. Game playable locally on the box stack.
+- 2026-09-16: first hands-on: chart sluggish and flat - server had been started without FINNHUB_TOKEN. Restarted with the key: Finnhub connected, ~5-9 published changes per 5 s.
+- 2026-09-16: 6b and 7a done and verified. Acceptance run started.
