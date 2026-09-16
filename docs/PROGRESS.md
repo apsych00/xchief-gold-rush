@@ -61,7 +61,7 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 | C3 + C4 OTP screen, masked header, sign out, live masked leaderboard | done | `src/Identity.jsx`, `mask_email()`; screenshots `reports/c3-c4/`; merged `2efe3a6` |
 | C3a session policy (30-day versioned token, renewal, OTP re-login, revocation) | done | merged fast-forward `abdec28` |
 | C5 tasks and gifts, server-owned rewards | done | `get_tasks()`, `reward` on claim and refill, `already_claimed` / `already_refilled`, `tasks` frame; 172 pgTAP, 33 integration, 12 E2E on my run; merged `966068b` |
-| C6 + C7 web verdict audit and broke path | building | Sonnet builder (OpenCode Go hit its monthly limit) |
+| C6 + C7 web verdict audit and broke path | done | loss line now reads the server's delta; broke overlay offers refill, tasks and email verification, signup bonus only once verified (the old CTA was a dead end: `claim_task('signup')` needs a verified email); 13/13 E2E on my run; merged |
 | C2b kiosk idle rework (20 s idle, activity cancels, 20 s countdown) | done | built by qwen3.8-max before the cap, verified by Sonnet and by me: kiosk E2E 5/5 incl. the idle test; merged |
 | C4b leaderboard row animation | queued | after C5-C7 |
 | D1 monitoring | done | `/status`, `/ops`, `/logs`; merged `4839072` |
@@ -92,6 +92,8 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 - No OTP code-entry screen in the UI (C3).
 - `claim_task` / `free_refill` frames carry no `reward` field (C5).
 - `npm run format:check` is red on ~20 pre-existing files; cosmetic.
+- The Trader-level signup prompt on the play screen calls `claim_task('signup')` for players who never verified an email, so it fails with `email_required`: the same dead end C7 fixed in the broke overlay, in a second place. Small; gate it on `profile.emailVerified` or route it through the OTP modal.
+- `round_settled` carries no `stake`; the win pane's "Stake 100 x 1.5" text still uses the client's own stake for the lever it sent. Not an outcome, but adding `stake` to the frame closes the last client-derived number.
 - Leaderboard own-row match is a string compare on the masked email, so two players whose masks collide (`k****i@gmail.com` twice) are both highlighted as "me". Found by the B16 investigation on a reused database. Covered by B2 in `tasks-marketing-lead.md` (the server returns the player's own rank and row in every leaderboard response); until then it only shows with colliding masks.
 
 ## Log
