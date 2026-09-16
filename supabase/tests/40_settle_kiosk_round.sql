@@ -5,6 +5,7 @@ begin;
 select plan(7);
 
 -- Leave exactly one coupon available so the "no double claim" case is unambiguous.
+insert into public.coupons (code) values ('TEST-0001') on conflict (code) do nothing;
 update public.coupons set status = 'claimed', claimed_at = now() where code <> 'TEST-0001';
 
 select tests.create_kiosk('kiosk-one', 'kiosk-one-secret-0000000000') as kiosk_one \gset
