@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gold Rush - ops</title>
+    <!--
+      One-file operator page (docs/layers.md D1). No framework, no build: Caddy serves this
+      file as-is at /ops. Polls GET /status every 5 s and renders a plain table, red/green
+      per cell so a non-engineer can tell "fine" from "look at this" at a glance.
+
+      Colour rules (documented here since /status itself only returns numbers):
+        - feed connected:      green if at least one price source is connected, else red.
+        - price age:           green if the published price ticked within the last 5 s.
+        - db ok:                green when the one health query succeeded.
+        - coupons remaining:   green while any $100 code is still available.
+        - rounds / minute:     rounds settled in the last 60 s; green above zero. During
+                                the campaign's open hours, zero for a full 5-minute refresh
+                                cycle with the feed and db both green usually means nobody
+                                is playing, not a fault - see docs/box-deploy.md.
+        - open sockets:        web + kiosk connections held by the server right now; shown
+                                for context, not coloured (empty is normal off-hours).
+    -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0b0f14;
+        --panel: #131a22;
+        --border: #232d38;
+        --text: #e6edf3;
+        --muted: #8b96a3;
+        --green-bg: #103a1f;
+        --green-fg: #4ade80;
+        --red-bg: #3a1010;
+        --red-fg: #f87171;
+        --neutral-bg: #1b2430;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          15px/1.4 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 4px;
+      }
+      #meta {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 18px;
+      }
+      table {
+        width: 100%;
+        max-width: 640px;
+        border-collapse: collapse;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      td {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: middle;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      td.label {
+        color: var(--muted);
+        width: 55%;
+      }
+      td.value {
+        font-weight: 600;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      td.ok {
+        background: var(--green-bg);
+        color: var(--green-fg);
+      }
+      td.bad {
+        background: var(--red-bg);
+        color: var(--red-fg);
+      }
+      td.neutral {
+        background: var(--neutral-bg);
+        color: var(--text);
+      }
+      #error {
+        display: none;
+        margin-top: 16px;
+        padding: 12px 16px;
+        border-radius: 8px;
+        background: var(--red-bg);
+        color: var(--red-fg);
+        max-width: 640px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Gold Rush - ops</h1>
+    <div id="meta">Loading /status...</div>
+    <table>
+      <tbody>
+        <tr>
+          <td class="label">Feed connected</td>
+          <td id="cell-feed" class="value neutral">-</td>
+        </tr>
+        <tr>
+          <td class="label">Price age</td>
+          <td id="cell-age" class="value neutral">-</td>
+        </tr>
+        <tr>
+          <td class="label">Database</td>
+          <td id="cell-db" class="value neutral">-</td>
+        </tr>
+        <tr>
+          <td class="label">Coupons remaining</td>
+          <td id="cell-coupons" class="value neutral">-</td>
+        </tr>
+        <tr>
+          <td class="label">Rounds / minute</td>
+          <td id="cell-rpm" class="value neutral">-</td>
+        </tr>
+        <tr>
+          <td class="label">Open sockets (web / kiosk)</td>
+          <td id="cell-sockets" class="value neutral">-</td>
+        </tr>
+      </tbody>
+    </table>
+    <div id="error"></div>
+
+    <script>
+      (function () {
+        var POLL_MS = 5000;
+        var AGE_OK_MS = 5000;
+
+        var metaEl = document.getElementById('meta');
+        var errorEl = document.getElementById('error');
+        var cells = {
+          feed: document.getElementById('cell-feed'),
+          age: document.getElementById('cell-age'),
+          db: document.getElementById('cell-db'),
+          coupons: document.getElementById('cell-coupons'),
+          rpm: document.getElementById('cell-rpm'),
+          sockets: document.getElementById('cell-sockets'),
+        };
+
+        function setCell(el, text, state) {
+          el.textContent = text;
+          el.classList.remove('ok', 'bad', 'neutral');
+          el.classList.add(state);
+        }
+
+        function render(status) {
+          var sources = (status.feed && status.feed.sources) || {};
+          var anyConnected = Object.keys(sources).some(function (id) {
+            return sources[id].connected;
+          });
+          setCell(cells.feed, anyConnected ? 'connected' : 'no source connected', anyConnected ? 'ok' : 'bad');
+
+          var sourceAges = Object.keys(sources)
+            .map(function (id) {
+              return sources[id].ageMs;
+            })
+            .filter(function (ms) {
+              return typeof ms === 'number';
+            });
+          var minAge = sourceAges.length ? Math.min.apply(null, sourceAges) : null;
+          var ageOk = minAge !== null && minAge <= AGE_OK_MS;
+          setCell(cells.age, minAge === null ? 'no tick yet' : (minAge / 1000).toFixed(1) + 's', ageOk ? 'ok' : 'bad');
+
+          setCell(cells.db, status.db ? 'ok' : 'down', status.db ? 'ok' : 'bad');
+
+          var available = status.coupons ? status.coupons.available : 0;
+          setCell(cells.coupons, String(available), available > 0 ? 'ok' : 'bad');
+
+          var rpm = status.rounds ? status.rounds.settled60s : 0;
+          setCell(cells.rpm, String(rpm), rpm > 0 ? 'ok' : 'bad');
+
+          var web = status.sockets ? status.sockets.web : 0;
+          var kiosk = status.sockets ? status.sockets.kiosk : 0;
+          setCell(cells.sockets, web + ' / ' + kiosk, 'neutral');
+
+          metaEl.textContent =
+            'Uptime ' +
+            Math.round(status.uptimeSeconds / 60) +
+            ' min - last updated ' +
+            new Date().toLocaleTimeString();
+          errorEl.style.display = 'none';
+        }
+
+        function poll() {
+          fetch('/status', { cache: 'no-store' })
+            .then(function (res) {
+              if (!res.ok) throw new Error('status ' + res.status);
+              return res.json();
+            })
+            .then(render)
+            .catch(function (err) {
+              errorEl.textContent = 'Could not reach /status: ' + err.message;
+              errorEl.style.display = 'block';
+            });
+        }
+
+        poll();
+        setInterval(poll, POLL_MS);
+      })();
+    </script>
+  </body>
+</html>

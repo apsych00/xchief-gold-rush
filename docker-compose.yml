@@ -44,13 +44,30 @@ services:
       - '443:443'
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      # Bcrypt hash for the /logs (Dozzle) basic-auth password. Generate with:
+      #   docker run --rm caddy:2 caddy hash-password --plaintext '<pw>'
+      DOZZLE_PASSWORD_HASH: ${DOZZLE_PASSWORD_HASH:?DOZZLE_PASSWORD_HASH is missing - see .env.box.example}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # The built frontend (npm run build). The mount is live: a new dist/ is
       # served immediately, no container restart needed.
       - ./dist:/srv/app:ro
+      # The static operator page (ticket D1, ops/index.html). Also live-mounted.
+      - ./ops:/srv/ops:ro
       - caddy_data:/data
       - caddy_config:/config
+
+  # Live container logs in a browser for the operator (docs/layers.md D1). Not published
+  # directly: Caddy proxies it at /logs behind basic_auth. Production alternative:
+  # Cloudflare Access in front of /logs instead of (or in addition to) the Caddy password
+  # (docs/box-deploy.md).
+  dozzle:
+    image: amir20/dozzle:latest
+    restart: unless-stopped
+    environment:
+      DOZZLE_BASE: /logs
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
 volumes:
   pgdata:
