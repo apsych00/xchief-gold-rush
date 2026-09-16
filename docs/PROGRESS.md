@@ -56,15 +56,23 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 
 | Ticket | Status | Evidence |
 |---|---|---|
-| C1 kiosk session on the server | **done** | 141 pgTAP, 20 integration, lint, unit; `kiosk_session` frame, `kiosk_reset`, 60 s idle sweep. Merged `c91d294`. |
-| C2 kiosk screens (attract, WIN, EXIT, abandon countdown, reconnect) | **done** | `src/KioskApp.jsx`, `src/useKioskFlow.js`; screenshots `reports/c2/`; E2E `tests/e2e/kiosk.spec.js` 4/4, full E2E 8 pass 1 skip; also fixed: kiosk verdict coins were computed client-side (now server's), kiosk play sends the lever. Merged `b03d468` + `ef9cf8f`. |
-| C3a session policy (30-day versioned token, sliding renewal, OTP re-login, revocation) | **done** | 146 pgTAP, 23 integration, 67 unit; merged fast-forward |
-| C3 + C4 OTP screen, masked identity in the header, sign out, live masked leaderboard | **done** | `src/Identity.jsx`, `mask_email()` in SQL, leaderboard push after every player settle (1 s throttle, web sockets only); screenshots `reports/c3-c4/`; 159 pgTAP, 26 integration, 67 unit, E2E 9/9. Merged `2efe3a6` + `339ae4e`. |
-| C5-C7 tasks, win/lose, broke on the web | queued | |
-| D1 monitoring | **done** | `/status` (200, counts + feed sources), `/ops` page (screenshot `reports/d1-ops.png`), `/logs` 401 without and 200 with the password, start alert seen in the server log; lint clean, 40 unit, 16 integration. Merged `4839072`. |
-| D2 one-command deploy + auto-deploy on push | **done** | `deploy/deploy.sh`, `deploy/autodeploy.sh`, `box-deploy.md`; commit `acc3b0d` |
-| S17-prep MT5 source | **done** | `server/feed-mt5.js` at priority 0 behind `METAAPI_TOKEN` / `METAAPI_ACCOUNT_ID` / `METAAPI_SYMBOL`; 22 feed + 10 adapter unit tests; hook-up steps in `mt5-feed.md`. Real ticks untested until credentials arrive. |
-| Q1 blind E2E | after each screen lands | |
+| C1 kiosk session on the server | done | 141 pgTAP, 20 integration; merged `c91d294` |
+| C2 kiosk screens (attract, WIN, EXIT, abandon, reconnect) | done | `src/KioskApp.jsx`; screenshots `reports/c2/`; merged `b03d468` |
+| C3 + C4 OTP screen, masked header, sign out, live masked leaderboard | done | `src/Identity.jsx`, `mask_email()`; screenshots `reports/c3-c4/`; merged `2efe3a6` |
+| C3a session policy (30-day versioned token, renewal, OTP re-login, revocation) | done | merged fast-forward `abdec28` |
+| C5 tasks and gifts, server-owned rewards | verifying | Sonnet builder finished the code (`get_tasks()`, `reward` on claim and refill, `already_refilled`); lint, unit, build green on my run; pgTAP, integration and E2E pending on a worktree brought up to `dev` |
+| C6 + C7 web verdict audit and broke path | building | OpenCode deepseek-v4-pro in Orca terminal "C6+C7 web" |
+| C2b kiosk idle rework (20 s idle, activity cancels, 20 s countdown) | building | OpenCode qwen3.8-max in Orca terminal "C2b idle"; partial work on disk from a first run |
+| C4b leaderboard row animation | queued | after C5-C7 |
+| D1 monitoring | done | `/status`, `/ops`, `/logs`; merged `4839072` |
+| D2 one-command deploy + auto-deploy | done | `deploy/`; merged `acc3b0d` |
+| B14 blind five-win streak tests | done | 3 integration (coupon row, session_over, exhausted pool) + 2 kiosk E2E; merged `e4efdd0` |
+| B15 MT5 terminal + tick bridge in Docker | building | OpenCode kimi-k3 in Orca terminal "B15 MT5 docker"; Orca run `run_bc01cfb97f5d` holds the chained review, harden and blind-test tasks that start when it commits |
+| B16 E2E regression after the profile merge | done | root cause: the profile avatar read an action the kiosk never passes; avatar now renders only with a profile action; 11/11 E2E; merged `92bd000` + `c1a697d` |
+| S17 MT5 via MetaApi | blocked on admin | code merged and reachable; needs the account UUID, a token with account read access, quote interval 0 |
+| Q1 blind E2E over every scenario | partly | B14 covers the five-win streak; the rest after C5-C7 |
+| Marketing lead's brief, Part B (B1-B13) | queued | `tasks-marketing-lead.md`; starts after Layer 1.5 closes |
+| Layer 2 hardening S2-S16 | queued | order in `layers.md`; S2, S3, S10, S5, S6, S8, S12, S16 before launch |
 
 ## Defects found and fixed along the way
 
@@ -88,6 +96,7 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 
 ## Log
 
+- 2026-09-16 evening: profile screen merged from the marketing lead's remote (pull-only; pushes go to AIT-ERP). It crashed the kiosk (B16), fixed. Two test flakes fixed for good (settle counter in the dev hook; kiosk reset before the streak spec). B14 streak tests merged. OpenCode roster raised to kimi-k3 / qwen3.8-max / deepseek-v4-pro / gpt-5.6-luna / glm-5.3; workers now run as Orca terminals. MetaApi SDK loads its Node build; the MT5 source reaches MetaApi and is refused only by the token scope.
 - 2026-09-16: C3+C4 merged (OTP screen, masked header, sign out, live masked leaderboard). Mask capped at four asterisks. MetaApi SDK baked into the server image. Handover to the CBX account.
 - 2026-09-16: C2 kiosk screens merged. Two flaky-by-design test setups fixed: the broke E2E now sets the pot in the database (the server pushes `kiosk_session` when it refuses a stake), integration files run one at a time, Playwright runs one worker. Client tasks for the marketing lead written: `tasks-marketing-lead.md` and `.fa.md`.
 - 2026-09-16: C3a session policy merged. Tokens carry expiry and version; a verified email entered on a new device logs into the existing player. `revoke_player_sessions` documented for the operator.
