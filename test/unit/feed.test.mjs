@@ -34,7 +34,7 @@ function harness({ finnhubToken = 'test-token' } = {}) {
 
 // --- first tick ------------------------------------------------------------
 
-test('first tick is published with offset 0, rounded to 2 decimals', () => {
+test('first tick is published with offset 0, rounded to 3 decimals', () => {
   const h = harness({ finnhubToken: null });
   h.inject('okx', 4355.678, 0);
   assert.equal(h.ticks.length, 1);

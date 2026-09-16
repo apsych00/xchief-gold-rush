@@ -2,7 +2,9 @@
 
 Layer 1 is functional and smooth (closing now). Layer 1.5 is the client experience: what a visitor at the booth and a player on the web actually go through. Layer 2 is hardening. 1.5 comes before 2 on the lead's instruction: a booth that resets wrong loses more than a booth that is not yet rate-limited.
 
-## Layer 1 - functional and smooth (done, pending the acceptance run)
+## Layer 1 - functional and smooth (done)
+
+**Client hosting:** the box serves the client. Caddy serves the static `dist/` build at the campaign domain; Cloudflare caches it at the edge. No Vercel, no extra subscription. Build once locally with `VITE_GAME_WS=auto`, copy `dist/` to the box; the mount is live (`box-architecture.md` 1b).
 
 Tickets 1-7 in `box-plan.md`: database on the box, continuous price feed, game server with in-memory rounds, login codes, client on the socket, compose + Caddy, schema squash, acceptance runner. Proof lives in `PROGRESS.md`.
 

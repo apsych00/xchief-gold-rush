@@ -33,7 +33,9 @@ const RECONNECT_MAX_MS = 30000;
 const REANCHOR_STEP = 0.05; // max offset decay per tick while idle
 
 const isValidPrice = (p) => typeof p === 'number' && Number.isFinite(p) && p > PRICE_MIN && p < PRICE_MAX;
-const round2 = (p) => Math.round(p * 100) / 100;
+// Gold is quoted to 3 decimals (Finnhub OANDA: 4308.425). Publishing 2 collapsed real moves
+// into "no change" and made the chart feel stepped; keep the third decimal.
+const round3 = (p) => Math.round(p * 1000) / 1000;
 
 /** Source definitions in priority order; Finnhub only exists when a token is given. */
 function sourceDefs(finnhubToken) {
@@ -123,7 +125,7 @@ export function createFeed({ finnhubToken, onTick, now = Date.now } = {}) {
     if (switched) {
       // Anchor the incoming source to the current level; the very first tick
       // of the feed keeps offset 0.
-      if (activeId !== null && published) next.offset = round2(published.price - next.raw);
+      if (activeId !== null && published) next.offset = round3(published.price - next.raw);
       activeId = next.def.id;
     }
     if (src.def.id !== activeId) return; // non-active source: raw updated only, never published
@@ -131,10 +133,10 @@ export function createFeed({ finnhubToken, onTick, now = Date.now } = {}) {
     if (idle && !switched && activeId === 'finnhub') {
       // Re-anchor: slide back toward true XAU/USD by at most REANCHOR_STEP per tick.
       const off = next.offset;
-      next.offset = off > 0 ? Math.max(0, round2(off - REANCHOR_STEP)) : Math.min(0, round2(off + REANCHOR_STEP));
+      next.offset = off > 0 ? Math.max(0, round3(off - REANCHOR_STEP)) : Math.min(0, round3(off + REANCHOR_STEP));
     }
 
-    published = { price: round2(next.raw + next.offset), t };
+    published = { price: round3(next.raw + next.offset), t };
     if (onTick) onTick({ price: published.price, t, quiet: false });
   }
 

@@ -357,7 +357,7 @@ function Display({ state, profile, actions }) {
             <div className="price-row" dir="ltr">
               <span className="price-mid">{money(price ?? start)}</span>
               <span className="price-delta" style={{ color: deltaColor }}>
-                {(up ? '▲ +' : '▼ ') + delta.toFixed(2)}
+                {(up ? '▲ +' : '▼ ') + (Math.abs(delta) >= 0.01 ? delta.toFixed(2) : delta.toFixed(3))}
               </span>
             </div>
             <Chart history={history} start={start} color={deltaColor} />
