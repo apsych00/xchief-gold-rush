@@ -87,14 +87,24 @@ create table public.players (
 );
 
 -- Physical booth devices. The raw secret is never stored, only its bcrypt hash.
+--
+-- A kiosk runs one visitor session at a time (ticket C1, docs/layers.md): session_coins is
+-- the server-owned pot for the visitor currently in front of the machine, session_state
+-- tracks where that session is (idle between visitors; playing; ended by a win or by going
+-- broke), and session_started_at is when the current session began. streak and
+-- last_round_at already existed and keep their meaning: streak is consecutive wins within
+-- the session, last_round_at drives the 60 s idle reset.
 create table public.kiosks (
   id uuid primary key default gen_random_uuid(),
   label text not null,
   secret_hash text not null,
   status text not null default 'active' check (status in ('active', 'revoked')),
   streak int not null default 0, -- consecutive server-validated wins on this kiosk
+  session_coins int not null default 1000,
+  session_started_at timestamptz,
+  session_state text not null default 'idle' check (session_state in ('idle', 'playing', 'won', 'broke')),
   created_at timestamptz not null default now(),
-  last_round_at timestamptz -- drives the 60 s idle streak reset (docs/box-plan.md)
+  last_round_at timestamptz -- drives the 60 s idle session reset (docs/box-plan.md)
 );
 
 -- Every round, web or kiosk. Also the audit trail: both prices and both
@@ -390,33 +400,91 @@ begin
   return v_id;
 end $$;
 
--- The same orphan-round self-healing as open_round, plus the box rule that a
--- kiosk whose streak has idled for 60 s belongs to a new visitor, who starts
--- fresh.
-create function public.open_kiosk_round(p_kiosk uuid, p_dir text, p_start_price numeric, p_source text default null)
+-- Start a fresh visitor session on this kiosk: full coins, no streak, playing. Called
+-- directly for the explicit `kiosk_session` bootstrap (welcome) and inline by
+-- open_kiosk_round whenever a session is idle or has idled out.
+create function public.start_kiosk_session(p_kiosk uuid)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  k public.kiosks%rowtype;
+begin
+  update public.kiosks
+  set session_coins = 1000, streak = 0, session_state = 'playing', session_started_at = now()
+  where id = p_kiosk and status = 'active'
+  returning * into k;
+  if not found then raise exception 'kiosk_unauthorized'; end if;
+  return json_build_object('coins', k.session_coins, 'streak', k.streak, 'state', k.session_state);
+end $$;
+
+-- kiosk_reset frame (Claim or Done pressed, or the idle sweep in server/kiosk.js): back to
+-- attract mode. Coins and streak are cleared with it so nothing is ever owed to a walked-away
+-- visitor - the next start_kiosk_session (or the idle-triggered reset inside
+-- open_kiosk_round) is what actually begins their session.
+create function public.reset_kiosk_session(p_kiosk uuid)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  k public.kiosks%rowtype;
+begin
+  update public.kiosks
+  set session_coins = 1000, streak = 0, session_state = 'idle', session_started_at = now()
+  where id = p_kiosk and status = 'active'
+  returning * into k;
+  if not found then raise exception 'kiosk_unauthorized'; end if;
+  return json_build_object('coins', k.session_coins, 'streak', k.streak, 'state', k.session_state);
+end $$;
+
+-- The same orphan-round self-healing as open_round, plus the box rule that a session that has
+-- idled for 60 s, or was never started (session_state 'idle'), belongs to a new visitor: it is
+-- restarted fresh before this round is considered. A session already ended (won its coupon or
+-- went broke) refuses further play until it is reset - the client's win/exit modal owns that
+-- moment, not another round slipping in first.
+--
+-- The insufficient_coins case marks the session broke and reports insufficient_coins, and both
+-- must survive: a plain `raise exception` aborts the whole call, undoing the UPDATE that just
+-- ran in the same statement (the same issue verify_otp_code's comment documents). So that one
+-- case returns {error: 'insufficient_coins'} instead of raising; server/ledger.js's
+-- openKioskRound() turns it into the same thrown-Error-with-.code shape every other case here
+-- produces by raising directly.
+create function public.open_kiosk_round(p_kiosk uuid, p_dir text, p_start_price numeric, p_source text default null, p_lever int default 1)
 returns json language plpgsql security definer set search_path = public as $$
 declare
   v_id uuid;
+  v_stake int;
   k public.kiosks%rowtype;
 begin
   if p_dir not in ('up', 'down') then raise exception 'bad_dir'; end if;
   if p_start_price is null or p_start_price <= 0 then raise exception 'bad_price'; end if;
+  if p_lever not in (1, 2, 5) then raise exception 'bad_lever'; end if;
 
   select * into k from public.kiosks where id = p_kiosk and status = 'active' for update;
   if not found then raise exception 'kiosk_unauthorized'; end if;
 
-  -- a new visitor starts fresh: no round on this kiosk for 60 s resets the streak
-  if k.last_round_at is not null and k.last_round_at < now() - interval '60 seconds' and k.streak > 0 then
-    update public.kiosks set streak = 0 where id = p_kiosk;
+  if k.session_state = 'idle'
+     or (k.last_round_at is not null and k.last_round_at < now() - interval '60 seconds') then
+    update public.kiosks
+    set session_coins = 1000, streak = 0, session_state = 'playing', session_started_at = now()
+    where id = p_kiosk
+    returning * into k;
   end if;
+
+  if k.session_state in ('won', 'broke') then
+    raise exception 'session_over';
+  end if;
+
   update public.kiosks set last_round_at = now() where id = p_kiosk;
 
   update public.rounds set status = 'settled', outcome = 'void', end_at = now()
   where kiosk_id = p_kiosk and status = 'open' and start_at < now() - interval '30 seconds';
 
+  v_stake := public.stake_for(p_lever);
+  if k.session_coins < v_stake then
+    update public.kiosks set session_state = 'broke' where id = p_kiosk;
+    return json_build_object('error', 'insufficient_coins');
+  end if;
+
   begin
     insert into public.rounds (kiosk_id, dir, lever, stake, start_price, source)
-    values (p_kiosk, p_dir, 1, 0, p_start_price, p_source)
+    values (p_kiosk, p_dir, p_lever, v_stake, p_start_price, p_source)
     returning id into v_id;
   exception when unique_violation then
     raise exception 'round_in_flight';
@@ -424,18 +492,25 @@ begin
   return json_build_object('round_id', v_id, 'start_price', p_start_price);
 end $$;
 
--- Five server-validated wins in a row claims one coupon, atomically, and resets
--- the streak. An empty pool keeps the streak and reports exhausted instead of
--- silently resetting (docs/box-plan.md): the kiosk tells the staff.
+-- Applies the same economy as settle_round to the kiosk's session_coins, then five
+-- server-validated wins in a row claims one coupon, atomically, and resets the streak. An
+-- empty pool keeps the streak and reports exhausted instead of silently resetting
+-- (docs/box-plan.md): the kiosk tells the staff, and the session keeps playing. A coupon
+-- actually claimed ends the session ('won'); otherwise dropping under 100 coins ends it
+-- ('broke') - both are terminal until the next kiosk_reset or idle timeout.
 create function public.settle_kiosk_round(p_round uuid, p_end_price numeric)
 returns json language plpgsql security definer set search_path = public as $$
 declare
   r public.rounds%rowtype;
   k public.kiosks%rowtype;
   v_outcome text;
+  v_mult numeric := 1;
+  v_delta int := 0;
+  v_coins int;
   v_streak int;
   v_code text;
   v_exhausted boolean := false;
+  v_state text;
 begin
   if p_end_price is null or p_end_price <= 0 then raise exception 'bad_price'; end if;
 
@@ -453,8 +528,13 @@ begin
     v_outcome := 'lose';
   end if;
 
+  v_coins := k.session_coins;
   v_streak := k.streak;
+
   if v_outcome = 'win' then
+    v_mult := public.combo_mult(k.streak);
+    v_delta := round(r.stake * v_mult)::int;
+    v_coins := k.session_coins + v_delta;
     v_streak := k.streak + 1;
     if v_streak >= 5 then
       update public.coupons set status = 'claimed', claimed_by_kiosk = k.id, claimed_at = now()
@@ -472,15 +552,27 @@ begin
       end if;
     end if;
   elsif v_outcome = 'lose' then
+    v_delta := -r.stake;
+    v_coins := greatest(0, k.session_coins - r.stake);
     v_streak := 0;
   end if;
 
-  update public.kiosks set streak = v_streak, last_round_at = now() where id = k.id;
-  update public.rounds set end_price = p_end_price, end_at = now(), outcome = v_outcome, status = 'settled'
+  if v_code is not null then
+    v_state := 'won';
+  elsif v_coins < 100 then
+    v_state := 'broke';
+  else
+    v_state := 'playing';
+  end if;
+
+  update public.kiosks set session_coins = v_coins, streak = v_streak, session_state = v_state, last_round_at = now()
+  where id = k.id;
+  update public.rounds set end_price = p_end_price, end_at = now(), outcome = v_outcome, delta = v_delta, mult = v_mult, status = 'settled'
   where id = p_round;
 
-  return json_build_object('outcome', v_outcome, 'streak', v_streak, 'coupon', v_code, 'coupons_exhausted', v_exhausted,
-                           'start_price', r.start_price, 'end_price', p_end_price);
+  return json_build_object('outcome', v_outcome, 'delta', v_delta, 'mult', v_mult, 'coins', v_coins, 'streak', v_streak,
+    'coupon', v_code, 'coupons_exhausted', v_exhausted, 'state', v_state,
+    'start_price', r.start_price, 'end_price', p_end_price);
 end $$;
 
 -- --------------------------------------------------------------------------- tasks --
@@ -664,7 +756,9 @@ revoke execute on function
   public.settle_round(uuid, numeric),
   public.void_round(uuid),
   public.verify_kiosk(text),
-  public.open_kiosk_round(uuid, text, numeric, text),
+  public.start_kiosk_session(uuid),
+  public.reset_kiosk_session(uuid),
+  public.open_kiosk_round(uuid, text, numeric, text, int),
   public.settle_kiosk_round(uuid, numeric),
   public.request_otp_code(uuid, text),
   public.verify_otp_code(uuid, text, text)

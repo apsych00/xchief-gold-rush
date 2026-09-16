@@ -64,7 +64,7 @@ export function createRoundManager({ feed, ledger, getSocket, log = console.log,
     const opened =
       kind === 'player'
         ? await ledger.call('open_round', id, dir, lever, p.price, p.source)
-        : await ledger.call('open_kiosk_round', id, dir, p.price, p.source);
+        : await ledger.openKioskRound(id, dir, p.price, p.source, lever);
 
     const roundId = opened.round_id;
     roundOpened();
@@ -106,6 +106,12 @@ export function createRoundManager({ feed, ledger, getSocket, log = console.log,
       const ws = origin && origin.readyState === origin.OPEN ? origin : getSocket(kind, id);
       if (ws && ws.readyState === ws.OPEN) {
         send(ws, frame);
+        // The kiosk session frame is a convenience mirror of round_settled's own coins/streak/
+        // state fields, not a promise kept across a reconnect - it is only sent when the
+        // socket that gets the verdict is right here to receive it.
+        if (kind === 'kiosk') {
+          send(ws, { type: 'kiosk_session', coins: settled.coins, streak: settled.streak, state: settled.state });
+        }
       } else {
         pending.set(`${kind}:${id}`, frame);
       }

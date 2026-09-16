@@ -32,6 +32,7 @@ const KNOWN_ERROR_CODES = [
   'bad_price',
   'round_not_open',
   'kiosk_unauthorized',
+  'session_over',
   'already_claimed',
   'email_required',
   'refill_unavailable',
@@ -168,10 +169,57 @@ export async function leaderboard() {
   return rows;
 }
 
-/** Current streak for a kiosk (welcome frame after verify_kiosk). */
-export async function kioskStreak(kioskId) {
-  const { rows } = await getPool().query('select streak from public.kiosks where id = $1', [kioskId]);
-  return rows[0] ? rows[0].streak : 0;
+/**
+ * The kiosk's visitor session as the `kiosk_session` frame shape (ticket C1,
+ * docs/layers.md): {coins, streak, state}. Sent right after a kiosk `welcome` and mirrored
+ * into every kiosk `round_settled`.
+ */
+export async function kioskSession(kioskId) {
+  const { rows } = await getPool().query(
+    'select session_coins as coins, streak, session_state as state from public.kiosks where id = $1',
+    [kioskId],
+  );
+  return rows[0] || { coins: 1000, streak: 0, state: 'idle' };
+}
+
+/** Starts a fresh visitor session (coins 1000, streak 0, playing). */
+export async function startKioskSession(kioskId) {
+  return call('start_kiosk_session', kioskId);
+}
+
+/** Back to attract mode: `kiosk_reset` (Claim/Done) and the idle sweep both call this. */
+export async function resetKioskSession(kioskId) {
+  return call('reset_kiosk_session', kioskId);
+}
+
+/**
+ * open_kiosk_round returns {error: 'insufficient_coins'} instead of raising for that one case
+ * (see the function's comment in db/schema.sql: marking the session broke and reporting the
+ * error both have to survive, and a raise would undo the mark in the same statement). Turn
+ * that into the same thrown-Error-with-.code shape every other case already gets from call()'s
+ * mapError, so rounds.js does not need to special-case it.
+ */
+export async function openKioskRound(kioskId, dir, price, source, lever) {
+  const result = await call('open_kiosk_round', kioskId, dir, price, source, lever);
+  if (result && result.error) {
+    const err = new Error(result.error);
+    err.code = result.error;
+    throw err;
+  }
+  return result;
+}
+
+/** Kiosks the idle sweep (server/kiosk.js) should reset: a session in progress whose last round is older than idleMs. */
+export async function staleKiosks(idleMs) {
+  const { rows } = await getPool().query(
+    `select id from public.kiosks
+       where status = 'active'
+         and session_state <> 'idle'
+         and last_round_at is not null
+         and last_round_at < now() - ($1 || ' milliseconds')::interval`,
+    [idleMs],
+  );
+  return rows.map((r) => r.id);
 }
 
 /**

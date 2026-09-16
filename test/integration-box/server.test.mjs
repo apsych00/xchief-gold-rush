@@ -16,6 +16,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { WebSocket } from 'ws';
+import pg from 'pg';
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -36,6 +37,7 @@ let port;
 let wsUrl;
 let priceTimer;
 let currentPrice = 3000;
+let pool;
 
 before(async () => {
   app = createApp({ finnhubToken: null });
@@ -43,6 +45,7 @@ before(async () => {
   // from feed._injectTick, so prices are fully test-controlled and never race live ticks.
   port = await app.start(0, { startFeed: false });
   wsUrl = `ws://localhost:${port}/ws`;
+  pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
   priceTimer = setInterval(() => {
     app.feed._injectTick('okx', currentPrice, Date.now());
@@ -62,7 +65,20 @@ before(async () => {
 after(async () => {
   clearInterval(priceTimer);
   await app.close();
+  await pool.end();
 });
+
+/** A fresh kiosk row for tests that need to control a session's starting state directly,
+ * independent of the shared DEV_KIOSK_SECRET kiosk other tests in this file also drive. */
+async function createTestKiosk(label, secret) {
+  const { rows } = await pool.query(
+    `insert into public.kiosks (label, secret_hash)
+     values ($1, extensions.crypt($2, extensions.gen_salt('bf')))
+     returning id`,
+    [label, secret],
+  );
+  return rows[0].id;
+}
 
 // A server reply can be followed immediately by another (welcome then hello, for example),
 // both delivered inside the same synchronous flush of the client's socket. Attaching a fresh
@@ -70,8 +86,8 @@ after(async () => {
 // await gets a listener registered, so every connection instead gets ONE persistent listener
 // that buffers frames into an inbox; nextFrame reads from that buffer first and only then
 // waits for new arrivals.
-function connect() {
-  const ws = new WebSocket(wsUrl);
+function connect(url = wsUrl) {
+  const ws = new WebSocket(url);
   ws.inbox = [];
   ws.waiters = [];
   ws.on('message', (data) => {
@@ -319,6 +335,138 @@ test('a fake kiosk secret is kiosk_unauthorized', async () => {
   const frame = await nextFrame(ws, (f) => f.type === 'error');
   assert.equal(frame.code, 'kiosk_unauthorized');
   ws.close();
+});
+
+// --- kiosk session (ticket C1) ------------------------------------------------------------
+
+test('a fresh kiosk welcome carries an idle kiosk_session, and a round reports the new coins/state', async () => {
+  const secret = 'kiosk-session-flow-secret-01';
+  await createTestKiosk('session-flow', secret);
+
+  const ws = connect();
+  await whenOpen(ws);
+  send(ws, { type: 'auth', kiosk: secret });
+  await nextFrame(ws, (f) => f.type === 'welcome');
+  const session = await nextFrame(ws, (f) => f.type === 'kiosk_session');
+  assert.deepEqual(
+    { coins: session.coins, streak: session.streak, state: session.state },
+    { coins: 1000, streak: 0, state: 'idle' },
+    'a kiosk that has never played starts idle at 1000 coins',
+  );
+
+  currentPrice = 3000;
+  await sleep(250);
+  send(ws, { type: 'play', dir: 'up', lever: 1 });
+  await nextFrame(ws, (f) => f.type === 'round_opened');
+  currentPrice = 3100; // dir up, end > start: a win
+
+  const settled = await nextFrame(ws, (f) => f.type === 'round_settled', 5500);
+  assert.equal(settled.outcome, 'win');
+  assert.equal(settled.delta, 100, 'stake 100 x mult 1 (streak was 0)');
+  assert.equal(settled.coins, 1100, 'the idle session started fresh at 1000 before the win was applied');
+  assert.equal(settled.streak, 1);
+  assert.equal(settled.state, 'playing');
+
+  const afterSettle = await nextFrame(ws, (f) => f.type === 'kiosk_session');
+  assert.deepEqual(
+    { coins: afterSettle.coins, streak: afterSettle.streak, state: afterSettle.state },
+    { coins: 1100, streak: 1, state: 'playing' },
+    'kiosk_session mirrors round_settled after every kiosk round',
+  );
+  ws.close();
+});
+
+test('kiosk_reset (Claim/Done) returns the session to idle with coins and streak cleared', async () => {
+  // Same kiosk as the previous test: left at coins 1100, streak 1, playing.
+  const secret = 'kiosk-session-flow-secret-01';
+  const ws = connect();
+  await whenOpen(ws);
+  send(ws, { type: 'auth', kiosk: secret });
+  await nextFrame(ws, (f) => f.type === 'welcome');
+  const before = await nextFrame(ws, (f) => f.type === 'kiosk_session');
+  assert.deepEqual(
+    { coins: before.coins, streak: before.streak, state: before.state },
+    { coins: 1100, streak: 1, state: 'playing' },
+  );
+
+  send(ws, { type: 'kiosk_reset' });
+  const reset = await nextFrame(ws, (f) => f.type === 'kiosk_session');
+  assert.deepEqual(
+    { coins: reset.coins, streak: reset.streak, state: reset.state },
+    { coins: 1000, streak: 0, state: 'idle' },
+    'kiosk_reset clears the session back to attract mode',
+  );
+  ws.close();
+});
+
+test('a lever the session cannot cover ends it as broke; the session then refuses play until reset', async () => {
+  const secret = 'kiosk-session-broke-secret-01';
+  const kioskId = await createTestKiosk('session-broke', secret);
+  await pool.query(
+    "update public.kiosks set session_coins = 150, session_state = 'playing', last_round_at = now() where id = $1",
+    [kioskId],
+  );
+
+  const ws = connect();
+  await whenOpen(ws);
+  send(ws, { type: 'auth', kiosk: secret });
+  await nextFrame(ws, (f) => f.type === 'welcome');
+  await nextFrame(ws, (f) => f.type === 'kiosk_session');
+
+  send(ws, { type: 'play', dir: 'up', lever: 5 }); // stake 500, the session only has 150
+  const err = await nextFrame(ws, (f) => f.type === 'error' || f.type === 'round_opened');
+  assert.equal(err.type, 'error');
+  assert.equal(err.code, 'insufficient_coins');
+
+  send(ws, { type: 'play', dir: 'up', lever: 1 });
+  const err2 = await nextFrame(ws, (f) => f.type === 'error' || f.type === 'round_opened');
+  assert.equal(err2.type, 'error');
+  assert.equal(err2.code, 'session_over', 'the failed lever already ended the session as broke');
+  ws.close();
+});
+
+test('the idle sweep resets a stale kiosk session and pushes kiosk_session without a client action', async () => {
+  const secret = 'kiosk-idle-sweep-secret-01';
+  const kioskId = await createTestKiosk('idle-sweep', secret);
+
+  // A separate app instance with a small, injectable idle threshold and sweep interval
+  // (docs/layers.md C1), on its own port, so this fast sweep only ever touches this test's own
+  // kiosk - never a kiosk another test in this file has mid-round on the shared app.
+  const sweepApp = createApp({ finnhubToken: null, kioskIdleMs: 300, kioskSweepIntervalMs: 100 });
+  const sweepPort = await sweepApp.start(0, { startFeed: false });
+  try {
+    const ws = connect(`ws://localhost:${sweepPort}/ws`);
+    await whenOpen(ws);
+    send(ws, { type: 'auth', kiosk: secret });
+    await nextFrame(ws, (f) => f.type === 'welcome');
+    await nextFrame(ws, (f) => f.type === 'kiosk_session');
+
+    await pool.query(
+      "update public.kiosks set session_coins = 777, streak = 3, session_state = 'playing', " +
+        "last_round_at = now() - interval '1 second' where id = $1",
+      [kioskId],
+    );
+
+    const swept = await nextFrame(ws, (f) => f.type === 'kiosk_session', 2000);
+    assert.deepEqual(
+      { coins: swept.coins, streak: swept.streak, state: swept.state },
+      { coins: 1000, streak: 0, state: 'idle' },
+      "the sweep pushes the reset session to the kiosk's live socket",
+    );
+
+    const { rows } = await pool.query(
+      'select session_coins, streak, session_state from public.kiosks where id = $1',
+      [kioskId],
+    );
+    assert.deepEqual(
+      { coins: rows[0].session_coins, streak: rows[0].streak, state: rows[0].session_state },
+      { coins: 1000, streak: 0, state: 'idle' },
+      'the kiosk row itself is reset, not only the pushed frame',
+    );
+    ws.close();
+  } finally {
+    await sweepApp.close();
+  }
 });
 
 // --- http --------------------------------------------------------------------------------
