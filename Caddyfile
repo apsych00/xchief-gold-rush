@@ -1,0 +1,33 @@
+# Caddy fronts the whole box (docs/box-spec.md 1.7): TLS for the campaign
+# domain, the static SPA from /srv/app (the repo's dist/ mounted read-only),
+# and the game server proxied at /ws, /api/* and /health.
+#
+# SITE_ADDRESS comes from .env: a bare domain (goldrush.example.com) gets a
+# free TLS certificate automatically via HTTP-01, which works fine behind the
+# Cloudflare proxy (keep SSL/TLS mode on "Full"). Use ":80" to test locally
+# without a domain.
+
+{$SITE_ADDRESS} {
+	encode gzip
+
+	# The game socket (ticket 3: /ws) and the two HTTP endpoints.
+	# The WebSocket upgrade passes through reverse_proxy as-is.
+	handle /ws {
+		reverse_proxy server:8787
+	}
+	handle /api/* {
+		reverse_proxy server:8787
+	}
+	handle /health {
+		reverse_proxy server:8787
+	}
+
+	# The SPA: serve the built files, fall back to index.html for routes.
+	handle {
+		root * /srv/app
+		try_files {path} {path}/ /index.html
+		file_server
+	}
+
+	# Security headers (CSP, HSTS, nosniff, frame options, ...): Layer 2, ticket S10.
+}

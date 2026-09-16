@@ -35,7 +35,16 @@
     "kiosk:list": "node scripts/list-kiosks.mjs",
     "coupons:export": "node scripts/export-coupons.mjs",
     "coupons:load": "node scripts/load-coupons.mjs",
-    "otp:peek": "node scripts/peek-otp.mjs"
+    "otp:peek": "node scripts/peek-otp.mjs",
+    "box:up": "docker compose up -d --build",
+    "box:ps": "docker compose ps",
+    "box:logs": "docker compose logs -f server",
+    "box:kiosk:new": "docker compose exec server node scripts/gen-kiosk.mjs",
+    "box:kiosk:revoke": "docker compose exec server node scripts/revoke-kiosk.mjs",
+    "box:kiosk:list": "docker compose exec server node scripts/list-kiosks.mjs",
+    "box:coupons:export": "docker compose exec server node scripts/export-coupons.mjs",
+    "box:coupons:load": "docker compose run --rm -v $PWD:/work:ro --workdir /work server node scripts/load-coupons.mjs",
+    "box:otp:peek": "docker compose exec server node scripts/peek-otp.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

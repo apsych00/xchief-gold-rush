@@ -1,6 +1,6 @@
 /**
- * Revoke a kiosk by label: flips its status to 'revoked' so the edge
- * functions reject it. Reports how many rows were affected.
+ * Revoke a kiosk by label: flips its status to 'revoked' so the game server
+ * rejects it. Reports how many rows were affected.
  *
  *   npm run kiosk:revoke -- <label> [--dry-run]
  */

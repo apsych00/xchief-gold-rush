@@ -4,6 +4,7 @@ dist
 .vercel
 .env*
 !.env.example
+!.env.box.example
 
 # local reference images
 image_*.png
