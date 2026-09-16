@@ -79,8 +79,20 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
   // carry the kiosk's `state` field (server/rounds.js, server/index.js), and either is enough on
   // its own to route the screen - kiosk_session is just round_settled's own mirror plus the
   // frames that have no round of their own (post-auth, kiosk_reset, the idle sweep).
+  //
+  // codes_left (ticket C8, docs/layers.md) overrides that mapping into a fourth screen,
+  // no_codes, whenever a frame reports the pool empty - except a visitor mid-WIN, who keeps
+  // the modal until they Claim (round_settled's own frame never carries codes_left, so the win
+  // always applies first; its kiosk_session mirror follows a moment later and is the one this
+  // exception matters for). codes_left > 0 falls straight through to the ordinary mapping,
+  // which is 'idle' -> attract in the overwhelmingly common case: nobody could reach any other
+  // state while the pool was empty, since no_codes hides the Play button.
   const applyServerState = useCallback(
-    (state) => {
+    (state, codesLeft) => {
+      if (codesLeft === 0 && state !== 'won') {
+        setScreen('no_codes');
+        return;
+      }
       const next = SERVER_TO_SCREEN[state] || 'attract';
       if (next === 'attract') {
         if (screenRef.current !== 'attract') goToAttract();
@@ -92,7 +104,10 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
     [goToAttract],
   );
 
-  useEffect(() => onKioskSession((session) => applyServerState(session.state)), [applyServerState]);
+  useEffect(
+    () => onKioskSession((session) => applyServerState(session.state, session.codes_left)),
+    [applyServerState],
+  );
 
   // round_settled carries the coupon itself and its own `state` (server/rounds.js): applying
   // both here means a synthetic round_settled alone is enough to drive WON end-to-end, without
@@ -101,7 +116,7 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
     () =>
       onSettled((verdict) => {
         if (verdict.coupon) setCoupon(verdict.coupon);
-        if (verdict.state) applyServerState(verdict.state);
+        if (verdict.state) applyServerState(verdict.state, verdict.codes_left);
       }),
     [applyServerState],
   );
@@ -176,7 +191,7 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
   }, [screen, goToAttract]);
 
   return {
-    screen, // 'attract' | 'playing' | 'won' | 'broke'
+    screen, // 'attract' | 'playing' | 'won' | 'broke' | 'no_codes'
     coupon,
     reconnecting,
     abandonSecondsLeft, // null while hidden

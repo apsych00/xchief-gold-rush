@@ -113,9 +113,12 @@ export function createRoundManager({ feed, ledger, getSocket, log = console.log,
         send(ws, frame);
         // The kiosk session frame is a convenience mirror of round_settled's own coins/streak/
         // state fields, not a promise kept across a reconnect - it is only sent when the
-        // socket that gets the verdict is right here to receive it.
+        // socket that gets the verdict is right here to receive it. Read back through
+        // ledger.kioskSession rather than copying settled's own fields so codes_left (ticket
+        // C8) rides along too, same as every other kiosk_session frame.
         if (kind === 'kiosk') {
-          send(ws, { type: 'kiosk_session', coins: settled.coins, streak: settled.streak, state: settled.state });
+          const session = await ledger.kioskSession(id);
+          send(ws, { type: 'kiosk_session', ...session });
         }
       } else {
         pending.set(`${kind}:${id}`, frame);

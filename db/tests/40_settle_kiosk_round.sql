@@ -16,8 +16,15 @@ select tests.create_kiosk('kiosk-two', 'kiosk-two-secret-0000000000') as kiosk_t
 update public.kiosks set streak = 4, session_state = 'playing', session_coins = 1000
   where id in (:'kiosk_one', :'kiosk_two');
 
--- Kiosk one's 5th win claims the one remaining coupon, resets its streak, and ends the session.
+-- Both kiosks open their 5th-win round while the one coupon is still available (docs/layers.md
+-- C8: open_kiosk_round now refuses a NEW round outright once the pool is empty, so kiosk two's
+-- round has to be opened here, before kiosk one's settle below claims the only code - a round
+-- already open when the pool empties still settles normally, which is exactly what this file
+-- is testing for kiosk two).
 select (public.open_kiosk_round(:'kiosk_one'::uuid, 'up', 100)->>'round_id')::uuid as round_one_id \gset
+select (public.open_kiosk_round(:'kiosk_two'::uuid, 'up', 100)->>'round_id')::uuid as round_two_id \gset
+
+-- Kiosk one's 5th win claims the one remaining coupon, resets its streak, and ends the session.
 select public.settle_kiosk_round(:'round_one_id'::uuid, 101) as settle_one \gset
 select is((:'settle_one'::json->>'outcome'), 'win', 'kiosk one wins its 5th round in a row');
 select is((:'settle_one'::json->>'streak')::int, 0, 'the coupon win resets kiosk one''s streak to 0');
@@ -42,8 +49,8 @@ select is(
 
 -- Kiosk two also reaches a 5th win, but no coupon is left: it must not get kiosk one's code.
 -- Per the box rule, an empty pool keeps the streak, reports coupons_exhausted, and the session
--- stays playing (the visitor keeps the coins they just won).
-select (public.open_kiosk_round(:'kiosk_two'::uuid, 'up', 100)->>'round_id')::uuid as round_two_id \gset
+-- stays playing (the visitor keeps the coins they just won). Its round was already opened
+-- above, alongside kiosk one's, while the coupon was still there.
 select public.settle_kiosk_round(:'round_two_id'::uuid, 101) as settle_two \gset
 select is((:'settle_two'::json->>'outcome'), 'win', 'kiosk two also wins its 5th round in a row');
 select is((:'settle_two'::json->>'streak')::int, 5, 'kiosk two''s streak is kept at 5 when the pool is empty (box rule)');
