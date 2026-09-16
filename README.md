@@ -223,6 +223,18 @@ With `VITE_TASK_VERIFY=pin` (expo mode) booth staff must also enter
 `localStorage` (`xchief.profile.v1`). A shared, server-side leaderboard and
 profile store is the next step if the game runs on several devices at once.
 
+## Profile
+
+The avatar button next to the balance (initials from the signup name, or
+"Y" for a guest; a flame appears while a combo is active; the ring colour
+follows the level) opens a one-screen summary that fits 360×640 without
+scrolling: level with progress to the next level, coins / record / rounds /
+win rate / best combo / current combo, the three badges (earned or how to
+earn them), account status (email and xChief signup, with links into the
+Coins tab when missing), "Share my record" (native share or clipboard) and
+"Start over" (two-tap confirm; wipes the device profile, lead and signup).
+Code: `src/Profile.jsx`, `src/profile-screen.css`.
+
 ## Layout
 
 The UI is a fixed, non-scrolling app shell (`position: fixed` root, safe-area

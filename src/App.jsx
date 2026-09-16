@@ -7,6 +7,7 @@ import { readLead, readSignup } from './leads.js';
 import SignupForm from './SignupForm.jsx';
 import Logo from './Logo.jsx';
 import Tasks from './Tasks.jsx';
+import Profile, { initialsOf } from './Profile.jsx';
 
 const SIGNUP_REWARD = TASKS.find((t) => t.id === 'signup')?.reward ?? 1000;
 import { LEVERS, maxAffordableLever, stakeFor, useGame } from './useGame.js';
@@ -114,8 +115,10 @@ function CoinDot() {
 
 /* ---------- chrome ---------- */
 
-function TopBar({ profile }) {
+function TopBar({ profile, actions, active }) {
   const { t, lang, setLang } = useLang();
+  const signup = readSignup();
+  const level = levelFor(profile.record);
   return (
     <header className="topbar">
       <div className="topbar-start">
@@ -134,9 +137,27 @@ function TopBar({ profile }) {
           </button>
         )}
       </div>
-      <div className="balance-chip" aria-live="polite">
-        <CoinDot />
-        <span className="balance-text">{num(profile.coins, lang)}</span>
+      <div className="topbar-end">
+        <div className="balance-chip" aria-live="polite">
+          <CoinDot />
+          <span className="balance-text">{num(profile.coins, lang)}</span>
+        </div>
+        <button
+          type="button"
+          className={`avatar-btn ${active ? 'avatar-btn-on' : ''} avatar-${level.id}`}
+          onClick={actions.goProfile}
+          aria-label={t('profile.open')}
+          aria-current={active ? 'page' : undefined}
+        >
+          <span className="avatar-initials" aria-hidden="true">
+            {initialsOf(signup?.name)}
+          </span>
+          {profile.streak > 0 && (
+            <span className="avatar-flame" aria-hidden="true">
+              🔥
+            </span>
+          )}
+        </button>
       </div>
     </header>
   );
@@ -797,10 +818,13 @@ export default function App() {
     <LangContext.Provider value={langCtx}>
       <div className="app" dir={dir} data-lang={lang}>
         <div className="phone" ref={phoneRef}>
-          <TopBar profile={profile} />
+          <TopBar profile={profile} actions={actions} active={screen === 'profile'} />
           {screen === 'home' && <Home profile={profile} actions={actions} />}
           {screen === 'game' && <Console state={state} profile={profile} actions={actions} trackRef={trackRef} />}
           {screen === 'lb' && <Leaderboard others={state.others} profile={profile} />}
+          {screen === 'profile' && (
+            <Profile profile={profile} actions={actions} onToast={(txt) => actions.toast?.(txt)} />
+          )}
           {screen === 'tasks' && (
             <Tasks profile={profile} onClaim={actions.claimTask} onToast={(txt) => actions.toast?.(txt)} />
           )}

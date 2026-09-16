@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { comboMult, ECON, TASKS } from './config.js';
 import { startPriceFeed } from './priceFeed.js';
-import { loadProfile, saveProfile } from './profile.js';
+import { loadProfile, resetProfile as wipeProfile, saveProfile } from './profile.js';
 
 export const ROUND_SECONDS = 5;
 export const LEVERS = ECON.levers;
@@ -271,6 +271,22 @@ export function useGame() {
       patch({ screen: 'home', ...reset });
     },
     goLeaderboard: () => patch({ screen: 'lb' }),
+    goProfile: () => {
+      stopTimer();
+      patch({ screen: 'profile', ...reset });
+    },
+    resetProfile: () => {
+      stopTimer();
+      const fresh = wipeProfile();
+      try {
+        ['xchief.lead', 'xchief.signup', 'xchief.prompts'].forEach((k) => localStorage.removeItem(k));
+      } catch {
+        /* ignore */
+      }
+      profileRef.current = fresh;
+      setProfile(fresh);
+      patch({ screen: 'home', ...reset });
+    },
     goTasks: () => {
       stopTimer();
       patch({ screen: 'tasks', ...reset });
