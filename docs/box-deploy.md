@@ -55,7 +55,7 @@ git checkout <the campaign branch - ask the developer>
 ## 4. Configure it
 
 ```
-cp .env.box.example .env
+cp .env.box.example .env.box
 nano .env
 ```
 
@@ -87,7 +87,7 @@ needed; Caddy handles the https certificate from here.
 ```
 npm install
 npm run build
-docker compose up -d --build
+docker compose --env-file .env.box up -d --build
 ```
 
 The first run downloads everything (a few minutes). From now on, the box
@@ -138,14 +138,14 @@ Stay calm and go in this order. All commands run in
 **Read the logs** - what the game server saw, live (Ctrl+C to stop watching):
 
 ```
-docker compose logs -f server
+docker compose --env-file .env.box logs -f server
 ```
 
 **See what is running.** All three should say `Up` (the db and server may say
 `(healthy)`):
 
 ```
-docker compose ps
+docker compose --env-file .env.box ps
 ```
 
 **Restart the game server** - fixes most oddities, takes seconds, players just
@@ -153,21 +153,21 @@ reload the page (rounds in flight at that exact second are voided, which is
 correct):
 
 ```
-docker compose restart server
+docker compose --env-file .env.box restart server
 ```
 
 **Restart everything:**
 
 ```
-docker compose down && docker compose up -d
+docker compose down && docker compose --env-file .env.box up -d
 ```
 
 **The website loads but the price never moves:** the feed sources are down or
 `FINNHUB_TOKEN` is wrong. The game falls back to crypto-market gold prices on
-its own; check `docker compose logs -f server` for feed messages.
+its own; check `docker compose --env-file .env.box logs -f server` for feed messages.
 
 **The browser shows a TLS/https error:** the domain is not pointing at this
-box (step 5), or Caddy is still getting its certificate. `docker compose logs
+box (step 5), or Caddy is still getting its certificate. `docker compose --env-file .env.box logs
 caddy` shows what it is doing.
 
 ## Updating the website (frontend only)
@@ -190,7 +190,7 @@ Refresh a browser to see it (the game shows an "update available" banner).
 cd /root/goldrush
 git pull
 npm run build
-docker compose up -d --build
+docker compose --env-file .env.box up -d --build
 ```
 
 New database tables/migrations apply themselves on start, without losing any

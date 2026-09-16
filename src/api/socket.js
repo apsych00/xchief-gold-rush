@@ -16,7 +16,15 @@ const QUIET_AFTER_MS = 3000; // no price/hello frame this long -> the feed is qu
 const QUIET_POLL_MS = 250;
 const REQUEST_TIMEOUT_MS = 8000;
 
-const WS_URL = (import.meta.env && import.meta.env.VITE_GAME_WS) || '';
+// 'auto' means same origin: behind Caddy the socket lives at /ws next to the page, so a
+// production build never bakes in a host. An explicit ws:// or wss:// URL is for local dev.
+function resolveWsUrl() {
+  const raw = (import.meta.env && import.meta.env.VITE_GAME_WS) || '';
+  if (raw !== 'auto') return raw;
+  if (typeof window === 'undefined') return '';
+  return `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
+}
+const WS_URL = resolveWsUrl();
 
 /** The kiosk's launch URL bakes its bearer secret into ?k=; read fresh, the URL never changes mid-session. */
 export function getKioskSecret() {

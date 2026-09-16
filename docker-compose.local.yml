@@ -1,0 +1,9 @@
+# Local rehearsal override: a developer machine often has 80/443 taken (Windows HTTP.sys, IIS,
+# another proxy). Production uses docker-compose.yml alone. Usage:
+#   docker compose --env-file .env.box -f docker-compose.yml -f docker-compose.local.yml up -d --build
+# then open http://localhost:8080 (kiosk: /?k=dev-kiosk-secret-0001), health at /health.
+services:
+  caddy:
+    ports: !override
+      - '8080:80'
+      - '8443:443'
