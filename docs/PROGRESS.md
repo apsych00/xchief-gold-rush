@@ -60,14 +60,14 @@ Kiosk session on the server (C1) and the kiosk WIN/EXIT screens (C2) first; then
 | C2 kiosk screens (attract, WIN, EXIT, abandon, reconnect) | done | `src/KioskApp.jsx`; screenshots `reports/c2/`; merged `b03d468` |
 | C3 + C4 OTP screen, masked header, sign out, live masked leaderboard | done | `src/Identity.jsx`, `mask_email()`; screenshots `reports/c3-c4/`; merged `2efe3a6` |
 | C3a session policy (30-day versioned token, renewal, OTP re-login, revocation) | done | merged fast-forward `abdec28` |
-| C5 tasks and gifts, server-owned rewards | verifying | Sonnet builder finished the code (`get_tasks()`, `reward` on claim and refill, `already_refilled`); lint, unit, build green on my run; pgTAP, integration and E2E pending on a worktree brought up to `dev` |
-| C6 + C7 web verdict audit and broke path | building | OpenCode deepseek-v4-pro in Orca terminal "C6+C7 web" |
-| C2b kiosk idle rework (20 s idle, activity cancels, 20 s countdown) | building | OpenCode qwen3.8-max in Orca terminal "C2b idle"; partial work on disk from a first run |
+| C5 tasks and gifts, server-owned rewards | done | `get_tasks()`, `reward` on claim and refill, `already_claimed` / `already_refilled`, `tasks` frame; 172 pgTAP, 33 integration, 12 E2E on my run; merged `966068b` |
+| C6 + C7 web verdict audit and broke path | building | Sonnet builder (OpenCode Go hit its monthly limit) |
+| C2b kiosk idle rework (20 s idle, activity cancels, 20 s countdown) | building | Sonnet builder resuming the partial work (OpenCode Go hit its monthly limit) |
 | C4b leaderboard row animation | queued | after C5-C7 |
 | D1 monitoring | done | `/status`, `/ops`, `/logs`; merged `4839072` |
 | D2 one-command deploy + auto-deploy | done | `deploy/`; merged `acc3b0d` |
 | B14 blind five-win streak tests | done | 3 integration (coupon row, session_over, exhausted pool) + 2 kiosk E2E; merged `e4efdd0` |
-| B15 MT5 terminal + tick bridge in Docker | building | OpenCode kimi-k3 in Orca terminal "B15 MT5 docker"; Orca run `run_bc01cfb97f5d` holds the chained review, harden and blind-test tasks that start when it commits |
+| B15 MT5 terminal + tick bridge in Docker | blocked | OpenCode Go monthly usage limit reached 2026-09-16 18:00; ticket ready in the worktree (`TICKET.md`); Orca run `run_bc01cfb97f5d` holds the chained review, harden and blind-test tasks |
 | B16 E2E regression after the profile merge | done | root cause: the profile avatar read an action the kiosk never passes; avatar now renders only with a profile action; 11/11 E2E; merged `92bd000` + `c1a697d` |
 | S17 MT5 via MetaApi | blocked on admin | code merged and reachable; needs the account UUID, a token with account read access, quote interval 0 |
 | Q1 blind E2E over every scenario | partly | B14 covers the five-win streak; the rest after C5-C7 |
