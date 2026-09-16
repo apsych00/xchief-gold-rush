@@ -32,7 +32,7 @@ What to look for: one WebSocket in the console (ours), no exchange sockets, the 
 
 Also merged: the marketing lead's "Play screen polish" commit from the old remote, no conflicts.
 
-Layer 2 (S1-S17, security and hardening) starts only after 7 passes. Spec: `box-spec.md`; plan and decisions: `box-plan.md`; review: `reports/box-spec-review.md`.
+Next: Layer 1.5 (client experience: kiosk win/exit flows, web identity, live masked leaderboard, monitoring) - see `layers.md`. Layer 2 hardening follows it. Spec: `box-spec.md`; plan and decisions: `box-plan.md`; review: `reports/box-spec-review.md`.
 
 ## Defects found and fixed along the way
 

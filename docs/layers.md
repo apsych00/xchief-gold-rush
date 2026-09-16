@@ -1,0 +1,65 @@
+# Layers - what gets built, in what order
+
+Layer 1 is functional and smooth (closing now). Layer 1.5 is the client experience: what a visitor at the booth and a player on the web actually go through. Layer 2 is hardening. 1.5 comes before 2 on the lead's instruction: a booth that resets wrong loses more than a booth that is not yet rate-limited.
+
+## Layer 1 - functional and smooth (done, pending the acceptance run)
+
+Tickets 1-7 in `box-plan.md`: database on the box, continuous price feed, game server with in-memory rounds, login codes, client on the socket, compose + Caddy, schema squash, acceptance runner. Proof lives in `PROGRESS.md`.
+
+---
+
+## Layer 1.5 - client experience and functionality
+
+### The two visitors
+
+**Booth visitor (kiosk).** Walks up to an idle screen. Plays with a server-owned pot of coins. Two ways it ends, and both must be unmistakable:
+- **Five wins in a row -> the prize.** A full-screen modal: "You won! Get your phone ready - photograph this code." The code, large. A 30-second countdown and a **Claim** button. Claim (or the countdown ending, or walking away) resets the machine for the next person.
+- **Coins run out -> the exit.** A full-screen modal: "That was your shot - you have used all your coins. Time to let the next player in." A 20-second countdown and a **Done** button. Either resets the machine. No "try again" loop.
+- A third, silent end: 60 seconds with no round -> reset. Nothing is ever owed to an abandoned session.
+- The kiosk never shows email, tasks, the leaderboard, or any registration/lead modal. (Observed in the ten-minute run: a registration modal appeared on some windows - that is a bug in kiosk mode, ticket C2.)
+- Scenarios to design for explicitly: wins the code on the first five tries; plays for half an hour and never strings five; goes broke in a minute; walks away mid-streak.
+
+**Web player.** Plays first, anonymously. At a milestone, enters an email and a code. From then on the interface shows **who they are playing as** - the masked email ("k****i@gmail.com") - with "your score and rank are saved to this email". The leaderboard shows masked emails, never names or raw addresses, and is **live**: it updates over the socket as others play; rows moving is the excitement (animation is the polish step after functionality). Tasks and gifts stay: server-owned claims, rewards shown from the server's numbers. Going broke on the web is not an exit - it is the refill/tasks path.
+
+### Tickets
+
+| # | Ticket | Layer | Notes |
+|---|---|---|---|
+| C1 | **Kiosk session on the server.** A visitor session per kiosk: coins (start 1000, stake by lever as on web), streak, state. Ends on claim, on broke, on 60 s idle, or on an explicit `kiosk_reset` frame; ending clears coins and streak. `round_settled` for kiosks carries coins and delta; `insufficient_coins` on a kiosk means "session over", not "buy more". Schema: `kiosks.session_coins`, `session_started_at`; `settle_kiosk_round` applies the same economy as `settle_round`. | server + SQL | replaces "kiosk coins are cosmetic" |
+| C2 | **Kiosk screens.** Attract/idle state; play; win/lose feedback; the WIN modal (code, 30 s, Claim); the EXIT modal (20 s, Done); reconnecting state; and a hard guarantee that no email, task, leaderboard, or lead-capture UI can render in kiosk mode. Frames: `kiosk_reset` on Claim/Done; `kiosk_session` after every change. | client | the booth's money moments |
+| C3 | **Web identity.** The OTP entry screen (8 digits) that does not exist yet; after verification, the masked email in the header with "scores saved to this email"; sign-out; what an unverified player sees instead ("play as guest - add your email to be ranked"). | client + small server | uses the frames from ticket 4 |
+| C4 | **Live, masked leaderboard.** `leaderboard()` returns masked emails computed server-side (raw address never leaves the server); the server pushes a `leaderboard` frame to web clients whenever a top-10 record changes (debounced to 1 s); the client re-renders from the frame. | server + client | |
+| C4b | Leaderboard motion: rows animate to their new position; the player's own row highlighted; "you moved up" cue. | client polish | after C4 |
+| C5 | **Tasks and gifts on the web.** Every reward shown comes from the server (`claim_task` / `free_refill` return the reward and the new balance); the tasks screen reflects claimed/repeatable state from the server, not localStorage. | server + client | closes the "no reward field" gap |
+| C6 | **Win and lose feedback on the web.** Verdict pane driven only by `round_settled`; streak and multiplier shown from the frame; the 2 s "settling" state; the "quiet market" flat explained on screen. | client | mostly done; audit and finish |
+| C7 | **Broke on the web.** Clear path from 0 coins to refill and tasks; never a dead end. | client | |
+| D1 | **Monitoring for the campaign.** Dozzle in compose (live container logs in a browser, behind Cloudflare Access or Caddy basic auth), a `/status` page (feed sources, rounds/min, open sockets, coupons left), and one alert (feed silent > 60 s, or server restart) to a phone. | ops | before launch |
+| Q1 | **Blind E2E for every scenario above**, written from the contract by a different agent: first-five-tries win, half-hour no-streak, broke exit, walk-away reset, web email flow, masked live leaderboard. | tests | |
+
+Order: C1 -> C2 (the booth), then C3 -> C4 -> C5 -> C6 -> C7 (the web), D1 alongside, Q1 as each lands, C4b last.
+
+Product defaults taken (say if wrong): kiosk starts each visitor at 1000 coins with the same levers as web; WIN modal 30 s; EXIT modal 20 s; idle reset 60 s; masked email keeps the first and last character of the local part and the full domain.
+
+---
+
+## Layer 2 - security and hardening (after 1.5)
+
+| # | Ticket |
+|---|---|
+| S1 | Player token expiry and revocation; secret rotation procedure |
+| S2 | Per-socket rate limits (play, request_otp per email and per IP, message flood cut-off) |
+| S3 | Kiosk secret out of the URL (one-time exchange for a session cookie); scrub `k=` from Caddy logs |
+| S4 | Email merge rule when a verified email already belongs to another player |
+| S5 | Postgres least privilege: an `app` role that can only execute the game functions |
+| S6 | Backups: nightly `pg_dump` to object storage, one rehearsed restore |
+| S7 | Ops runbook for a non-engineer; feed-silence and restart alerts (D1 provides the plumbing) |
+| S8 | Campaign end: freeze the leaderboard at a timestamp, export the top 10 with verified emails |
+| S9 | Coupon exhaustion wording |
+| S10 | Origin pinning on the socket, security headers in Caddy, TLS-only cookies |
+| S11 | Email consent text and code retention |
+| S12 | Coupon audit and reconciliation; alert at N codes remaining |
+| S13 | OTP verify-attempt limiting (done in Layer 1: 5 tries per code) |
+| S14 | Kiosk hygiene: never persist a player token on a kiosk browser; clear per-player UI state between visitors (partly covered by C1/C2) |
+| S15 | Least privilege, extended (with S5) |
+| S16 | Leaderboard integrity at prize time: one row per verified email, export proves it |
+| S17 | MT5 price feed via an investor login (MetaApi or a terminal bridge) as priority-0 source |
