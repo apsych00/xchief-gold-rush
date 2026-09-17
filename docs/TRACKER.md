@@ -16,7 +16,7 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | OPS | 🟩🟩🟩🟩🟩🟩⬜⬜⬜⬜ 3/5 | D3 run on the box, D4 schema apply (M2) | deploy scripts built; first real run happens on the box |
 | FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin (may be moot: the Docker bridge is live with the demo account) | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 
-**Demo milestone (M1):** 32 of 33 tickets done. Left: B13 rewards hardening (in rework on cb), OD1 merge landing, then the showcase gate and the `demo-1` tag. MT5 Docker bridge is live on the local stack with the broker demo account. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
+**Demo milestone (M1):** 32 of 33 tickets done. Left: B13 rewards hardening (in rework on cb), then the showcase gate and the `demo-1` tag. MT5 Docker bridge is live on the local stack with the broker demo account. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
 
 ### Landed on dev today (newest first)
 
@@ -24,6 +24,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 | Time | Ticket | What landed | Gates on the merged tree |
 |---|---|---|---|
+| 19:25 | OD1 | OTP budgets raised to venue-safe values, visible 'too many connections' line, wrong-code regression spec; proven: no verify without the right code, no reward without verify | 137 unit, 87 integration, 31 E2E |
 | 18:35 | feed | Finnhub through the gold price relay (`FEED_RELAY_WS`), `/status` shows the publishing source (closes G10) | 137 unit |
 | 17:40 | B8 | Instagram reward bound to an OAuth-verified account, live the day the credentials arrive | 135 unit, 285 pgTAP, 85 integration, 30 E2E |
 | 17:05 | C11 | real first-visit tour and bilingual kiosk intro on the B10 mount points | 127 unit, 28 E2E |
@@ -157,7 +158,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 
 | ID | Reported | What happened | Keys to reproduce | Related | Status |
 |---|---|---|---|---|---|
-| OD1 | owner, 2026-09-17 on the local stack (fixed the same evening) | Registering with an email opened the OTP dialog; a few gibberish codes produced a **429** in the browser console; a few attempts later with other emails the owner got in and was credited rewards on the account | email `t1w@f.com`; wrong codes typed several times; then different emails; look for the 429 on the socket upgrade or `/api` (S2's per-IP OTP window is 5 per 10 min, the connection window 30 per min, verify attempts 5 per code); check whether the client reconnects after `too_many_attempts` and burns the connection window; check how the local stack let a later email through (dev OTP peek? code accepted?) and whether the signup/email reward was released on a verified path (B9) | S2, S13, B9, C3 | 🔍 verifying: no security defect (cannot verify without the right code, no reward without a completed verify); the 429 was the per-IP connection window on the socket upgrade, reached through reloads; OTP budgets raised to 30 per IP and 5 per email per 10 min; a visible 'too many connections' line replaces the silent console error; merged into dev locally, my E2E rerun in progress |
+| OD1 | owner, 2026-09-17 on the local stack (fixed the same evening) | Registering with an email opened the OTP dialog; a few gibberish codes produced a **429** in the browser console; a few attempts later with other emails the owner got in and was credited rewards on the account | email `t1w@f.com`; wrong codes typed several times; then different emails; look for the 429 on the socket upgrade or `/api` (S2's per-IP OTP window is 5 per 10 min, the connection window 30 per min, verify attempts 5 per code); check whether the client reconnects after `too_many_attempts` and burns the connection window; check how the local stack let a later email through (dev OTP peek? code accepted?) and whether the signup/email reward was released on a verified path (B9) | S2, S13, B9, C3 | ✅ done: no security defect (cannot verify without the right code, no reward without a completed verify); the 429 was the per-IP connection window on the socket upgrade, reached through reloads; OTP budgets raised to 30 per IP and 5 per email per 10 min; a visible 'too many connections' line replaces the silent console error; merged; 137 unit, 87 integration, 31 E2E on my merged run |
 
 ## Known gaps (small, carded above where they belong)
 
