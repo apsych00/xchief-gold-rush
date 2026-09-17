@@ -16,6 +16,7 @@ import { createFeed } from './feed.js';
 import { createRoundManager } from './rounds.js';
 import { createAlerts } from './alerts.js';
 import { createKioskIdleSweep } from './kiosk.js';
+import { createLimits, LIMITS } from './limits.js';
 import * as ledger from './ledger.js';
 import * as otp from './otp.js';
 
@@ -23,6 +24,13 @@ const PING_INTERVAL_MS = 25000;
 const MAX_MISSED_PONGS = 2;
 const BACKPRESSURE_BYTES = 256 * 1024;
 const STATUS_CACHE_MS = 5000; // /status does one DB round-trip; cache it so polling stays cheap
+
+// Socket close codes for rate-limit refusals (ticket S2 decisions 1 and 7c): 4429 (mirroring
+// HTTP 429) for anything that floods a socket after it authenticated, 4401 for a kiosk auth
+// attempt that used a wrong secret - a distinct code so an operator reading Caddy/Dozzle logs
+// can tell "abusive" from "guessing" apart.
+const CLOSE_RATE_LIMITED = 4429;
+const CLOSE_KIOSK_UNAUTHORIZED = 4401;
 
 const TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days (docs/layers.md C3a)
 const TOKEN_RENEW_AFTER_SECONDS = 7 * 24 * 60 * 60; // sliding renewal: reissue once a token is older than this
@@ -32,7 +40,6 @@ const LEADERBOARD_DEBOUNCE_MS = 1000; // docs/layers.md C4: "debounced to at mos
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE_RE = /^\+?[0-9 ()-]{7,20}$/;
-const IP_RE = /^[0-9a-fA-F:.]{2,45}$/; // loose IPv4/IPv6 shape check before it reaches an `inet` column
 
 const str = (v, max) =>
   String(v ?? '')
@@ -151,35 +158,44 @@ export function verifyDeviceToken(token) {
 }
 
 /**
- * The device's own IP (ticket B5 decision 3): Cloudflare's CF-Connecting-IP first, then the
- * first hop of X-Forwarded-For, else the raw socket address - the same fallback order the box
- * sits behind for every other client-IP read. A value that does not look like an IP (a proxy
- * sending garbage) is skipped rather than handed to Postgres's `inet` column to reject.
+ * Buffers an HTTP body up to LIMITS.MAX_HTTP_BODY_BYTES, counting bytes as chunks arrive (not
+ * after the fact off Content-Length, which a client can lie about or omit) - ticket S2 decision
+ * 7b / red team D4. A request over the cap stops being read past the limit: listeners are
+ * detached rather than reading through `for await`, whose implicit cleanup on an early
+ * break/throw destroys the socket before the caller gets a chance to answer 413 on it.
  */
-function clientIp(req) {
-  const xff = req.headers['x-forwarded-for'];
-  const candidates = [
-    req.headers['cf-connecting-ip'],
-    Array.isArray(xff) ? xff[0] : typeof xff === 'string' ? xff.split(',')[0] : null,
-    req.socket && req.socket.remoteAddress,
-  ];
-  for (const c of candidates) {
-    const v = typeof c === 'string' ? c.trim() : null;
-    if (v && IP_RE.test(v)) return v;
-  }
-  return null;
-}
-
-async function readJsonBody(req) {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  const raw = Buffer.concat(chunks).toString('utf8');
-  if (!raw) return {};
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    function onData(chunk) {
+      total += chunk.length;
+      if (total > LIMITS.MAX_HTTP_BODY_BYTES) {
+        req.off('data', onData);
+        req.off('end', onEnd);
+        const err = new Error('body_too_large');
+        err.code = 'body_too_large';
+        reject(err);
+        return;
+      }
+      chunks.push(chunk);
+    }
+    function onEnd() {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      if (!raw) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(raw));
+      } catch {
+        resolve({});
+      }
+    }
+    req.on('data', onData);
+    req.on('end', onEnd);
+    req.on('error', reject);
+  });
 }
 
 function sendJson(res, status, body) {
@@ -200,7 +216,16 @@ async function handleLead(req, res) {
     return;
   }
 
-  const body = await readJsonBody(req);
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (err) {
+    if (err.code === 'body_too_large') {
+      sendJson(res, 413, { ok: false, error: 'body_too_large' });
+      return;
+    }
+    throw err;
+  }
   const type = body.type === 'signup' ? 'signup' : 'email';
   const email = str(body.email, 254).toLowerCase();
   if (!EMAIL_RE.test(email)) {
@@ -343,7 +368,12 @@ export function createApp({
     onPlayerSettled: scheduleLeaderboardRefresh,
     log: (line) => console.log(`[round] ${line}`),
   });
-  const alerts = createAlerts({ latest: feed.latest, log: (line) => console.log(line) });
+  const limits = createLimits({ log: (line) => console.log(line) });
+  const alerts = createAlerts({
+    latest: feed.latest,
+    blockedCount: limits.blockedIpsCount,
+    log: (line) => console.log(line),
+  });
 
   /**
    * The one DB round-trip /status needs (ledger.statusAggregates), cached for
@@ -388,6 +418,7 @@ export function createApp({
       coupons: { available: aggregates.coupons_available, claimed: aggregates.coupons_claimed },
       kiosksActive: aggregates.kiosks_active,
       devices24h: aggregates.devices_24h,
+      limits: limits.stats(),
       db,
     });
   }
@@ -412,6 +443,14 @@ export function createApp({
       });
       return;
     }
+    if (req.url && req.url.startsWith('/api/')) {
+      // Same per-IP connection window as a ws upgrade (ticket S2 decision 7b).
+      const ip = limits.clientIp(req);
+      if (limits.checkApiRequest(ip)) {
+        sendJson(res, 429, { ok: false, error: 'rate_limited' });
+        return;
+      }
+    }
     if (req.url === '/api/lead') {
       handleLead(req, res).catch((err) => {
         console.error('[lead] unhandled error', err);
@@ -423,7 +462,9 @@ export function createApp({
     res.end();
   });
 
-  const wss = new WebSocketServer({ noServer: true });
+  // maxPayload rejects an oversize frame before it is ever buffered whole (red team D4);
+  // MAX_FRAME_BYTES (4 KB, ticket S2 decision 2) already covers what a legitimate frame needs.
+  const wss = new WebSocketServer({ noServer: true, maxPayload: LIMITS.MAX_FRAME_BYTES });
 
   server.on('upgrade', (req, socket, head) => {
     const { pathname } = new URL(req.url, 'http://localhost');
@@ -431,7 +472,17 @@ export function createApp({
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    const ip = limits.clientIp(req);
+    if (limits.checkNewConnection(ip)) {
+      socket.write('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      ws.clientIp = ip;
+      limits.trackSocketOpen(ip);
+      wss.emit('connection', ws, req);
+    });
   });
 
   async function sendHelloAndPending(ws, kind, id) {
@@ -448,8 +499,17 @@ export function createApp({
   }
 
   async function handleAuth(ws, frame) {
+    const isKioskAttempt = Boolean(frame.kiosk);
     try {
-      if (frame.kiosk) {
+      if (isKioskAttempt) {
+        // A kiosk auth attempt mints or guesses an identity exactly like an anonymous player
+        // does, so it shares that budget (ticket S2 decision 7c) - checked before verify_kiosk
+        // runs its bcrypt compare, so a throttled guesser cannot also burn CPU on it.
+        const budget = limits.checkAnonAuth(ws.clientIp);
+        if (!budget.allowed) {
+          send(ws, { type: 'error', code: 'rate_limited', retry_ms: budget.retryMs });
+          return;
+        }
         const kioskId = await ledger.call('verify_kiosk', frame.kiosk);
         ws.authed = true;
         ws.kind = 'kiosk';
@@ -477,6 +537,15 @@ export function createApp({
       // Device identity (ticket B5): resolved before createPlayer, since a brand-new anonymous
       // player's device_id is set once, at creation, from whichever device this auth frame
       // carries (decision 2). touchDevice creates a fresh row for an absent or invalid token.
+      // The per-IP anonymous-player budget (S2) is checked first so a throttled IP never
+      // creates device rows either.
+      if (!playerId) {
+        const budget = limits.checkAnonAuth(ws.clientIp);
+        if (!budget.allowed) {
+          send(ws, { type: 'error', code: 'rate_limited', retry_ms: budget.retryMs });
+          return;
+        }
+      }
       const deviceId = await ledger.touchDevice(
         verifyDeviceToken(frame.device),
         ws.clientIp,
@@ -495,6 +564,9 @@ export function createApp({
       await sendHelloAndPending(ws, 'player', playerId);
     } catch (err) {
       send(ws, { type: 'error', code: err.code || 'unauthenticated' });
+      // Ticket S2 decision 7c: a failed kiosk auth (wrong or guessed secret) closes the socket
+      // instead of leaving it open to keep guessing.
+      if (isKioskAttempt) ws.close(CLOSE_KIOSK_UNAUTHORIZED, 'kiosk_unauthorized');
     }
   }
 
@@ -503,6 +575,11 @@ export function createApp({
     try {
       switch (frame.type) {
         case 'play': {
+          const budget = limits.checkPlayRate(ws.socketId);
+          if (!budget.allowed) {
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: budget.retryMs });
+            break;
+          }
           const dir = frame.dir;
           const lever = kind === 'kiosk' ? (frame.lever ?? 1) : frame.lever;
           const opened = await rounds.play(kind, id, { dir, lever }, ws);
@@ -521,6 +598,11 @@ export function createApp({
         case 'get_me': {
           if (kind !== 'player') {
             send(ws, { type: 'error', code: 'unauthenticated' });
+            break;
+          }
+          const budget = limits.checkQueryRate(ws.socketId, 'get_me');
+          if (!budget.allowed) {
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: budget.retryMs });
             break;
           }
           send(ws, { type: 'me', ...(await ledger.getMe(id)) });
@@ -554,10 +636,20 @@ export function createApp({
             send(ws, { type: 'error', code: 'not_available' });
             break;
           }
+          const budget = limits.checkQueryRate(ws.socketId, 'tasks');
+          if (!budget.allowed) {
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: budget.retryMs });
+            break;
+          }
           send(ws, { type: 'tasks', rows: await ledger.getTasks(id) });
           break;
         }
         case 'leaderboard': {
+          const budget = limits.checkQueryRate(ws.socketId, 'leaderboard');
+          if (!budget.allowed) {
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: budget.retryMs });
+            break;
+          }
           send(ws, { type: 'leaderboard', rows: await ledger.leaderboard() });
           break;
         }
@@ -569,6 +661,16 @@ export function createApp({
           const email = str(frame.email, 254).toLowerCase();
           if (!EMAIL_RE.test(email)) {
             send(ws, { type: 'error', code: 'invalid_email' });
+            break;
+          }
+          const ipBudget = limits.checkOtpIp(ws.clientIp);
+          if (!ipBudget.allowed) {
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: ipBudget.retryMs });
+            break;
+          }
+          const emailBudget = limits.checkOtpEmail(email);
+          if (!emailBudget.allowed) {
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: emailBudget.retryMs });
             break;
           }
           const code = await ledger.requestOtpCode(id, email);
@@ -617,19 +719,34 @@ export function createApp({
     }
   }
 
+  let socketIdCounter = 0;
+
   wss.on('connection', (ws, req) => {
     ws.authed = false;
     ws.kind = null;
     ws.identity = null;
     ws.missedPongs = 0;
-    ws.clientIp = clientIp(req);
     ws.userAgent = str(req.headers['user-agent'], 200) || null;
+    ws.socketId = ++socketIdCounter; // frame-rate/play/query budgets key on this, never on identity
 
     ws.on('pong', () => {
       ws.missedPongs = 0;
     });
 
+    // An oversize frame trips maxPayload internally and emits 'error' before 'close' - with no
+    // listener that is an unhandled EventEmitter error, which crashes the process. A frame this
+    // socket sent is already being rejected by maxPayload/frame-rate/blocklist checks
+    // elsewhere; there is nothing more to do here than stop it becoming a crash.
+    ws.on('error', (err) => console.error(`[ws] socket error: ${err.message}`));
+
     ws.on('message', (data) => {
+      // Every message counts against the per-socket flood budget, authed or not - D2/A19's
+      // flood ran over an authed-but-idle socket, but an unauthed one can flood identically.
+      if (!limits.checkFrameRate(ws.socketId)) {
+        ws.close(CLOSE_RATE_LIMITED, 'rate_limited');
+        return;
+      }
+
       let frame;
       try {
         frame = JSON.parse(data.toString());
@@ -652,6 +769,8 @@ export function createApp({
     ws.on('close', () => {
       if (ws.kind === 'player' && playerSockets.get(ws.identity) === ws) playerSockets.delete(ws.identity);
       if (ws.kind === 'kiosk' && kioskSockets.get(ws.identity) === ws) kioskSockets.delete(ws.identity);
+      limits.trackSocketClose(ws.clientIp);
+      limits.forgetSocket(ws.socketId);
     });
   });
 
@@ -677,6 +796,7 @@ export function createApp({
     wss,
     feed,
     kioskIdleSweep,
+    limits,
 
     /**
      * Void leftover open rounds and listen. Resolves with the bound port.
@@ -689,6 +809,7 @@ export function createApp({
     async start(port = Number(process.env.PORT) || 8787, { startFeed = true } = {}) {
       await ledger.voidOpenRounds();
       if (startFeed) feed.start();
+      limits.start();
       alerts.start();
       kioskIdleSweep.start();
       await new Promise((resolve, reject) => {
@@ -706,6 +827,7 @@ export function createApp({
       clearTimeout(leaderboardTimer);
       clearInterval(heartbeat);
       alerts.stop();
+      limits.stop();
       try {
         feed.stop();
       } catch (err) {

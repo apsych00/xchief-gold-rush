@@ -11,6 +11,13 @@
  *
  * PASS: no error frames other than round_in_flight, p95 round_opened under
  * 200 ms, p95 round_settled between 5000 and 5600 ms.
+ *
+ * --fake-ips N (ticket S2): spreads the sockets over N distinct fake IPs (10.66.0.1,
+ * 10.66.0.2, ...) via an X-Forwarded-For header, round-robin - so a 100-socket run stays
+ * under MAX_SOCKETS_PER_IP (20) and MAX_CONNECTIONS_PER_IP_PER_MIN (30) per fake IP instead
+ * of tripping S2's own per-IP limits on itself. The server must run with TRUST_PROXY=1 (the
+ * production default) for the header to be honoured; run this against a server started that
+ * way, e.g. `TRUST_PROXY=1 PORT=8794 node server/index.js`.
  */
 import WebSocket from 'ws';
 
@@ -19,7 +26,7 @@ const OPENED_WAIT_MS = 4000;
 const SETTLED_WAIT_MS = 8000;
 
 function parseArgs(argv) {
-  const args = { sockets: 100, seconds: 120, ws: 'ws://localhost:8787/ws' };
+  const args = { sockets: 100, seconds: 120, ws: 'ws://localhost:8787/ws', fakeIps: 0 };
   const num = (label, raw) => {
     const v = Number(raw);
     if (!Number.isFinite(v) || v < 0) throw new Error(`${label} expects a number, got "${raw}"`);
@@ -42,6 +49,9 @@ function parseArgs(argv) {
       case '--ws':
         args.ws = take('--ws');
         break;
+      case '--fake-ips':
+        args.fakeIps = num('--fake-ips', take('--fake-ips'));
+        break;
       case '-h':
       case '--help':
         console.log(
@@ -50,6 +60,7 @@ function parseArgs(argv) {
             '  --sockets N   concurrent ws clients (default 100)',
             '  --seconds D   duration each client plays (default 120)',
             '  --ws URL      game socket URL (default ws://localhost:8787/ws)',
+            '  --fake-ips N  spread sockets over N fake IPs via X-Forwarded-For (default 0: off)',
           ].join('\n'),
         );
         process.exit(0);
@@ -60,6 +71,11 @@ function parseArgs(argv) {
   }
   return args;
 }
+
+const fakeIpFor = (socketIndex, fakeIps) => {
+  const n = socketIndex % fakeIps;
+  return `10.66.${Math.floor(n / 256)}.${n % 256}`;
+};
 
 function percentile(sorted, p) {
   if (sorted.length === 0) return NaN;
@@ -81,8 +97,10 @@ const randDir = () => (Math.random() < 0.5 ? 'up' : 'down');
  * a single client never has two rounds in flight, so round_opened /
  * round_settled belong to the play that immediately precedes them.
  */
-async function runSocket(index, url, deadline, stats) {
-  const ws = new WebSocket(url);
+async function runSocket(index, url, deadline, stats, fakeIps) {
+  const ws = fakeIps > 0
+    ? new WebSocket(url, { headers: { 'X-Forwarded-For': fakeIpFor(index, fakeIps) } })
+    : new WebSocket(url);
   const openLat = [];
   const settleLat = [];
   let rounds = 0;
@@ -175,7 +193,10 @@ async function main() {
     console.log('nothing to do: --sockets is 0');
     return;
   }
-  console.log(`[load] ${args.sockets} sockets for ${args.seconds}s against ${args.ws}`);
+  console.log(
+    `[load] ${args.sockets} sockets for ${args.seconds}s against ${args.ws}` +
+      (args.fakeIps > 0 ? ` spread over ${args.fakeIps} fake IPs (X-Forwarded-For)` : ''),
+  );
 
   const stats = { errors: [], connectErrors: 0 };
   const deadline = Date.now() + args.seconds * 1000;
@@ -185,7 +206,7 @@ async function main() {
   const results = await Promise.all(
     Array.from({ length: args.sockets }, (_, i) => (async () => {
       await sleep(i * 5);
-      return runSocket(i, args.ws, deadline, stats);
+      return runSocket(i, args.ws, deadline, stats, args.fakeIps);
     })()),
   );
 
