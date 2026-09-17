@@ -49,6 +49,13 @@
 		file_server
 	}
 
+	# The ad banner list (ticket B11): ads/banners.json plus public/ads/*, mounted read-only
+	# like ops/ so the list can be edited without a rebuild.
+	handle_path /ads* {
+		root * /srv/ads
+		file_server
+	}
+
 	# The SPA: serve the built files, fall back to index.html for routes.
 	handle {
 		root * /srv/app

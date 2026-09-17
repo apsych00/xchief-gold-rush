@@ -14,6 +14,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
+import { dismissFirstVisit } from './first-visit.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPORT_DIR = path.join(REPO_ROOT, 'docs', 'reports', 'b1');
@@ -42,6 +43,7 @@ test.describe('tournaments as data (B1)', () => {
     page,
   }) => {
     await page.goto('/');
+    await dismissFirstVisit(page);
     await goLeaderboard(page);
 
     // ---- 1. the seeded tournament's header: title, dates, prize --------------------------------

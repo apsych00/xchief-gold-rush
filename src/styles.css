@@ -1291,6 +1291,33 @@ button:focus:not(:focus-visible) {
   min-width: unset;
 }
 
+/* Ticket B11: fixed bottom 40% of the leaderboard screen; .lb-list above keeps flex:1 so it
+   scrolls independently and simply reclaims this space when the zone renders nothing (empty
+   list or a failed fetch, src/ads.js). */
+.ad-zone {
+  flex: 0 0 40%;
+  min-height: 0;
+  margin: 8px 0 10px;
+  border-radius: 16px;
+  overflow: hidden;
+  position: relative;
+  background: rgba(255, 255, 255, 0.05);
+}
+.ad-zone-link {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.ad-zone-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* The nearest existing fade-style keyframe (styles.css has no plain opacity-only "fade") -
+     reused here for the 400ms cross-fade the ticket calls for. */
+  animation: gr-rise 0.4s ease-out both;
+}
+
 /* ---------- tasks ---------- */
 
 .tasks {

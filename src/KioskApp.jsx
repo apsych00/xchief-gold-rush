@@ -112,6 +112,24 @@ function KioskNoCodesModal() {
   );
 }
 
+// Ticket B10: a placeholder for the real kiosk intro (A6), shown once per boot between ATTRACT
+// and the first play. Reuses the same .modal-backdrop/.modal vocabulary as the web tour
+// placeholder in App.jsx.
+function KioskIntroModal({ onDone }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Welcome to Gold Rush">
+      <div className="modal kiosk-modal">
+        <div className="modal-title">Welcome to Gold Rush</div>
+        <div className="modal-actions">
+          <button type="button" className="btn-primary kiosk-modal-btn" onClick={onDone}>
+            Got it
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // D7 (docs/reports/redteam.md): the same overlay a dropped connection shows, with one added
 // line when the server rejected this kiosk's secret (revoked, empty, too short) - reconnecting
 // keeps retrying but can never succeed on its own, so this is the booth's only signal to call
@@ -148,6 +166,7 @@ export default function KioskApp({ state, profile, actions, trackRef }) {
       {flow.abandonSecondsLeft !== null && (
         <KioskAbandonOverlay secondsLeft={flow.abandonSecondsLeft} onTap={flow.cancelAbandon} />
       )}
+      {flow.showIntro && <KioskIntroModal onDone={flow.dismissIntro} />}
       {(flow.reconnecting || flow.kioskUnauthorized) && (
         <KioskReconnecting unauthorized={flow.kioskUnauthorized} />
       )}

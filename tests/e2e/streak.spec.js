@@ -4,9 +4,14 @@ import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import { WebSocket } from 'ws';
 
+import { dismissFirstVisit } from './first-visit.js';
+
 const KIOSK_SECRET = 'dev-kiosk-secret-0001';
 const KIOSK_URL = `/?k=${KIOSK_SECRET}`;
 
+// Overridable from the environment (same pattern as tests/e2e/kiosk.spec.js) so the suite can
+// target a dev server on a non-default port when 8787 is taken by another worktree's stack;
+// default stays exactly as .env has it.
 function gameWsUrl() {
   // The environment wins over .env so a run on another port resets the kiosk the browser uses.
   if (process.env.VITE_GAME_WS) return process.env.VITE_GAME_WS.trim();
@@ -91,6 +96,7 @@ test.describe.serial('five-win kiosk streak', () => {
     await page.goto(KIOSK_URL);
     await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
     await page.locator('.btn-start').click();
+    await dismissFirstVisit(page);
     await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 10000 });
 
     for (const streak of [1, 2, 3, 4]) {
@@ -116,6 +122,7 @@ test.describe.serial('five-win kiosk streak', () => {
     await page.goto(KIOSK_URL);
     await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
     await page.locator('.btn-start').click();
+    await dismissFirstVisit(page);
     await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 10000 });
 
     await injectSettled(page, 5, { coupon: COUPON, state: 'won' });

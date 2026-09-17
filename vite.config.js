@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -20,8 +20,31 @@ function versionFile() {
   };
 }
 
+// ads/banners.json (ticket B10+B11) is deliberately outside public/: in production Caddy
+// mounts it straight from the repo (handle_path /ads*, Caddyfile) so it can be edited without a
+// rebuild, the same way ops/index.html is. This middleware makes the dev server answer the same
+// path the same way; the banner images themselves live under public/ads/ and Vite already
+// serves those.
+function adsBannersDev() {
+  return {
+    name: 'xchief-ads-banners-dev',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/ads/banners.json', (req, res) => {
+        try {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(readFileSync(resolve(__dirname, 'ads', 'banners.json')));
+        } catch {
+          res.statusCode = 404;
+          res.end();
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), versionFile()],
+  plugins: [react(), versionFile(), adsBannersDev()],
   base: './',
   define: {
     __BUILD_ID__: JSON.stringify(BUILD_ID),

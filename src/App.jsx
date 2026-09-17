@@ -13,6 +13,7 @@ import { enabled as apiEnabled } from './api/client.js';
 import OtpModal, { IdentityBar } from './Identity.jsx';
 import Profile, { initialsOf } from './Profile.jsx';
 
+import { AdZone } from './ads.js';
 import { LEVERS, maxAffordableLever, stakeFor, useGame } from './useGame.js';
 
 // Offline-only fallback (docs/layers.md C5): src/config.js's own TASKS list, used solely for
@@ -184,6 +185,24 @@ function Toast({ toast }) {
   return (
     <div className="toast" role="status">
       {text}
+    </div>
+  );
+}
+
+// Ticket B10: a placeholder for the marketing lead's real first-visit tour (A5), reusing the
+// existing .modal-backdrop/.modal vocabulary so it looks at home until it is replaced. Shown
+// once per device - src/useGame.js's tourSeen/markTourSeen own the localStorage side of that.
+function TourPlaceholder({ onDone }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Welcome to Gold Rush">
+      <div className="modal">
+        <div className="modal-title">Welcome to Gold Rush</div>
+        <div className="modal-actions">
+          <button type="button" className="btn-primary" onClick={onDone}>
+            Got it
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -867,6 +886,9 @@ function Leaderboard({ others, profile, guestMode, onOpenIdentity, tournament, t
           subtitle={t('lead.lbSub')}
         />
       )}
+      {/* Ticket B11: bottom 40% ad zone, web only - renders nothing when the list is empty or
+          the fetch fails, so .lb-list above simply keeps the full height (flex:1 in styles.css). */}
+      <AdZone />
     </section>
   );
 }
@@ -906,7 +928,7 @@ function Nav({ screen, actions }) {
 /* ---------- app ---------- */
 
 export default function App() {
-  const { state, profile, actions, trackRef, isKiosk } = useGame();
+  const { state, profile, actions, trackRef, isKiosk, tourSeen, markTourSeen } = useGame();
   const { screen } = state;
   const [lang, setLangState] = useState(readStoredLang);
   const [otpOpen, setOtpOpen] = useState(false);
@@ -1013,6 +1035,7 @@ export default function App() {
               onClose={() => setOtpOpen(false)}
             />
           )}
+          {!isKiosk && !tourSeen && <TourPlaceholder onDone={markTourSeen} />}
         </div>
       </div>
     </LangContext.Provider>

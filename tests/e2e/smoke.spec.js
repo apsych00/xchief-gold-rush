@@ -3,8 +3,11 @@
 // Deliberately shallow - no backend-dependent flows yet, see the TODO block below.
 import { expect, test } from '@playwright/test';
 
+import { dismissFirstVisit } from './first-visit.js';
+
 test('home screen renders the game', async ({ page }) => {
   await page.goto('/');
+  await dismissFirstVisit(page);
 
   await expect(page).toHaveTitle(/xChief Gold Rush/);
   await expect(page.locator('.hero-art')).toBeVisible();

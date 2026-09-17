@@ -11,6 +11,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 
+import { dismissFirstVisit } from './first-visit.js';
+
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPORT_DIR = path.join(REPO_ROOT, 'docs', 'reports', 'c3-c4');
 
@@ -40,6 +42,7 @@ test.describe('web identity and the live, masked leaderboard (C3, C4)', () => {
 
   test('OTP entry, an error, the verified header, and the leaderboard own row', async ({ page }) => {
     await page.goto('/');
+    await dismissFirstVisit(page);
 
     // ---- 1. baseline: guest state on the leaderboard (existing screen: the marketing
     // LeadCapture "slim" widget, unrelated to this ticket, already lives here) ------------------
