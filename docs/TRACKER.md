@@ -16,14 +16,15 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | OPS | 🟩🟩🟩🟩🟩🟩⬜⬜⬜⬜ 3/5 | D3 run on the box, D4 schema apply (M2) | deploy scripts built; first real run happens on the box |
 | FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin (may be moot: the Docker bridge is live with the demo account) | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 
-**Demo milestone (M1):** 32 of 33 tickets done. Left: B13 rewards hardening (OpenCode), then the showcase gate. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
+**Demo milestone (M1):** 32 of 33 tickets done. Left: B13 rewards hardening (in rework on cb), OD1 merge landing, then the showcase gate and the `demo-1` tag. MT5 Docker bridge is live on the local stack with the broker demo account. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
 
 ### Landed on dev today (newest first)
 
-Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge below is a push there). Each row is added the moment the merge commit is pushed, after the orchestrator's own gate run on the merged tree.
+Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge below is a push there; `dev` is also pushed to the marketing lead's repo `apsych` since 2026-09-17 evening, never its `main` unless the owner says so). Local stack: http://localhost:8080 rebuilt from dev after every merge; second instance without MT5 at http://localhost:5361 while the demo walk lasts. Each row is added the moment the merge commit is pushed, after the orchestrator's own gate run on the merged tree.
 
 | Time | Ticket | What landed | Gates on the merged tree |
 |---|---|---|---|
+| 18:35 | feed | Finnhub through the gold price relay (`FEED_RELAY_WS`), `/status` shows the publishing source (closes G10) | 137 unit |
 | 17:40 | B8 | Instagram reward bound to an OAuth-verified account, live the day the credentials arrive | 135 unit, 285 pgTAP, 85 integration, 30 E2E |
 | 17:05 | C11 | real first-visit tour and bilingual kiosk intro on the B10 mount points | 127 unit, 28 E2E |
 | 16:30 | T1 | Telegram alerts with an event catalogue and a recommendation per event; first OpenCode Go delivery | 127 unit, 277 pgTAP, 82 integration |
@@ -148,7 +149,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | B10 | MKT | Tour-seen flag per device (web) and per boot (kiosk) | Sonnet (cbx) | ✅ done | tour placeholder (web, localStorage) and kiosk intro (once per boot); shared `dismissFirstVisit` E2E helper; 19 E2E on my merged run; merged | C11 real tour content |
 | B11 | MKT | Ad banner list served to the client | Sonnet (cbx) | ✅ done | `ads/banners.json` + `public/ads/`, `<AdZone/>` bottom 40 %% of the leaderboard, Caddy `handle_path /ads*`; merged | marketing drops real banners into `ads/` |
 | B12 | MKT | Curate the YouTube list (under one minute each) | | ⏳ queued | content task | |
-| B13 | MKT | Hardening pass on rewards and device identity: nine attacks scripted, fixes decided, audit view and export | OpenCode kimi-k2.7-code | 🔨 building | ticket `docs/tickets/b13-rewards-hardening.md` | verify, merge; last in M1 |
+| B13 | MKT | Hardening pass on rewards and device identity: nine attacks scripted, fixes decided, audit view and export | Sonnet (cb) | 🔨 building | first pass: nine attacks HELD, two real bugs fixed (claim IP never recorded; task frames on the wrong budget); sent back once for a browser-path regression, and again because a fresh visitor's first claim counted as no-device (must bind claims to the device minted at auth) | verify, merge; last in M1 |
 | A1-A8 | MKT | Screens and copy: ad zone, paged leaderboard, tournaments, profile, tours, rewards rework | us (owner's call 2026-09-17: nothing landed on `apsych/main`) | ⏳ queued | A1 in B11, A2 in B2, A3 in B1+B3, A4 exists (profile screen pulled earlier), A7 in B6-B9; A5+A6 real tour content is the only standalone piece: C11 | in Demo |
 | C11 | L1.5 | First-visit tour (web) and kiosk intro with real content on the B10 mount points | OpenCode deepseek-v4.1-flash | ✅ done | three web cards with Next/Skip/Got it, bilingual kiosk intro with the server's streak target; 127 unit, 28 E2E on my merged run; Persian copy written by the worker, one brand-name edit by the orchestrator, still wants a native read; merged | native fa read |
 
@@ -156,7 +157,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 
 | ID | Reported | What happened | Keys to reproduce | Related | Status |
 |---|---|---|---|---|---|
-| OD1 | owner, 2026-09-17 on the local stack | Registering with an email opened the OTP dialog; a few gibberish codes produced a **429** in the browser console; a few attempts later with other emails the owner got in and was credited rewards on the account | email `t1w@f.com`; wrong codes typed several times; then different emails; look for the 429 on the socket upgrade or `/api` (S2's per-IP OTP window is 5 per 10 min, the connection window 30 per min, verify attempts 5 per code); check whether the client reconnects after `too_many_attempts` and burns the connection window; check how the local stack let a later email through (dev OTP peek? code accepted?) and whether the signup/email reward was released on a verified path (B9) | S2, S13, B9, C3 | ⏳ queued |
+| OD1 | owner, 2026-09-17 on the local stack (fixed the same evening) | Registering with an email opened the OTP dialog; a few gibberish codes produced a **429** in the browser console; a few attempts later with other emails the owner got in and was credited rewards on the account | email `t1w@f.com`; wrong codes typed several times; then different emails; look for the 429 on the socket upgrade or `/api` (S2's per-IP OTP window is 5 per 10 min, the connection window 30 per min, verify attempts 5 per code); check whether the client reconnects after `too_many_attempts` and burns the connection window; check how the local stack let a later email through (dev OTP peek? code accepted?) and whether the signup/email reward was released on a verified path (B9) | S2, S13, B9, C3 | 🔍 verifying: no security defect (cannot verify without the right code, no reward without a completed verify); the 429 was the per-IP connection window on the socket upgrade, reached through reloads; OTP budgets raised to 30 per IP and 5 per email per 10 min; a visible 'too many connections' line replaces the silent console error; merged into dev locally, my E2E rerun in progress |
 
 ## Known gaps (small, carded above where they belong)
 
@@ -172,7 +173,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | G7 | Schema changes never reach an existing database volume: `db/schema.sql` is applied only when the Postgres container initialises an empty volume, so a redeploy on the box after any schema ticket leaves the old tables in place (seen locally 2026-09-17: `public.settings does not exist` after the S18/C9 merges) | M2 blocker: D2's deploy step needs an idempotent apply (`create ... if not exists` plus `create or replace function`) or a migrations folder; card as D4 |
 | G8 | First login on a fresh volume: the terminal starts with no account and the `/login /password /server` switches only work after MT5 has fetched the broker's server list once (the "select a company" dialog). Done today by driving the VNC page with Playwright; the docs still describe a manual VNC session | write the automated first-login into `mt5/` (a script that searches the company, picks the server, fills login and password from the container env) and update `docs/mt5-feed.md`; M3 |
 | G9 | The bridge's stdout is block-buffered under Wine, so its log lines only appear when the process dies; `PYTHONUNBUFFERED=1` (or `-u`) in `mt5/entrypoint.sh` | small; M3 |
-| G10 | `/status` does not say which feed source is publishing (only per-source connected/age); the operator cannot tell MT5 from Finnhub at a glance. Expose `feed.active` | small; with T1's ops work or D4 |
+| G10 | `/status` does not say which feed source is publishing | closed: `feed.source` on `/status` (2026-09-17 evening) |
 | G11 | The mt5 container receives the whole box env through `env_file` (database password, Elastic key, token secrets) although it needs five variables | narrow to an `environment:` list; M2 |
 
 ## Defects found and fixed (for the record)
