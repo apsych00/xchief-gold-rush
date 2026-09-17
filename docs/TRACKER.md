@@ -177,6 +177,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | G9 | The bridge's stdout is block-buffered under Wine, so its log lines only appear when the process dies; `PYTHONUNBUFFERED=1` (or `-u`) in `mt5/entrypoint.sh` | small; M3 |
 | G10 | `/status` does not say which feed source is publishing | closed: `feed.source` on `/status` (2026-09-17 evening) |
 | G11 | The mt5 container receives the whole box env through `env_file` (database password, Elastic key, token secrets) although it needs five variables | narrow to an `environment:` list; M2 |
+| G12 | `docker compose down -v` on the whole project also deletes the `mt5_data` volume, which holds the terminal install and the saved broker login (seen 2026-09-17 20:00: the demo-gate rebuild wiped it, 12-minute reinstall plus a new first login). Reset only the database volume when redeploying; `deploy/deploy.sh` must never use `-v` | D4: reset `db` only; document in the runbook |
 
 ## Defects found and fixed (for the record)
 
