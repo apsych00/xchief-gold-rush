@@ -82,6 +82,11 @@ Demo tickets are all merged (33/33). The showcase run against the compose build 
 | U3 | Ad zone: the two animated xChief banners (`ads/banners/`), rotating when each finishes, zone height at their 1072:310 aspect | change | 🔨 OpenCode |
 | U4 | Share: modal with banner preview, copy link and social shortcuts; public `/s/<token>` page with CTAs to play | change | 🔨 OpenCode |
 | S19 | MT5 route security audit and hardening (A1) | | 📋 ready to ticket |
+| K1 | Open kiosk route `/kiosk`, self-provisioning with a locally persisted identity (accepted leak, decommission after the expo) | change | 🔨 OpenCode |
+| K2 | Kiosk intro: three exciting cards, first showing ends on a QR code for the web version; English only (owner 2026-09-17 late: "only 1 locale (eng)"); no coins or missions on the kiosk (owner confirmed the kiosk is already Play only) | change | 📋 ticketed, queued after U1 and K1 |
+| K3 | Instagram follow verified through the BoxAPI data API (handle first, then redirect to the Instagram app); `BOXAPI_TOKEN` placeholder for the owner | change | 📋 ticketed, queued after K4 |
+| K4 | Coins tab becomes Missions: YouTube missions with a non-seekable watch-progress player; redirect rewards release the moment the timer ends | change | 📋 ticketed, next to dispatch |
+| K5 | Nicer server-side email mask that shows more of a long address; masked on the server everywhere | change | 🔨 OpenCode |
 
 Working mode during the owner's walk: the main checkout runs a Vite dev server on http://localhost:5173 with a game server on 8787 against the compose database, so the owner can tweak the UI on `dev` directly. Workers stay in worktrees. Before every merge the orchestrator commits the owner's working-tree edits on `dev` as "Owner UI tweaks" so nothing is overwritten.
 
