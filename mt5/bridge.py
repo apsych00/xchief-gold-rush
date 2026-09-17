@@ -201,15 +201,66 @@ class Bridge:
                 await self.poll_loop()
 
 
+def credentials_missing(login, password, server):
+    """True when any of MT5_LOGIN/MT5_PASSWORD/MT5_SERVER is unset or empty -
+    the state the box is in until the admin delivers real credentials."""
+    return not login or not password or not server
+
+
+IDLE_STATUS = {"type": "status", "connected": False, "reason": "no_credentials"}
+IDLE_HEALTH_BODY = b"no credentials configured"
+
+
+async def idle_handler(websocket):
+    """No MT5 credentials: publish-only, like handler(), but always reports
+    the same not-connected status - there is no terminal to poll."""
+    await websocket.send(json.dumps(IDLE_STATUS))
+    async for _ in websocket:
+        pass
+
+
+async def idle_health_handler(reader, writer):
+    try:
+        await reader.readline()
+        while True:
+            line = await reader.readline()
+            if not line or line in (b"\r\n", b"\n"):
+                break
+        writer.write(
+            f"HTTP/1.1 503 Service Unavailable\r\nContent-Type: text/plain\r\nContent-Length: {len(IDLE_HEALTH_BODY)}\r\nConnection: close\r\n\r\n".encode()
+            + IDLE_HEALTH_BODY
+        )
+        await writer.drain()
+    finally:
+        writer.close()
+
+
+async def run_idle(port=PORT, health_port=HEALTH_PORT):
+    """Serve the no-credentials status forever instead of exiting - decision 5:
+    main() raising on int(os.environ["MT5_LOGIN"]) with an empty string would
+    otherwise crash the bridge on every start until credentials are delivered."""
+    async with websockets.serve(idle_handler, "0.0.0.0", port):
+        log.info("bridge listening on :%d (idle: no credentials configured)", port)
+        health_server = await asyncio.start_server(idle_health_handler, "0.0.0.0", health_port)
+        log.info("healthz listening on :%d (idle: no credentials configured)", health_port)
+        async with health_server:
+            await asyncio.Event().wait()
+
+
 def main():
-    login = int(os.environ["MT5_LOGIN"])
-    password = os.environ["MT5_PASSWORD"]
-    server = os.environ["MT5_SERVER"]
+    login = os.environ.get("MT5_LOGIN", "")
+    password = os.environ.get("MT5_PASSWORD", "")
+    server = os.environ.get("MT5_SERVER", "")
     symbol = os.environ.get("MT5_SYMBOL", "XAUUSD")
+
+    if credentials_missing(login, password, server):
+        log.warning("MT5_LOGIN/MT5_PASSWORD/MT5_SERVER not fully set - running idle until credentials are delivered")
+        asyncio.run(run_idle())
+        return
 
     import MetaTrader5 as mt5  # Windows-only package; loaded here, not at module scope
 
-    bridge = Bridge(mt5, login, password, server, symbol)
+    bridge = Bridge(mt5, int(login), password, server, symbol)
     asyncio.run(bridge.run())
 
 

@@ -18,9 +18,13 @@ FROM gmag11/metatrader5_vnc@sha256:2fdff449cf70b74c242319828b6859592ab52dfb05690
 
 WORKDIR /root
 
-COPY mt5/bridge.py /root/bridge.py
+# bridge.py runs as the base image's own `abc` user (uid 911), not root - see
+# entrypoint.sh - so it cannot live under /root (mode 0700, root-only,
+# confirmed against the pulled image: abc got "Permission denied" reading it
+# from there). entrypoint.sh itself still runs as root and stays put.
+COPY mt5/bridge.py /opt/mt5-bridge/bridge.py
 COPY mt5/entrypoint.sh /root/entrypoint.sh
-RUN chmod +x /root/entrypoint.sh
+RUN chmod +x /root/entrypoint.sh && chmod -R a+rX /opt/mt5-bridge
 
 ENV MT5_BRIDGE_PORT=8765
 ENV MT5_BRIDGE_HEALTH_PORT=8766

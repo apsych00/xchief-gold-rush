@@ -12,7 +12,16 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "mt5"))
 
-from bridge import Bridge, connect_terminal, is_duplicate, is_forex_market_hours, make_tick_message  # noqa: E402
+from bridge import (  # noqa: E402
+    Bridge,
+    IDLE_HEALTH_BODY,
+    IDLE_STATUS,
+    connect_terminal,
+    credentials_missing,
+    is_duplicate,
+    is_forex_market_hours,
+    make_tick_message,
+)
 
 
 def fake_tick(bid, ask, time_msc=None, time=None):
@@ -173,6 +182,38 @@ class HealthStatusTest(unittest.TestCase):
         ok, body = b.health_status(now=weekday_noon)
         self.assertFalse(ok)
         self.assertIn("no tick for", body)
+
+
+class CredentialsMissingTest(unittest.TestCase):
+    """main()'s idle-mode gate (docs/reports/b15-harden.md "Second pass",
+    ADDENDUM decision 5) - empty strings from an unset .env var, not just
+    absent keys, must count as missing."""
+
+    def test_all_present_is_not_missing(self):
+        self.assertFalse(credentials_missing("12345", "pw", "XChief-Live"))
+
+    def test_empty_login_is_missing(self):
+        self.assertTrue(credentials_missing("", "pw", "XChief-Live"))
+
+    def test_empty_password_is_missing(self):
+        self.assertTrue(credentials_missing("12345", "", "XChief-Live"))
+
+    def test_empty_server_is_missing(self):
+        self.assertTrue(credentials_missing("12345", "pw", ""))
+
+    def test_all_empty_is_missing(self):
+        self.assertTrue(credentials_missing("", "", ""))
+
+
+class IdleModeContentTest(unittest.TestCase):
+    """The actual bytes idle_handler/idle_health_handler send - decision 5
+    asks for a specific status shape and a 503, not just "doesn't crash"."""
+
+    def test_idle_status_reports_not_connected_with_reason(self):
+        self.assertEqual(IDLE_STATUS, {"type": "status", "connected": False, "reason": "no_credentials"})
+
+    def test_idle_health_body_names_the_cause(self):
+        self.assertIn(b"no credentials", IDLE_HEALTH_BODY)
 
 
 if __name__ == "__main__":

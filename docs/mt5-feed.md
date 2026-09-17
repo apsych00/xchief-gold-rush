@@ -71,3 +71,45 @@ Run it locally:
 3. Check `/status` (or the operator health endpoint) for an `mt5` entry with `connected: true`, exactly as with the MetaApi route. If it never connects, check the bridge's own logs (`docker compose logs -f mt5`, or `/logs` on the box) - it logs every login/connect attempt and every reconnect to stdout.
 
 Everything after that - priority, validation, the 10 s demotion rule, `/status`, `rounds.source` - is identical to the MetaApi route; the client never knows which one is behind `mt5`.
+
+### First login
+
+The MT5 terminal needs one manual, interactive step before it will ever connect headlessly: accepting its license dialog and logging in for the first time. `mt5/entrypoint.sh` cannot do this for you - it only waits for the terminal to exist and installs the bridge's own dependencies. Do this once per box (the state survives every rebuild and restart because it lands on the `mt5_data` volume, mounted at `/config`):
+
+1. Bring the service up if it is not already running: `docker compose --env-file .env.box --profile mt5 up -d mt5`.
+2. Watch the logs until the terminal has installed and is running (`docker compose --env-file .env.box logs -f mt5`). Look for `[4/7] File ... terminal64.exe is installed. Running MT5...` - this can take 10-20 minutes on a cold box (Mono + the MT5 installer + a Python installer, all downloaded fresh; see "Memory and CPU limits" in `docs/reports/b15-harden.md` for what to expect).
+3. On the machine you are administering from (not the box, unless you are sitting at it), open `https://<box address or 127.0.0.1 if tunnelled>:3001` in a browser and accept the self-signed certificate warning. Log in with `CUSTOM_USER`/`PASSWORD` from `.env.box` (KasmVNC's own auth, unrelated to your MT5 login). Port 3001 is bound to the box's loopback interface only (`docker-compose.yml`), so reach it over an SSH tunnel if you are not on the box itself: `ssh -L 3001:127.0.0.1:3001 <box>`.
+4. You are looking at the terminal's desktop. Click through the MT5 license dialog if one appears. Log in with the investor login (`MT5_LOGIN`/`MT5_PASSWORD`/`MT5_SERVER`, the same values already in `.env.box` - the terminal likely already attempted this login itself and is sitting at a failed-login or "reconnecting" state; you are only there to click past whatever it is stuck on, not to type credentials into a fresh dialog).
+5. Once the terminal shows live prices for XAUUSD in its own Market Watch window, close the VNC tab. You do not need to come back here again unless the login is explicitly revoked at the broker or the `mt5_data` volume is deleted.
+6. Confirm the bridge sees it: `docker compose --env-file .env.box logs -f mt5` should show `terminal connected=True` from `[bridge]`, then a stream of tick lines has started (it only logs on connect/disconnect transitions, not per tick - use `docker compose exec mt5 curl -s http://localhost:8766/healthz` to confirm ticks are actually flowing, or connect a WebSocket client to `mt5:8765` from inside the compose network).
+
+### If the bridge never starts
+
+`mt5/entrypoint.sh` waits for the base image's own install (`start.sh`) to
+finish before touching anything, then runs `bridge.py` under a supervised
+retry loop that never exits the container (`docs/reports/b15-harden.md`
+"Second pass"). Because of that, the container should always reach a
+running state eventually - restarts alone are not a sign of trouble, and
+`/healthz` reporting `bridge: down` while it retries is expected, not a bug.
+
+What is a real sign of trouble: the same failure repeating past what a
+one-time cold install explains - `docker compose --env-file .env.box logs -f
+mt5` shows `[entrypoint] pip install failed` or a Python traceback on every
+restart, or `/healthz` never leaves `bridge: down` for more than a few
+minutes on a box with a working network connection.
+
+This almost always means the `mt5_data` volume itself is poisoned - a
+half-installed Wine Python (or a partial pip install) landed on it before
+this hardening pass existed, and `start.sh`'s own checks (`if [ -e
+"$mt5file" ]`, `if ! wine python --version`) see the broken files as
+"already installed" and skip reinstalling them forever, no matter how good
+the readiness wait around them is. There is no in-place repair for that -
+delete the volume and let `start.sh` install from scratch:
+
+```
+mt5/reset-volume.sh [.env.box]
+```
+
+This stops the `mt5` service, removes `<project>_mt5_data`, and brings it
+back up on a fresh volume. Treat the result as a cold boot: follow "First
+login" above again once the terminal is installed.
