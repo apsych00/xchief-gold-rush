@@ -120,6 +120,8 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | X3 | tracker audit | S5/S15 Postgres least privilege, S6 nightly dump and restore | medium | M2 |
 | X4 | tracker audit | S3 kiosk secret out of the URL | medium | M2 (needs a booth procedure) |
 | X5 | tracker audit | S1 secret rotation procedure, S11 code retention | low | M2 |
+| X6 | U1 | `README.md`, `CONTRIBUTING.md`, `relay/README.md` still tell developers to set `VITE_RELAY_URL` / `VITE_FINNHUB_TOKEN` for the client, which no longer reads them | low | any idle worker |
+| X7 | U1 | `Leaderboard` renders the offline dummy list (`{name, s}`) through the server branch when the fetch is refused, so React keys are `undefined` (console warning, no visible effect) | low | with C4b |
 
 ## Tickets
 

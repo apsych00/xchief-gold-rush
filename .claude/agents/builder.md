@@ -16,7 +16,7 @@ model. The truth is in the agent transcript under
 `$CLAUDE_CONFIG_DIR/projects/<repo>/<session>/subagents/agent-<id>.jsonl`: `message.model` per
 turn. Grep that field; never open the file whole.
 
-Read `AGENTS.md`, `docs/backend-spec.md` and `docs/ways-of-working.md` before you start. The
+Read `AGENTS.md`, `docs/TRACKER.md` (the one tracker) and the files your ticket names before you start. The
 rules that catch people out:
 
 - **The server decides every outcome; the client never reports its own result.** If a change

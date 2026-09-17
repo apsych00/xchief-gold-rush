@@ -30,3 +30,6 @@ demo/kiosks.json
 
 # local compose port override (IIS holds :80 on the dev machine)
 docker-compose.override.yml
+
+# plain-named env copies handed to sandboxed workers (never committed)
+ENV_*.txt
