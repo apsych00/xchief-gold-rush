@@ -24,6 +24,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 | Time | Ticket | What landed | Gates on the merged tree |
 |---|---|---|---|
+| 22:50 | U3 | the two animated xChief banners rotate in the ad zone (20.5 s and 11.5 s loops), zone at 1072:310, frame scaled from its native canvas so nothing clips; fake Instagram ids no longer collide between runs | 145 unit, 37 E2E |
 | 22:35 | K5 | new email mask on the server (`ped*****ncy@gmail.com`, company domains masked to `f***d@a**.co`), leak test proves anonymous sockets and alerts never carry a raw email | 98 server, 35 E2E |
 | 22:05 | U2 | one leaderboard header card (cup icon, title, tournament info), switcher toggles it, guest note is the own row, pinned own row fixed | 137 unit, 35 E2E |
 | 21:20 | U1 | wipe button gone (code kept), user-icon avatar, themed scrollbars, client keeps one socket to our server only (direct Finnhub/OKX/Binance sources removed from the client) | 137 unit, 33 E2E |
@@ -82,7 +83,7 @@ Demo tickets are all merged (33/33). The showcase run against the compose build 
 | A2 | The client has one socket, ours; the server ingests every feed and is the relay; ladder MT5, then Finnhub, then others | true on the server (priority 0, 1, 2, 3). False on the client until U1 lands: `src/priceFeed.js` still carries direct Finnhub, OKX and Binance sources from the Supabase era | fixed in U1 |
 | U1 | Remove the wipe button (code kept), user icon instead of the "Y" avatar, themed scrollbars everywhere, one socket only | change | ✅ merged (my gates on the merged tree: 137 unit, 295 pgTAP, 97 server, 33 E2E) |
 | U2 | Leaderboard: one header card (cup icon, title, tournament info), the switcher toggles it; the guest note readable and placed as the own row (below the list when it fits, pinned when it overflows) | change; the same own-row rule as B2 applied to a logged-out player | ✅ merged (rebased on dev first; my gates: 137 unit, 295 pgTAP, 97 server, 35 E2E); side fix: the pinned own row no longer renders over the topbar (B2 defect) |
-| U3 | Ad zone: the two animated xChief banners (`ads/banners/`), rotating when each finishes, zone height at their 1072:310 aspect | change | 🔨 OpenCode |
+| U3 | Ad zone: the two animated xChief banners (`ads/banners/`), rotating when each finishes, zone height at their 1072:310 aspect | change | ✅ merged (orchestrator fix on top: frame renders at the native canvas and scales to the zone, the bundled banners clip below ~800 px otherwise; my gates: 145 unit, 97 server, 37 E2E) |
 | U4 | Share: modal with banner preview, copy link and social shortcuts; public `/s/<token>` page with CTAs to play | change | 🔨 OpenCode |
 | S19 | MT5 route security audit and hardening (A1) | | 📋 ready to ticket |
 | K1 | Open kiosk route `/kiosk`, self-provisioning with a locally persisted identity (accepted leak, decommission after the expo) | change | 🔨 OpenCode |
