@@ -39,6 +39,7 @@
     "coupons:load": "node scripts/load-coupons.mjs",
     "otp:peek": "node scripts/peek-otp.mjs",
     "safe-mode": "node scripts/safe-mode.mjs",
+    "alert-test": "node scripts/alert-test.mjs",
     "box:up": "docker compose up -d --build",
     "box:ps": "docker compose ps",
     "box:logs": "docker compose logs -f server",
@@ -48,7 +49,8 @@
     "box:coupons:export": "docker compose exec server node scripts/export-coupons.mjs",
     "box:coupons:load": "docker compose run --rm -v $PWD:/work:ro --workdir /work server node scripts/load-coupons.mjs",
     "box:otp:peek": "docker compose exec server node scripts/peek-otp.mjs",
-    "box:safe-mode": "docker compose exec server node scripts/safe-mode.mjs"
+    "box:safe-mode": "docker compose exec server node scripts/safe-mode.mjs",
+    "box:alert-test": "docker compose exec server node scripts/alert-test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

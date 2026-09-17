@@ -354,7 +354,8 @@ export function createApp({
       title: t.title,
       starts_at: t.starts_at,
       ends_at: t.ends_at,
-      status: now < new Date(t.starts_at).getTime() ? 'upcoming' : now >= new Date(t.ends_at).getTime() ? 'past' : 'live',
+      status:
+        now < new Date(t.starts_at).getTime() ? 'upcoming' : now >= new Date(t.ends_at).getTime() ? 'past' : 'live',
     }));
     const tournament = tournamentRow
       ? {
@@ -536,6 +537,7 @@ export function createApp({
     ledger,
     getSocket,
     listKioskSockets: () => kioskSockets.entries(),
+    alerts,
     ...(kioskIdleMs !== undefined ? { idleMs: kioskIdleMs } : {}),
     ...(kioskSweepIntervalMs !== undefined ? { intervalMs: kioskSweepIntervalMs } : {}),
     log: (line) => console.log(`[kiosk] ${line}`),
@@ -755,11 +757,7 @@ export function createApp({
           return;
         }
       }
-      const deviceId = await ledger.touchDevice(
-        verifyDeviceToken(frame.device),
-        ws.clientIp,
-        ws.userAgent,
-      );
+      const deviceId = await ledger.touchDevice(verifyDeviceToken(frame.device), ws.clientIp, ws.userAgent);
 
       if (!playerId) playerId = await ledger.createPlayer(deviceId);
 
@@ -926,10 +924,7 @@ export function createApp({
             if (playerSockets.get(id) === ws) playerSockets.delete(id);
             ws.identity = loggedIn;
             playerSockets.set(loggedIn, ws);
-            const [me, loggedInVersion] = await Promise.all([
-              ledger.getMe(loggedIn),
-              ledger.getTokenVersion(loggedIn),
-            ]);
+            const [me, loggedInVersion] = await Promise.all([ledger.getMe(loggedIn), ledger.getTokenVersion(loggedIn)]);
             // get_me() already reports email_verified true here - that player's email was set
             // (and confirmed) before this code could have proved ownership of it.
             send(ws, { type: 'me', ...me, token: signToken(loggedIn, loggedInVersion ?? 1) });

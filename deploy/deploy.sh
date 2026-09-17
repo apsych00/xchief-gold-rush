@@ -15,11 +15,42 @@ HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-60}"
 
 fail() {
   echo "deploy.sh: FAILED - $1" >&2
+  telegram_alert_deploy_failed
   exit 1
 }
 
 [ -d "$REPO_DIR/.git" ] || fail "$REPO_DIR is not a git checkout (run deploy/install.sh first)"
 cd "$REPO_DIR"
+
+# Load optional Telegram credentials so deploy alerts can use the same bot as the server.
+if [ -f .env.box ]; then
+  set -a
+  # shellcheck source=/dev/null
+  . .env.box
+  set +a
+fi
+
+telegram_alert() {
+  local text="$1"
+  local token="${TELEGRAM_BOT_TOKEN:-}"
+  local chat_id="${TELEGRAM_CHAT_ID:-}"
+  [ -n "$token" ] && [ -n "$chat_id" ] || return 0
+  curl -s -X POST "https://api.telegram.org/bot${token}/sendMessage" \
+    -d "chat_id=${chat_id}" \
+    -d 'parse_mode=HTML' \
+    -d 'disable_web_page_preview=true' \
+    -d "text=${text}" > /dev/null 2>&1 || true
+}
+
+telegram_alert_deploy_done() {
+  local sha
+  sha="$(git rev-parse --short HEAD)"
+  telegram_alert "<b>[info] Gold Rush</b>%0ADeploy complete: ${sha}"
+}
+
+telegram_alert_deploy_failed() {
+  telegram_alert '<b>[critical] Gold Rush</b>%0ADeploy failed%0A<i>Do:</i> Run deploy/rollback.sh'
+}
 
 # rollback.sh leaves the repo on a detached commit on purpose; re-syncing to
 # the branch tip here would silently undo the rollback. Only fetch/checkout
@@ -59,4 +90,5 @@ done
 echo "==> healthy. current status ($STATUS_URL):"
 curl -fsS "$STATUS_URL" || fail "server answered $HEALTH_URL but not $STATUS_URL"
 echo
+telegram_alert_deploy_done
 echo "==> deploy complete, $(git rev-parse --short HEAD) is live"

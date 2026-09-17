@@ -96,6 +96,8 @@ file):
 | `OTP_SENDER`           | The verified sender address, e.g. `no-reply@goldrush.xchief.academy`.                                                                                                                                                                                                  |
 | `DOZZLE_PASSWORD_HASH` | Password for the `/logs` live-log page. Generate it with `docker run --rm caddy:2 caddy hash-password --plaintext '<your password>'`, then paste the output here with every `$` doubled (`$2a$14$abc` becomes `$$2a$$14$$abc`) - otherwise Docker silently mangles it. |
 | `ALERT_WEBHOOK_URL`    | Optional. Where the feed-silent / server-restarted alert goes - see section 10 below.                                                                                                                                                                                  |
+| `TELEGRAM_BOT_TOKEN`   | Optional. Bot token from @BotFather for Telegram alerts - see section 10 below.                                                                                                                                                                                        |
+| `TELEGRAM_CHAT_ID`     | Optional. The Telegram group chat id (a negative number) - see section 10 below.                                                                                                                                                                                       |
 
 `PORT` can stay `8787`. Never share or commit `.env.box`.
 
@@ -188,6 +190,36 @@ ALERT_WEBHOOK_URL=https://ntfy.sh/xchief-goldrush-a7f3d1
 A Slack or Discord incoming webhook URL also works - paste it in the same variable. Alerts
 for the same problem are sent at most once every 5 minutes, so a real outage does not flood
 your phone.
+
+#### Telegram bot (alternative or in addition to the webhook)
+
+You can also have alerts go to a Telegram group. This uses the same bot for server events
+and for deploy done/failed messages.
+
+1. Create the bot with [@BotFather](https://t.me/botfather):
+   - Send `/newbot` and follow the prompts.
+   - Copy the bot token (it looks like `123456:ABC...`).
+2. Add the bot to the operator group and give it permission to send messages.
+3. Find the group chat id:
+   - Post any message in the group.
+   - Open `https://api.telegram.org/bot<your-bot-token>/getUpdates` in a browser.
+   - Look for `"chat":{"id":-123456789` - that negative number is `TELEGRAM_CHAT_ID`.
+4. Fill the two lines in `.env.box`:
+
+```
+TELEGRAM_BOT_TOKEN=123456:ABC...
+TELEGRAM_CHAT_ID=-123456789
+```
+
+Run `deploy/deploy.sh` again to pick up the change. To verify the bot from the box:
+
+```
+npm run box:alert-test -- server_started
+```
+
+You should see the message in the Telegram group immediately. The server sends an alert for
+restart, feed silence/recovery, safe-mode changes, blocked IPs, low coupon stock and exhausted
+pool. Deploy success and failure are also posted through the same bot by `deploy/deploy.sh`.
 
 ## 9. Take a snapshot
 
