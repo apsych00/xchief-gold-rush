@@ -1047,7 +1047,7 @@ button:focus:not(:focus-visible) {
 .tick {
   position: absolute;
   left: 50%;
-  margin-left: 34px;
+  margin-left: 14px;
   width: 36px;
   height: 32px;
   padding: 0;
