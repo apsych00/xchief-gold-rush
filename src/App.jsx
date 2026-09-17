@@ -730,9 +730,85 @@ export function Console({ state, profile, actions, trackRef, onOpenIdentity }) {
 
 /* ---------- leaderboard ---------- */
 
-function Leaderboard({ others, profile, guestMode, onOpenIdentity }) {
+// Tournament header (title, date range, time left, prize) and the past/upcoming switcher
+// (ticket B1, docs/tasks-marketing-lead.md A3). `tournament` is the header for whichever board
+// is currently on screen (the live one by default, or a past/upcoming one once switched to);
+// `tournaments` is the full list every chip in the switcher is drawn from. No new colours,
+// fonts or components: the chips reuse `.lang-btn`, the copy reuses `.screen-*`.
+function TournamentHeader({ tournament, tournaments, selectedId, onSelect }) {
+  const { t, lang } = useLang();
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    if (!tournament) return undefined;
+    const id = setInterval(() => forceTick((n) => n + 1), 30000);
+    return () => clearInterval(id);
+  }, [tournament]);
+
+  const fmtDate = (iso) =>
+    new Date(iso).toLocaleDateString(lang === 'fa' ? 'fa-IR' : 'en-US', { month: 'short', day: 'numeric' });
+
+  const timeLeft = () => {
+    if (!tournament) return null;
+    const ms = new Date(tournament.ends_at).getTime() - Date.now();
+    if (ms <= 0) return t('tournament.ended');
+    const hours = Math.ceil(ms / 3600000);
+    return hours >= 24
+      ? t('tournament.daysLeft', { n: Math.ceil(hours / 24) })
+      : t('tournament.hoursLeft', { n: hours });
+  };
+
+  const activeId = selectedId ?? tournament?.id ?? null;
+
+  return (
+    <div className="lb-tournament">
+      {tournament ? (
+        <div className="lb-tournament-head">
+          <img className="lb-tournament-prize" src={tournament.prize_image} alt={tournament.prize_title} />
+          <div className="lb-tournament-info">
+            <div className="lb-tournament-title">{tournament.title}</div>
+            <div className="lb-tournament-dates">
+              {fmtDate(tournament.starts_at)} – {fmtDate(tournament.ends_at)}
+              {' · '}
+              {timeLeft()}
+            </div>
+            <div className="lb-tournament-prize-title">{tournament.prize_title}</div>
+          </div>
+        </div>
+      ) : (
+        <div className="lb-tournament-none">{t('tournament.none')}</div>
+      )}
+      {tournaments.length > 1 && (
+        <div className="lb-tournament-switcher">
+          {tournaments.map((tt) => (
+            <button
+              key={tt.id}
+              type="button"
+              className="lang-btn"
+              aria-current={activeId === tt.id ? 'true' : undefined}
+              style={
+                activeId === tt.id
+                  ? { borderColor: 'var(--green)', color: '#fff', background: 'rgba(53,227,111,.18)' }
+                  : undefined
+              }
+              onClick={() => onSelect(tt.id)}
+            >
+              {tt.title}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Leaderboard({ others, profile, guestMode, onOpenIdentity, tournament, tournaments, onSelectTournament }) {
   const { t, lang } = useLang();
   const you = t('lb.you');
+  const [selectedId, setSelectedId] = useState(null);
+  const selectTournament = (id) => {
+    setSelectedId(id);
+    onSelectTournament?.(id);
+  };
   // A live/fetched row already carries `me: true` once the player is verified and matched by
   // its own masked email (docs/layers.md C4, useGame.js's refreshLeaderboard/onLeaderboard).
   // Only the dummy/offline OTHERS list (api disabled) and a guest never on the board at all
@@ -752,6 +828,12 @@ function Leaderboard({ others, profile, guestMode, onOpenIdentity }) {
         </div>
         <div className="screen-sub">{t('lb.byRecord')}</div>
       </div>
+      <TournamentHeader
+        tournament={tournament}
+        tournaments={tournaments}
+        selectedId={selectedId}
+        onSelect={selectTournament}
+      />
       <div className="lb-list">
         <div className="lb-spacer" style={{ '--n': entries.length + (guestMode && !ownRowPresent ? 1 : 0) }} />
         {entries.map((r) => {
@@ -902,6 +984,9 @@ export default function App() {
                   profile={profile}
                   guestMode={guestMode}
                   onOpenIdentity={() => setOtpOpen(true)}
+                  tournament={state.tournament}
+                  tournaments={state.tournaments}
+                  onSelectTournament={actions.selectTournament}
                 />
               )}
               {screen === 'profile' && (

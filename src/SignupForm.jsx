@@ -3,22 +3,18 @@ import { LINKS_PUBLIC } from './config.js';
 import { useLang } from './i18n.js';
 import { readLead, readSignup, registerUrl, submitSignup } from './leads.js';
 
-const PHONE_RE = /^\+?[0-9 ()-]{7,20}$/;
-
 /**
- * In-game xChief signup: name, email, phone. Submitting stores the lead,
- * pays the reward (via onDone) and opens the real registration page with
- * the details prefilled. We cannot verify the external account, so the
- * reward is tied to this form, which we can.
+ * In-game xChief signup: email only (ticket B4, docs/tasks-marketing-lead.md ground rules:
+ * "Only the email identifies a web player"). Submitting stores the lead, pays the reward (via
+ * onDone) and opens the real registration page with the email prefilled. We cannot verify the
+ * external account, so the reward is tied to this form, which we can.
  *
  * variant: 'modal' (overlay) | 'inline' (inside a task row)
  */
 export default function SignupForm({ source, balance, reward, variant = 'modal', onDone, onCancel }) {
   const { t, lang } = useLang();
   const lead = readLead();
-  const [name, setName] = useState('');
   const [email, setEmail] = useState(lead?.email || '');
-  const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
   const [done, setDone] = useState(() => !!readSignup());
   const firstRef = useRef(null);
@@ -35,18 +31,14 @@ export default function SignupForm({ source, balance, reward, variant = 'modal',
 
   const submit = (e) => {
     e.preventDefault();
-    const n = name.trim();
     const em = email.trim().toLowerCase();
-    const ph = phone.trim();
-    if (n.length < 2) return setError(t('signup.errName'));
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em)) return setError(t('signup.errEmail'));
-    if (!PHONE_RE.test(ph)) return setError(t('signup.errPhone'));
-    submitSignup({ name: n, email: em, phone: ph, source, balance, lang, page: window.location.pathname });
+    submitSignup({ email: em, source, balance, lang, page: window.location.pathname });
     setDone(true);
     onDone?.();
-    // Open the real registration with the details prefilled. Done after the
+    // Open the real registration with the email prefilled. Done after the
     // state update so the reward shows even if the popup is blocked.
-    window.open(registerUrl(LINKS_PUBLIC.demo, { email: em, name: n, phone: ph }), '_blank', 'noopener');
+    window.open(registerUrl(LINKS_PUBLIC.demo, { email: em }), '_blank', 'noopener');
   };
 
   const body = done ? (
@@ -76,17 +68,6 @@ export default function SignupForm({ source, balance, reward, variant = 'modal',
       <input
         ref={firstRef}
         className="lead-input"
-        type="text"
-        name="name"
-        autoComplete="name"
-        placeholder={t('signup.name')}
-        aria-label={t('signup.name')}
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        required
-      />
-      <input
-        className="lead-input"
         type="email"
         name="email"
         autoComplete="email"
@@ -96,19 +77,6 @@ export default function SignupForm({ source, balance, reward, variant = 'modal',
         aria-label={t('signup.email')}
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        dir="ltr"
-        required
-      />
-      <input
-        className="lead-input"
-        type="tel"
-        name="tel"
-        autoComplete="tel"
-        inputMode="tel"
-        placeholder={t('signup.phone')}
-        aria-label={t('signup.phone')}
-        value={phone}
-        onChange={(e) => setPhone(e.target.value)}
         dir="ltr"
         required
       />

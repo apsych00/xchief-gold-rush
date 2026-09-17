@@ -11,6 +11,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:5173';
 const GAME_SERVER_PORT = process.env.PORT || '8787';
+// The Vite port follows BASE_URL so parallel checkouts can each run the suite on their own port.
+const VITE_PORT = new URL(BASE_URL).port || '5173';
 const GAME_SERVER_URL = `http://localhost:${GAME_SERVER_PORT}/health`;
 
 export default defineConfig({
@@ -37,11 +39,19 @@ export default defineConfig({
         PORT: GAME_SERVER_PORT,
         PLAYER_TOKEN_SECRET: process.env.PLAYER_TOKEN_SECRET || 'dev-secret',
         DATABASE_URL: process.env.DATABASE_URL || 'postgresql://postgres:test@localhost:55432/postgres',
+        // Every spec talks to the server from 127.0.0.1, so the per-IP windows (ticket S2) would
+        // refuse the suite itself; they are exercised on their own terms in
+        // test/integration-box/limits.test.mjs. Same override as the integration harness.
+        TRUST_PROXY: '0',
+        MAX_ANON_PLAYERS_PER_IP_PER_10MIN: '1000',
+        MAX_CONNECTIONS_PER_IP_PER_MIN: '1000',
+        MAX_SOCKETS_PER_IP: '1000',
+        MAX_OTP_REQUESTS_PER_IP_PER_10MIN: '1000',
       },
     },
     {
       // Start the app if nothing is listening; reuse a dev server you already have running.
-      command: 'npm run dev -- --port 5173 --strictPort',
+      command: `npm run dev -- --port ${VITE_PORT} --strictPort`,
       url: BASE_URL,
       reuseExistingServer: true,
       timeout: 60_000,

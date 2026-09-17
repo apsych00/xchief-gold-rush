@@ -13,12 +13,12 @@ What runs on the box (handled for you by `docker compose`):
 
 Everything after the one-time install is four scripts, all in `deploy/`:
 
-| Script | When |
-| --- | --- |
-| `deploy/install.sh` | Once, on a brand new box. |
-| `deploy/deploy.sh` | Manually, any time you want to deploy right now. Also what a push triggers automatically. |
-| `deploy/autodeploy.sh` | Never by hand - a cron job runs it every minute and it only acts when there is something new to deploy. |
-| `deploy/rollback.sh <commit>` | When a deploy needs to be undone. |
+| Script                        | When                                                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `deploy/install.sh`           | Once, on a brand new box.                                                                               |
+| `deploy/deploy.sh`            | Manually, any time you want to deploy right now. Also what a push triggers automatically.               |
+| `deploy/autodeploy.sh`        | Never by hand - a cron job runs it every minute and it only acts when there is something new to deploy. |
+| `deploy/rollback.sh <commit>` | When a deploy needs to be undone.                                                                       |
 
 Node is never installed on the box. The website is built **inside Docker** by `deploy/deploy.sh` every time it runs, so the box can never end up serving a bundle built on the wrong machine.
 
@@ -322,3 +322,29 @@ That is the whole daily routine. No SSH needed unless something above is red.
   ```
   Every token already issued for that player stops working on its next use; they simply become
   a fresh anonymous player next time they connect. Their score and history are untouched.
+- **Adjust tournaments.** The campaign is a series of tournaments (ticket B1); adding, moving
+  or removing one is SQL only - never a code change or a restart. The server reads the
+  `tournaments` table live and the leaderboard push throttles to at most once a second, so a
+  change here shows up within a second of the query committing. Two tournaments' windows may
+  never overlap - the database refuses the `insert`/`update` below with an exclusion-constraint
+  error if they would.
+  ```
+  # Add a new tournament
+  docker compose --env-file .env.box exec db psql -U postgres -c "
+    insert into public.tournaments (id, title, starts_at, ends_at, prize_title, prize_image, broker_bonus)
+    values ('t3', 'Gold Rush Week 3', '2026-09-24 00:00:00+04', '2026-09-28 00:00:00+04',
+            'First prize', '/prizes/week3.png', null);"
+
+  # Move a tournament's dates, prize or broker bonus
+  docker compose --env-file .env.box exec db psql -U postgres -c "
+    update public.tournaments set ends_at = '2026-09-25 00:00:00+04' where id = 't3';"
+
+  # Remove a tournament that has not started yet (a running or past one carries settled rounds
+  # and tournament_scores through its id - foreign keys refuse the delete; edit its dates
+  # instead, or leave it as the historical record)
+  docker compose --env-file .env.box exec db psql -U postgres -c "
+    delete from public.tournaments where id = 't3';"
+  ```
+  Dates are `timestamptz`; write them in the venue's local time with its UTC offset (Dubai is
+  `+04`, no DST) exactly as `db/seed.sql`'s own tournament rows do, so `now() at time zone` never
+  has to be reasoned about by whoever runs the one-liner.

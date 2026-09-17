@@ -43,6 +43,10 @@ const initialGame = {
   history: [],
   drag: false,
   others: OTHERS,
+  // Tournament header and switcher list (ticket B1): null/[] until the leaderboard screen's
+  // first fetch or push. `tournament` is null while no tournament is running.
+  tournament: null,
+  tournaments: [],
   feed: { mode: 'connecting', source: null, symbol: null, quiet: false },
   // last settled round
   result: null, // { outcome:'win'|'lose'|'flat', stake, delta, mult, streak, badge, coupon? }
@@ -147,14 +151,14 @@ export function useGame() {
   // socket currently is, so the own-row match below stays correct across a re-login mid-view.
   useEffect(() => {
     if (!apiEnabled || IS_KIOSK) return undefined;
-    return onLeaderboard((rows) => {
+    return onLeaderboard(({ rows, tournament, tournaments }) => {
       const myDisplay = profileRef.current.display;
       const mapped = rows.map((r) => ({
         name: r.display,
         s: r.record,
         me: myDisplay != null && r.display === myDisplay,
       }));
-      setState((s) => ({ ...s, others: mapped }));
+      setState((s) => ({ ...s, others: mapped, tournament, tournaments }));
     });
   }, []);
 
@@ -503,21 +507,31 @@ export function useGame() {
   // player's own row is marked `me` by an exact match on its own masked email (profile.display)
   // rather than excluded, so a verified player in the top 10 sees themself highlighted in
   // place, same as the live push in the effect above.
+  const applyLeaderboardPayload = useCallback(({ rows, tournament, tournaments }) => {
+    const myDisplay = profileRef.current.display;
+    const mapped = rows.map((r) => ({
+      name: r.display,
+      s: r.record,
+      me: myDisplay != null && r.display === myDisplay,
+    }));
+    setState((s) => ({ ...s, others: mapped, tournament, tournaments }));
+  }, []);
+
   const refreshLeaderboard = useCallback(() => {
     if (!apiEnabled || IS_KIOSK) return;
-    api
-      .getLeaderboard()
-      .then((rows) => {
-        const myDisplay = profileRef.current.display;
-        const mapped = rows.map((r) => ({
-          name: r.display,
-          s: r.record,
-          me: myDisplay != null && r.display === myDisplay,
-        }));
-        setState((s) => ({ ...s, others: mapped }));
-      })
-      .catch((err) => console.error('[api] leaderboard fetch failed', err));
-  }, []);
+    api.getLeaderboard().then(applyLeaderboardPayload).catch((err) => console.error('[api] leaderboard fetch failed', err));
+  }, [applyLeaderboardPayload]);
+
+  /** Switches the leaderboard screen to a specific tournament's own board - past or upcoming
+   * (ticket B1's switcher). `null` goes back to whichever tournament is currently running. */
+  const selectTournament = useCallback(
+    (id) => {
+      if (!apiEnabled || IS_KIOSK) return;
+      const call = id ? api.getTournament(id) : api.getLeaderboard();
+      call.then(applyLeaderboardPayload).catch((err) => console.error('[api] tournament fetch failed', err));
+    },
+    [applyLeaderboardPayload],
+  );
 
   /** Requests an 8-digit code for `email` (docs/layers.md C3). */
   const requestOtp = useCallback((email) => sessionRequestOtp(email), []);
@@ -615,6 +629,7 @@ export function useGame() {
     requestOtp,
     verifyOtp,
     signOut,
+    selectTournament,
   };
 
   return { state, profile, actions, trackRef, isKiosk: IS_KIOSK };

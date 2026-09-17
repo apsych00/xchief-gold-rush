@@ -91,6 +91,12 @@ test.describe('web identity and the live, masked leaderboard (C3, C4)', () => {
     // ---- 6. the leaderboard's own row is now the real, masked row - highlighted, no synthetic
     // "you" row standing in for it -----------------------------------------------------------
     await goHome(page);
+    // Since B1 the board ranks tournament scores, and a score exists only once a round has
+    // settled inside the running tournament: play once, any outcome, before looking for the row.
+    await page.getByRole('button', { name: 'Play' }).click();
+    await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
+    await page.click('.btn-up');
+    await expect(page.locator('.pane-result')).toBeVisible({ timeout: 20000 });
     await goLeaderboard(page);
     await expect(page.locator('.lb-row-me')).toBeVisible({ timeout: 5000 });
     const ownRowText = await page.locator('.lb-row-me').innerText();

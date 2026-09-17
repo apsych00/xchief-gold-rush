@@ -18,6 +18,16 @@ insert into public.tasks (id, title, reward, repeat_ms, requires_email) values
 on conflict (id) do update set
   title = excluded.title, reward = excluded.reward, repeat_ms = excluded.repeat_ms, requires_email = excluded.requires_email;
 
+-- The campaign's tournament windows (ticket B1, docs/tasks-marketing-lead.md A3). Dates given
+-- in Asia/Dubai (UTC+4, no DST) and stored as timestamptz; adjusting these in production is a
+-- SQL one-liner (docs/box-deploy.md "Daily habits"), never a code change.
+insert into public.tournaments (id, title, starts_at, ends_at, prize_title, prize_image, broker_bonus) values
+  ('t1', 'Gold Rush Week 1', '2026-09-16 00:00:00+04', '2026-09-21 00:00:00+04', 'First prize', '/prizes/week1.png', null),
+  ('t2', 'Gold Rush Week 2', '2026-09-21 00:00:00+04', '2026-09-24 00:00:00+04', 'First prize', '/prizes/week2.png', null)
+on conflict (id) do update set
+  title = excluded.title, starts_at = excluded.starts_at, ends_at = excluded.ends_at,
+  prize_title = excluded.prize_title, prize_image = excluded.prize_image, broker_bonus = excluded.broker_bonus;
+
 -- 100 generated promo codes, e.g. XG-7F3A9C2B1D. Export the list for marketing with:
 --   select code from public.coupons order by created_at;
 insert into public.coupons (code)

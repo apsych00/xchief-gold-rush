@@ -203,9 +203,40 @@ export async function getTasks(playerId) {
   });
 }
 
-/** Top 10, no identity involved. */
-export async function leaderboard() {
-  const { rows } = await getPool().query('select * from public.leaderboard()');
+/** Top 10 of one tournament (ticket B1), no identity involved. `tournamentId` null means
+ * whichever tournament public.current_tournament() reports; an explicit id reads back a past
+ * or upcoming tournament's own board. No tournament resolved means empty rows, never an error -
+ * see public.leaderboard()'s own comment in db/schema.sql. */
+export async function leaderboard(tournamentId = null) {
+  const { rows } = await getPool().query('select * from public.leaderboard($1)', [tournamentId]);
+  return rows;
+}
+
+/** The tournament whose window contains this instant, or null when none is running.
+ * public.current_tournament() is declared to return a single public.tournaments row (not
+ * setof), so calling it in a FROM clause always yields exactly one row even when it found
+ * nothing - a row of all-null columns, not zero rows (standard Postgres behaviour for a
+ * NULL composite used as a table function). `id` is never null on a real tournament, so that
+ * column is what tells the two cases apart. */
+export async function currentTournament() {
+  const { rows } = await getPool().query('select * from public.current_tournament()');
+  return rows[0] && rows[0].id !== null ? rows[0] : null;
+}
+
+/** One tournament by id, for the `tournament` request frame's header - null if that id names
+ * no tournament. */
+export async function getTournament(id) {
+  const { rows } = await getPool().query('select * from public.tournaments where id = $1', [id]);
+  return rows[0] || null;
+}
+
+/** Every tournament, oldest first, for the client's past/upcoming switcher. Just the columns
+ * the switcher needs to compute each one's status ('past' | 'live' | 'upcoming') against the
+ * current time. */
+export async function listTournaments() {
+  const { rows } = await getPool().query(
+    'select id, title, starts_at, ends_at from public.tournaments order by starts_at',
+  );
   return rows;
 }
 

@@ -252,10 +252,12 @@ function handleMessage(frame) {
       settlePending(frame);
       break;
     case 'leaderboard':
-      // Both a reply to this socket's own `leaderboard` request (getLeaderboard()) and an
-      // unsolicited push whenever the top 10 changes (docs/layers.md C4) arrive as this same
-      // frame shape; settlePending() is a no-op when nothing is waiting on it.
-      leaderboardEmitter.emit(frame.rows);
+      // Both a reply to this socket's own `leaderboard`/`tournament` request (getLeaderboard(),
+      // getTournament()) and an unsolicited push whenever the top 10 changes (docs/layers.md
+      // C4) arrive as this same frame shape: `rows` (that tournament's top 10), `tournament`
+      // (its header, ticket B1) and `tournaments` (the full switcher list). settlePending() is
+      // a no-op when nothing is waiting on it.
+      leaderboardEmitter.emit(payloadOf(frame));
       settlePending(frame);
       break;
     case 'ping':
@@ -358,10 +360,10 @@ export function kioskReset() {
   send({ type: 'kiosk_reset' });
 }
 
-/** Fires with the fresh top-10 `rows` every time the server pushes a `leaderboard` frame -
- * on request (getLeaderboard's own reply also lands here) and, unsolicited, whenever the top
- * 10 changes (docs/layers.md C4). Never fires for a kiosk socket: the server never sends it
- * one. */
+/** Fires with `{rows, tournament, tournaments}` every time the server pushes a `leaderboard`
+ * frame - on request (getLeaderboard's and getTournament's own replies also land here) and,
+ * unsolicited, whenever the top 10 changes (docs/layers.md C4). Never fires for a kiosk socket:
+ * the server never sends it one. */
 export function onLeaderboard(cb) {
   return leaderboardEmitter.on(cb);
 }
@@ -391,7 +393,12 @@ export function getTasks() {
 }
 
 export function getLeaderboard() {
-  return request(['leaderboard'], { type: 'leaderboard' }).then((frame) => frame.rows);
+  return request(['leaderboard'], { type: 'leaderboard' }).then(payloadOf);
+}
+
+/** A specific tournament's own board (past or upcoming), same shape as getLeaderboard(). */
+export function getTournament(id) {
+  return request(['leaderboard'], { type: 'tournament', id }).then(payloadOf);
 }
 
 export function requestOtp(email) {

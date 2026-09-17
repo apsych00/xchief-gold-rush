@@ -181,9 +181,23 @@ function nextSentinelRecord() {
   return Math.floor(Date.now() / 1000) + sentinelCounter;
 }
 
+// public.leaderboard() ranks tournament_scores for the currently running tournament (ticket
+// B1), not players.record any more - park the sentinel there, for whichever tournament
+// current_tournament() resolves right now. This suite runs inside db/seed.sql's own t1 window
+// (16-21 September 2026), same assumption TICKET.md's own E2E work makes.
 async function parkRecordAtSentinel(email) {
   const record = nextSentinelRecord();
-  await pool.query('update public.players set record = $1 where email = $2', [record, email]);
+  const { rowCount } = await pool.query(
+    `insert into public.tournament_scores (tournament_id, player_id, record)
+       select ct.id, p.id, $1 from public.current_tournament() ct, public.players p where p.email = $2
+     on conflict (tournament_id, player_id) do update set record = excluded.record`,
+    [record, email],
+  );
+  if (rowCount === 0) {
+    throw new Error(
+      "no tournament is currently running - this suite needs one of db/seed.sql's tournament windows to be live",
+    );
+  }
   return record;
 }
 
