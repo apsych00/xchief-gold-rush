@@ -17,9 +17,7 @@ export const freeRefill = () => socket.freeRefill();
 /** Task definitions plus this player's own claimed state, computed server-side. */
 export const getTasks = () => socket.getTasks();
 
-/** The current tournament's top-10, ranked by peak balance, plus its header and the switcher
- * list (ticket B1). */
-export const getLeaderboard = () => socket.getLeaderboard();
-
-/** A specific tournament's own board (past or upcoming), same shape as getLeaderboard(). */
-export const getTournament = (id) => socket.getTournament(id);
+/** One page of one tournament's board, ranked by peak balance, plus its header, the switcher
+ * list, the pager and this player's own row (tickets B1, B2). `opts.tournament` (past or
+ * upcoming id) and `opts.page` both default to the current tournament's first page. */
+export const getLeaderboard = (opts) => socket.getLeaderboard(opts);

@@ -209,12 +209,36 @@ export async function getTasks(playerId) {
   });
 }
 
-/** Top 10 of one tournament (ticket B1), no identity involved. `tournamentId` null means
- * whichever tournament public.current_tournament() reports; an explicit id reads back a past
- * or upcoming tournament's own board. No tournament resolved means empty rows, never an error -
- * see public.leaderboard()'s own comment in db/schema.sql. */
-export async function leaderboard(tournamentId = null) {
-  const { rows } = await getPool().query('select * from public.leaderboard($1)', [tournamentId]);
+/** One 20-row page of one tournament's board (ticket B2), no identity involved. `tournamentId`
+ * null means whichever tournament public.current_tournament() reports; an explicit id reads
+ * back a past or upcoming tournament's own board. `page` is 1-based. No tournament resolved, or
+ * a page past the end, means empty rows, never an error - see public.leaderboard()'s own
+ * comment in db/schema.sql. Each row carries its own badge `tier` (ticket B3). */
+export async function leaderboard(tournamentId = null, page = 1) {
+  const { rows } = await getPool().query('select * from public.leaderboard($1, $2)', [tournamentId, page]);
+  return rows;
+}
+
+/** The total ranked-player count behind leaderboard() (ticket B2), for the client's page count. */
+export async function leaderboardTotal(tournamentId = null) {
+  const { rows } = await getPool().query('select public.leaderboard_total($1) as total', [tournamentId]);
+  return Number(rows[0].total);
+}
+
+/** This player's own row on one tournament's board (ticket B2 decision 1, closes gap G3):
+ * matched server-side by player id via public.my_rank(), never by comparing masked-email
+ * strings. `null` when the caller has no verified email or no score in that tournament - not
+ * an error, just nothing to highlight. */
+export async function myRank(playerId, tournamentId = null) {
+  return withPlayer(playerId, async (client) => {
+    const { rows } = await client.query('select * from public.my_rank($1)', [tournamentId]);
+    return rows[0] || null;
+  });
+}
+
+/** The badge tier legend (ticket B3), ordered for display. No identity involved. */
+export async function badgeLegend() {
+  const { rows } = await getPool().query('select * from public.badge_legend()');
   return rows;
 }
 

@@ -1,19 +1,20 @@
--- Invariant: public.leaderboard(p_tournament) exposes only display/record/rank - display is
--- the masked email (docs/layers.md C4: "never a raw address"), never display_name or the raw
--- email - and only players with a confirmed email (players.email is not null) - never a bare
--- balance page for anonymous play. (0005_lint_and_crypt.sql replaced the leaderboard view with
--- a SECURITY DEFINER function to satisfy Supabase's linter, same access model; ticket B1 then
--- gave it its own p_tournament argument and moved the ranked column from players.record to
--- tournament_scores.record for one tournament, so this file ranks inside a tournament it makes
--- itself rather than relying on whichever one current_tournament() would otherwise resolve.)
+-- Invariant: public.leaderboard(p_tournament, p_page) exposes only rank/display/record/tier -
+-- display is the masked email (docs/layers.md C4: "never a raw address"), never display_name or
+-- the raw email - and only players with a confirmed email (players.email is not null) - never a
+-- bare balance page for anonymous play. (0005_lint_and_crypt.sql replaced the leaderboard view
+-- with a SECURITY DEFINER function to satisfy Supabase's linter, same access model; ticket B1
+-- then gave it its own p_tournament argument and moved the ranked column from players.record to
+-- tournament_scores.record for one tournament; ticket B2 added paging (p_page) and ticket B3
+-- added the per-row badge tier, so this file ranks inside a tournament it makes itself rather
+-- than relying on whichever one current_tournament() would otherwise resolve.)
 begin;
 
-select plan(3);
+select plan(4);
 
 select is(
-  (select proargnames from pg_proc where oid = 'public.leaderboard(text)'::regprocedure),
-  array['p_tournament', 'display', 'record', 'rank'],
-  'leaderboard(text) returns exactly display, record, rank (plus its own p_tournament argument)'
+  (select proargnames from pg_proc where oid = 'public.leaderboard(text, int)'::regprocedure),
+  array['p_tournament', 'p_page', 'rank', 'display', 'record', 'tier'],
+  'leaderboard(text, int) returns exactly rank, display, record, tier (plus its own arguments)'
 );
 
 insert into public.tournaments (id, title, starts_at, ends_at, prize_title, prize_image)
@@ -35,6 +36,11 @@ select ok(
 select ok(
   not exists(select 1 from public.leaderboard('lbv-t1') where record = 99999),
   'an email-unconfirmed player never appears on the leaderboard, however high its record'
+);
+
+select ok(
+  exists(select 1 from public.leaderboard('lbv-t1') where display = 'l****d@example.com' and tier = 'gold'),
+  'the sole ranked player is rank 1, tiered gold'
 );
 
 reset role;

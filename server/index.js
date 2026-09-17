@@ -301,28 +301,33 @@ export function createApp({
     }
   }
 
-  // Live, masked leaderboard (docs/layers.md C4): recomputed after every player round settle
-  // and pushed to every WEB socket - never a kiosk, which has no email and is never ranked -
-  // whenever the top 10 actually changed. `runAt` throttles this to at most one query and one
-  // broadcast per `leaderboardDebounceMs`: the first settle after a quiet spell runs the query
-  // immediately, a burst of settles inside that window collapses into one more run right after
-  // it closes.
+  // Live, masked leaderboard (docs/layers.md C4, ticket B2): recomputed after every player
+  // round settle and pushed to every WEB socket - never a kiosk, which has no email and is
+  // never ranked. `runAt` throttles this to at most one shared-payload query and one broadcast
+  // round per `leaderboardDebounceMs`: the first settle after a quiet spell runs it immediately,
+  // a burst of settles inside that window collapses into one more run right after it closes.
+  // Each push always carries page 1 of the current tournament (ticket B2 decision 2); `me` is
+  // computed per receiving socket (one extra SQL call per socket, acceptable at 100 concurrent)
+  // since it is this player's own row, never shared - unlike the old top-10 payload, there is
+  // no single "did anything change" json to dedupe against any more, so every scheduled run
+  // broadcasts rather than skipping a quiet one.
   let leaderboardLastRunAt = 0;
   let leaderboardTimer = null;
   let leaderboardRunPending = false;
-  let leaderboardLastJson = null;
 
   /**
-   * The `leaderboard`-shaped payload for one tournament (ticket B1): `rows` (that tournament's
-   * top 10), `tournament` (its own header - title, dates, prize - or null when none resolved),
-   * and `tournaments` (every tournament with a `status` computed against the current time, for
-   * the client's past/upcoming switcher). `tournamentId` null means whichever tournament is
-   * currently running; an explicit id is the `tournament` request frame reading back a past or
-   * upcoming tournament's own board.
+   * The part of the `leaderboard`-shaped payload every receiving socket shares (ticket B2):
+   * `rows` (this page of that tournament's board, each carrying its own badge `tier`, ticket
+   * B3), `tournament` (its own header - title, dates, prize - or null when none resolved),
+   * `tournaments` (every tournament with a `status` computed against the current time, for the
+   * client's past/upcoming switcher), and `page`/`pages`/`total` for the pager. `tournamentId`
+   * null means whichever tournament is currently running; an explicit id reads back a past or
+   * upcoming tournament's own board. `page` is 1-based.
    */
-  async function buildLeaderboardPayload(tournamentId) {
-    const [rows, tournamentRow, tournamentRows] = await Promise.all([
-      ledger.leaderboard(tournamentId),
+  async function buildLeaderboardShared(tournamentId, page) {
+    const [rows, total, tournamentRow, tournamentRows] = await Promise.all([
+      ledger.leaderboard(tournamentId, page),
+      ledger.leaderboardTotal(tournamentId),
       tournamentId ? ledger.getTournament(tournamentId) : ledger.currentTournament(),
       ledger.listTournaments(),
     ]);
@@ -345,25 +350,44 @@ export function createApp({
           broker_bonus: tournamentRow.broker_bonus,
         }
       : null;
-    return { rows, tournament, tournaments };
+    return { rows, tournament, tournaments, page, pages: Math.max(1, Math.ceil(total / 20)), total };
+  }
+
+  /**
+   * The full `leaderboard`-shaped reply to one socket's own request (ticket B2): the shared
+   * page plus this player's own `me` row (public.my_rank(), matched by player id - closes gap
+   * G3) and, only for a direct request and never for the unsolicited live push, the badge
+   * `legend` (ticket B3 decision 3: "carries legend once, on request, not on push").
+   */
+  async function buildLeaderboardPayload(tournamentId, page, playerId, includeLegend) {
+    const [shared, me, legend] = await Promise.all([
+      buildLeaderboardShared(tournamentId, page),
+      playerId ? ledger.myRank(playerId, tournamentId) : Promise.resolve(null),
+      includeLegend ? ledger.badgeLegend() : Promise.resolve(undefined),
+    ]);
+    return { ...shared, me, ...(includeLegend ? { legend } : {}) };
   }
 
   async function runLeaderboardRefresh() {
     leaderboardLastRunAt = Date.now();
-    let payload;
+    let shared;
     try {
-      payload = await buildLeaderboardPayload(null);
+      shared = await buildLeaderboardShared(null, 1);
     } catch (err) {
       console.error('[leaderboard] refresh failed', err);
       return;
     }
-    const json = JSON.stringify(payload);
-    if (json === leaderboardLastJson) return;
-    leaderboardLastJson = json;
-    const frame = JSON.stringify({ type: 'leaderboard', ...payload });
-    for (const ws of playerSockets.values()) {
-      if (ws.readyState === ws.OPEN) ws.send(frame);
-    }
+    await Promise.all(
+      Array.from(playerSockets.entries()).map(async ([playerId, ws]) => {
+        if (ws.readyState !== ws.OPEN) return;
+        try {
+          const me = await ledger.myRank(playerId, null);
+          send(ws, { type: 'leaderboard', ...shared, me });
+        } catch (err) {
+          console.error('[leaderboard] myRank failed', err);
+        }
+      }),
+    );
   }
 
   function scheduleLeaderboardRefresh() {
@@ -683,23 +707,37 @@ export function createApp({
         }
         case 'leaderboard': {
           // D8 (docs/reports/redteam.md): a kiosk has no email and is never ranked; guarded the
-          // same way every other player-only frame already is.
+          // same way every other player-only frame already is. Ticket B2 decision 2: the
+          // request carries optional `tournament` and `page`; `tournament` absent or empty
+          // means whichever tournament is currently running, `page` defaults to 1.
           if (kind !== 'player') {
             send(ws, { type: 'error', code: 'not_available' });
             break;
           }
-          const budget = limits.checkQueryRate(ws.socketId, 'leaderboard');
-          if (!budget.allowed) {
-            send(ws, { type: 'error', code: 'rate_limited', retry_ms: budget.retryMs });
-            break;
+          const tournamentId = str(frame.tournament, 50) || null;
+          const page = Math.max(1, Number.parseInt(frame.page, 10) || 1);
+          // Only the plain "open the leaderboard screen" request (page 1 of whichever
+          // tournament is current) sits under the 1/s query budget, same as every other query
+          // frame. A resolved page past 1, or an explicit tournament, is a pager or switcher
+          // click - a person can flip through several of either in under a second, same
+          // reasoning the `tournament` frame below has always carried; the per-socket
+          // frame-rate limit (S2) still bounds it.
+          if (page <= 1 && !tournamentId) {
+            const budget = limits.checkQueryRate(ws.socketId, 'leaderboard');
+            if (!budget.allowed) {
+              send(ws, { type: 'error', code: 'rate_limited', retry_ms: budget.retryMs });
+              break;
+            }
           }
-          send(ws, { type: 'leaderboard', ...(await buildLeaderboardPayload(null)) });
+          send(ws, { type: 'leaderboard', ...(await buildLeaderboardPayload(tournamentId, page, id, true)) });
           break;
         }
         case 'tournament': {
-          // Reads back a specific tournament's own board - past or upcoming - as the same
-          // `leaderboard`-shaped frame (ticket B1). An id naming no tournament resolves to a
-          // null header and empty rows, not an error.
+          // Reads back a specific tournament's own board page 1 - past or upcoming - as the
+          // same `leaderboard`-shaped frame (ticket B1; kept alongside the unified `leaderboard`
+          // request above, ticket B2, for the existing callers that still address a tournament
+          // by `id` on this frame type). An id naming no tournament resolves to a null header
+          // and empty rows, not an error.
           // Not under the 1/s query budget: a switcher click reads two boards back to back;
           // the per-socket frame-rate limit (S2) still bounds it.
           if (kind !== 'player') {
@@ -707,7 +745,7 @@ export function createApp({
             break;
           }
           const tournamentId = str(frame.id, 50) || null;
-          send(ws, { type: 'leaderboard', ...(await buildLeaderboardPayload(tournamentId)) });
+          send(ws, { type: 'leaderboard', ...(await buildLeaderboardPayload(tournamentId, 1, id, true)) });
           break;
         }
         case 'request_otp': {
