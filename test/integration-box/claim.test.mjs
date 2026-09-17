@@ -190,7 +190,7 @@ test('GET /api/claim/<token> answers ready, then claimed after a successful POST
   const reopenRes = await fetch(`http://localhost:${port}/api/claim/${token}`);
   const reopened = await reopenRes.json();
   assert.equal(reopened.state, 'claimed');
-  assert.match(reopened.email_masked, /^i\*+m@example\.com$/, 'the masked email never reveals the full address');
+  assert.match(reopened.email_masked, /^int\*+aim@e\*\*\.com$/, 'the masked email never reveals the full address');
 });
 
 test('GET /api/claim/<unknown token> answers invalid, never a 500', async () => {

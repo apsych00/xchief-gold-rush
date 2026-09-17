@@ -332,6 +332,9 @@ export function createApp({
   // Ticket S18 decision 2: the guarded/locked leaderboard throttle. Left at the product default
   // in production; tests shrink it for the same reason as leaderboardDebounceMs above.
   safeModeLeaderboardDebounceMs = SAFE_MODE_LEADERBOARD_DEBOUNCE_MS,
+  // Test hook: override the fetch used by the alerts module so a test can prove no raw email
+  // leaves through a webhook/Telegram transport (ticket K5).
+  alertsFetch = undefined,
 } = {}) {
   const playerSockets = new Map(); // playerId -> ws
   const kioskSockets = new Map(); // kioskId -> ws
@@ -489,6 +492,7 @@ export function createApp({
     latest: feed.latest,
     blockedCount: limits.blockedIpsCount,
     log: (line) => console.log(line),
+    ...(alertsFetch !== undefined ? { fetch: alertsFetch } : {}),
   });
   safeMode = createSafeMode({
     ledger,
@@ -1363,6 +1367,7 @@ export function createApp({
     feed,
     kioskIdleSweep,
     limits,
+    alerts,
     safeMode,
 
     /**

@@ -64,8 +64,8 @@ after(async () => {
 });
 
 // Same buffered-inbox connection helper as server.test.mjs and otp.test.mjs.
-function connect() {
-  const ws = new WebSocket(wsUrl);
+function connectTo(url) {
+  const ws = new WebSocket(url);
   ws.inbox = [];
   ws.waiters = [];
   ws.on('message', (data) => {
@@ -85,6 +85,10 @@ function connect() {
     }
   });
   return ws;
+}
+
+function connect() {
+  return connectTo(wsUrl);
 }
 
 function whenOpen(ws) {
@@ -124,16 +128,52 @@ function send(ws, frame) {
   ws.send(JSON.stringify(frame));
 }
 
-/** Independent re-implementation of db/schema.sql's mask_email(), so this suite is not just
- * checking that the server agrees with itself: first and last character of the local part,
- * three to four asterisks between them, full domain (docs/layers.md C3, C4). */
+/** Independent re-implementation of db/schema.sql's mask_email() (ticket K5). */
+const CONSUMER_DOMAINS = new Set([
+  'gmail.com',
+  'yahoo.com',
+  'outlook.com',
+  'hotmail.com',
+  'icloud.com',
+  'proton.me',
+  'protonmail.com',
+  'live.com',
+  'msn.com',
+  'aol.com',
+  'mail.com',
+  'yandex.com',
+  'yandex.ru',
+  'mail.ru',
+  'gmx.com',
+  'zoho.com',
+  'me.com',
+  'ymail.com',
+  'googlemail.com',
+  'hey.com',
+]);
+
 function maskEmail(email) {
-  const at = email.indexOf('@');
-  const local = email.slice(0, at);
-  const domain = email.slice(at + 1);
-  if (local.length <= 2) return `${local[0]}***@${domain}`;
-  const stars = '*'.repeat(Math.min(Math.max(local.length - 2, 3), 4));
-  return `${local[0]}${stars}${local.at(-1)}@${domain}`;
+  const lastAt = email.lastIndexOf('@');
+  const local = email.slice(0, lastAt);
+  const domain = email.slice(lastAt + 1);
+  const chars = Array.from(local);
+  let maskedLocal;
+  if (chars.length <= 2) {
+    maskedLocal = `${chars[0]}***`;
+  } else if (chars.length <= 5) {
+    maskedLocal = `${chars[0]}***${chars.at(-1)}`;
+  } else if (chars.length <= 9) {
+    maskedLocal = `${chars.slice(0, 2).join('')}****${chars.slice(-2).join('')}`;
+  } else {
+    maskedLocal = `${chars.slice(0, 3).join('')}*****${chars.slice(-3).join('')}`;
+  }
+  if (CONSUMER_DOMAINS.has(domain.toLowerCase())) {
+    return `${maskedLocal}@${domain}`;
+  }
+  const dot = domain.indexOf('.');
+  const label = dot === -1 ? domain : domain.slice(0, dot);
+  const rest = dot === -1 ? '' : domain.slice(dot);
+  return `${maskedLocal}@${label[0]}**${rest}`;
 }
 
 function freshDeviceToken() {
@@ -401,4 +441,93 @@ test('a leaderboard push never reaches a kiosk socket', async () => {
 
   kioskWs.close();
   webWs.close();
+});
+
+test('an anonymous socket never receives another player\'s raw email; alerts transport never carries a raw email', async () => {
+  const alertBodies = [];
+  const alertsFetch = async (url, init) => {
+    const body = init?.body ? String(init.body) : '';
+    alertBodies.push({ url: String(url), body });
+    return { ok: true, status: 200 };
+  };
+
+  // The existing shared `app` has already started; build a private instance for this test so
+  // the fake fetch captures only the alerts we care about.
+  const privateApp = createApp({ finnhubToken: null, leaderboardDebounceMs: 50, alertsFetch });
+  let privatePriceTimer = null;
+  let wsA;
+  let wsB;
+  try {
+    const privatePort = await privateApp.start(0, { startFeed: false });
+    const privateWsUrl = `ws://localhost:${privatePort}/ws`;
+
+    // Drive the private feed the same way the suite's global before() drives the shared one.
+    let privatePrice = 3000;
+    privatePriceTimer = setInterval(() => {
+      privateApp.feed._injectTick('okx', privatePrice, Date.now());
+    }, 200);
+    await new Promise((resolve) => {
+      const check = setInterval(() => {
+        if (privateApp.feed.latest()) {
+          clearInterval(check);
+          resolve();
+        }
+      }, 20);
+    });
+
+    wsA = connectTo(privateWsUrl);
+    wsB = connectTo(privateWsUrl);
+    await Promise.all([whenOpen(wsA), whenOpen(wsB)]);
+
+    const emailA = `lb-leak-${Date.now()}@example.com`;
+
+    // Collect every frame B receives, including pushes it was not explicitly waiting for.
+    const bFrames = [];
+    wsB.on('message', (data) => {
+      try {
+        bFrames.push(JSON.parse(data.toString()));
+      } catch {
+        bFrames.push(String(data));
+      }
+    });
+
+    await verifyFreshPlayer(wsA, emailA);
+    const recordA = await parkRecordAtSentinel(emailA);
+
+    // Give B a device so its auth succeeds; B stays anonymous.
+    send(wsB, { type: 'auth', device: freshDeviceToken() });
+    await nextFrame(wsB, (f) => f.type === 'welcome');
+
+    privatePrice = 3000;
+    await new Promise((r) => setTimeout(r, 250));
+    privatePrice = 3100;
+
+    const [, lbB] = await Promise.all([
+      playOneRound(wsA, 'up'),
+      nextFrame(wsB, (f) => f.type === 'leaderboard', 6000),
+    ]);
+
+    // Sanity: B did get the leaderboard push and A appears masked on it.
+    assert.ok(lbB.rows.some((r) => r.display === maskEmail(emailA) && r.record === recordA));
+
+    const allBText = JSON.stringify(bFrames);
+    assert.ok(
+      !allBText.includes(emailA),
+      'no frame received by the anonymous socket contains the verified player\'s raw email',
+    );
+
+    // Fire a catalogue event through the fake transport and assert it never carries the raw email.
+    await privateApp.alerts.fireEvent('coupons_low', { left: 3 });
+
+    const allAlertText = alertBodies.map((b) => b.body).join('\n');
+    assert.ok(
+      !allAlertText.includes(emailA),
+      'no alert transport body contains the verified player\'s raw email',
+    );
+  } finally {
+    if (privatePriceTimer) clearInterval(privatePriceTimer);
+    wsA?.close();
+    wsB?.close();
+    await privateApp.close().catch(() => {});
+  }
 });

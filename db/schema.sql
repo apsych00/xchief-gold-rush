@@ -515,31 +515,52 @@ $$;
 -- ---------------------------------------------------------------------------- masking --
 
 -- The masked form of an email shown to anyone but its owner (docs/layers.md C3, C4;
--- product default recorded there: "masked email keeps the first and last character of the
--- local part and the full domain"). Computed once here and reused for both get_me()'s own
--- `display` and leaderboard()'s row `display`, so the client's "is this my row" check is a
--- plain string comparison, never its own masking logic.
+-- ticket K5). Computed once here and reused for get_me()'s `display`, leaderboard()'s row
+-- `display`, and claim_prize's `email_masked`, so the client never applies its own masking
+-- logic and a raw address never leaves the server.
 --
--- Local part length 1-2: only the first character survives ("a" -> "a***", "ab" -> "a***") -
--- there is no room for a distinct last character. Length 3+: first and last character are
--- kept, with at least three and at most four asterisks between them ("kay" -> "k***y",
--- "kayani" -> "k****i", "kayhanazadi" -> "k****i"). The cap keeps a long address from pushing
--- the score off a leaderboard row; the true length of the local part is not revealed.
+-- Rule (do not redesign):
+--   * Split at the last `@`. Local part length n:
+--       n <= 2     -> first char + `***`
+--       3..5       -> first char + `***` + last char
+--       6..9       -> first 2 chars + `****` + last 2 chars
+--       n >= 10    -> first 3 chars + `*****` + last 3 chars
+--   * Domain: shown in full when it is one of the twenty most common consumer domains
+--     (gmail.com, yahoo.com, outlook.com, hotmail.com, icloud.com, proton.me,
+--     protonmail.com, live.com, msn.com, aol.com, mail.com, yandex.com, yandex.ru,
+--     mail.ru, gmx.com, zoho.com, me.com, ymail.com, googlemail.com, hey.com).
+--     Otherwise the domain's first label is masked to its first char + `**` and the rest
+--     of the domain is kept (`acme-corp.co` -> `a**.co`).
 create function public.mask_email(p_email text)
 returns text language sql immutable as $$
   select case
     when p_email is null or position('@' in p_email) = 0 then null
     else
       (case
-        when length(split_part(p_email, '@', 1)) <= 2
-          then left(split_part(p_email, '@', 1), 1) || repeat('*', 3)
-        else
-          left(split_part(p_email, '@', 1), 1)
-          || repeat('*', least(greatest(length(split_part(p_email, '@', 1)) - 2, 3), 4))
-          || right(split_part(p_email, '@', 1), 1)
+        when length(local) <= 2 then left(local, 1) || '***'
+        when length(local) between 3 and 5 then left(local, 1) || '***' || right(local, 1)
+        when length(local) between 6 and 9 then left(local, 2) || '****' || right(local, 2)
+        else left(local, 3) || '*****' || right(local, 3)
       end)
-      || '@' || split_part(p_email, '@', 2)
+      || '@'
+      || case
+        when lower(domain) = any (array[
+          'gmail.com','yahoo.com','outlook.com','hotmail.com','icloud.com',
+          'proton.me','protonmail.com','live.com','msn.com','aol.com',
+          'mail.com','yandex.com','yandex.ru','mail.ru','gmx.com',
+          'zoho.com','me.com','ymail.com','googlemail.com','hey.com'
+        ]) then domain
+        when strpos(domain, '.') > 0
+          then left(label, 1) || '**' || substr(domain, length(label) + 1)
+        else left(label, 1) || '**'
+      end
   end
+from (
+  select
+    (regexp_match(p_email, '^(.+)@([^@]+)$'))[1] as local,
+    (regexp_match(p_email, '^(.+)@([^@]+)$'))[2] as domain
+) d,
+lateral (select split_part(domain, '.', 1) as label) l
 $$;
 
 -- --------------------------------------------------------------------------- players --

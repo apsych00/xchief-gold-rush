@@ -1,43 +1,48 @@
--- Invariant: public.mask_email() is the one place the masked-email shape shown on the
--- leaderboard and in get_me()'s own `display` is computed (docs/layers.md C3, C4; product
--- default: "masked email keeps the first and last character of the local part and the full
--- domain, at least three asterisks between them; a one- or two-character local part shows the
--- first character and asterisks").
+-- Invariant: public.mask_email() is the single source of truth for the masked email shape
+-- shown on the leaderboard, in get_me()'s `display`, and in claim_prize's `email_masked`
+-- (docs/layers.md C3, C4; ticket K5). A raw address never leaves the server.
 begin;
 
-select plan(9);
+select plan(14);
 
 select is(public.mask_email(null), null, 'a null email masks to null');
+select is(public.mask_email('not-an-email'), null, 'an address with no @ masks to null');
 
 -- one- and two-character local parts: first character only, no distinct last character -------
-select is(public.mask_email('a@x.com'), 'a***@x.com', 'a one-character local part shows the first character and asterisks');
-select is(public.mask_email('ab@x.com'), 'a***@x.com', 'a two-character local part shows only the first character, not the second');
+select is(public.mask_email('a@x.io'), 'a***@x**.io', 'one-char local part masks to first char + ***; non-consumer domain masks first label');
+select is(public.mask_email('ab@x.io'), 'a***@x**.io', 'two-char local part shows only the first character, not the second');
 
--- three-plus character local parts: first and last kept, at least three asterisks between ----
-select is(public.mask_email('abc@x.com'), 'a***c@x.com', 'a three-character local part still gets at least three asterisks between first and last');
+-- 3..5 characters: first char + *** + last char ---------------------------------------------
+select is(public.mask_email('abc@x.io'), 'a***c@x**.io', 'three-char local part keeps first and last with three asterisks');
+select is(public.mask_email('farid@acme-corp.co'), 'f***d@a**.co', 'five-char local part plus a hyphenated company domain masks the first label only');
+
+-- 6..9 characters: first 2 + **** + last 2 --------------------------------------------------
+select is(public.mask_email('kayani@gmail.com'), 'ka****ni@gmail.com', 'six-char local part on a consumer domain shows full domain');
+select is(public.mask_email('kayani@x.io'), 'ka****ni@x**.io', 'six-char local part on a non-consumer domain masks the first label');
+
+-- n >= 10: first 3 + ***** + last 3 ---------------------------------------------------------
 select is(
-  public.mask_email('kayani@gmail.com'),
-  'k****i@gmail.com',
-  'a six-character local part shows its true middle length in asterisks (product default example)'
+  public.mask_email('pedram.adsency@gmail.com'),
+  'ped*****ncy@gmail.com',
+  'long local part on a consumer domain keeps first 3, last 3, full domain'
 );
-
--- plus-addresses: the '+' is just another local-part character, not special-cased ------------
-select is(public.mask_email('k+lb@gmail.com'), 'k***b@gmail.com', 'a plus-address masks like any other local part');
 select is(
   public.mask_email('a+very-long-tag@example.com'),
-  'a****g@example.com',
-  'a long local part is capped at four asterisks so a row stays readable'
+  'a+v*****tag@e**.com',
+  'plus-address local part on a non-consumer domain masks the first label'
 );
 
--- case is left exactly as given - masking never normalizes it ---------------------------------
-select is(public.mask_email('KAYANI@GMAIL.COM'), 'K****I@GMAIL.COM', 'masking preserves case on both local part and domain');
+-- unicode local parts count characters, not bytes -------------------------------------------
+select is(public.mask_email('用户名@x.io'), '用***名@x**.io', 'a three-character unicode local part masks by character');
 
--- the full domain always survives untouched ----------------------------------------------------
-select is(
-  public.mask_email('k@sub.example.co.uk'),
-  'k***@sub.example.co.uk',
-  'the full domain, including subdomains, is never masked'
-);
+-- subdomain: only the first label is masked, the rest is kept intact ------------------------
+select is(public.mask_email('a@sub.example.com'), 'a***@s**.example.com', 'subdomain domain masks only its first label');
+
+-- consumer domain matching is case-insensitive; case is preserved ---------------------------
+select is(public.mask_email('KAYANI@GMAIL.COM'), 'KA****NI@GMAIL.COM', 'consumer-domain check is case-insensitive and preserves original casing');
+
+-- edge: a domain with no dot masks its only label -------------------------------------------
+select is(public.mask_email('a@localhost'), 'a***@l**', 'a domain with no dot masks its single label');
 
 select * from finish();
 rollback;
