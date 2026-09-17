@@ -270,6 +270,18 @@ create table public.task_visits (
   primary key (player_id, task_id)
 );
 
+-- Instagram-verified accounts (ticket B8): one row per Instagram user_id that has claimed the
+-- reward. player_id/device_id record who claimed it; a duplicate ig_user_id is refused.
+create table public.instagram_accounts (
+  ig_user_id text primary key,
+  username text not null,
+  player_id uuid not null references public.players (id) on delete cascade,
+  device_id uuid references public.devices (id),
+  verified_at timestamptz not null default now()
+);
+
+create index instagram_accounts_player on public.instagram_accounts (player_id);
+
 -- The $100 codes. Claimed atomically, once each.
 -- 'reserved' (ticket C9, docs/tickets/c9-qr-claim.md decision 2): a coupon a 5th win just
 -- earned sits here from settle_kiosk_round until claim_prize() actually claims it (or the
@@ -403,6 +415,7 @@ alter table public.claim_links enable row level security;
 alter table public.badge_tiers enable row level security;
 alter table public.video_progress enable row level security;
 alter table public.task_visits enable row level security;
+alter table public.instagram_accounts enable row level security;
 
 create policy players_select_own on public.players
   for select to authenticated using (id = auth.uid());
@@ -1492,7 +1505,7 @@ end $$;
 revoke insert, update, delete, truncate, references, trigger
   on public.players, public.rounds, public.tasks, public.task_claims, public.kiosks, public.coupons,
      public.tournaments, public.tournament_scores, public.settings, public.claim_links, public.badge_tiers,
-     public.video_progress, public.task_visits
+     public.video_progress, public.task_visits, public.instagram_accounts
   from anon, authenticated;
 
 -- kiosks, coupons, tournaments, tournament_scores, settings, claim_links, badge_tiers, video_progress
@@ -1501,7 +1514,8 @@ revoke insert, update, delete, truncate, references, trigger
 -- table read; a claim link's own state reaches the /claim/<token> page through GET /api/claim/<token>
 -- (server/index.js), never a direct table read either.
 revoke select on public.kiosks, public.coupons, public.tournaments, public.tournament_scores,
-  public.settings, public.claim_links, public.badge_tiers, public.video_progress, public.task_visits
+  public.settings, public.claim_links, public.badge_tiers, public.video_progress, public.task_visits,
+  public.instagram_accounts
   from anon, authenticated;
 
 -- dev_otps, otp_codes and settings: service role only.

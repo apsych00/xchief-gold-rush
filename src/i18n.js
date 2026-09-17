@@ -180,6 +180,10 @@ const dict = {
       videoSub: 'چند ثانیه صبر کن، سکه‌ت میاد',
       shareText: 'رکوردم توی چالش طلای xChief: {record} سکه! تو می‌تونی بزنی؟ {url}',
       copied: 'متن کپی شد؛ توی استوری بذار',
+      instagramPending: 'در حال اتصال اینستاگرام…',
+      instagramDone: 'فالو شد! +300 سکه',
+      instagramFailed: 'اینستاگرام تأیید نکرد. دوباره امتحان کن.',
+      instagramComingSoon: 'جایزه اینستاگرام به زودی فعال می‌شه',
       items: {
         video: { title: 'ویدیوی xChief', desc: '۱۵ ثانیه، هر ۵ دقیقه' },
         email: { title: 'ثبت ایمیل', desc: 'امتیازت ذخیره می‌شه' },
@@ -426,6 +430,10 @@ const dict = {
       videoSub: 'A few seconds and your coins arrive',
       shareText: 'My record in the xChief Gold Rush: {record} coins. Can you beat it? {url}',
       copied: 'Text copied. Post it to your story',
+      instagramPending: 'Connecting Instagram…',
+      instagramDone: 'Followed! +300 coins',
+      instagramFailed: 'Instagram did not confirm. Try again.',
+      instagramComingSoon: 'Instagram rewards are coming soon',
       items: {
         video: { title: 'Watch the xChief video', desc: '15 s, every 5 min' },
         email: { title: 'Save your email', desc: 'Keeps your score' },

@@ -8,6 +8,14 @@ import react from '@vitejs/plugin-react';
 // (see src/UpdateBanner.jsx). Vercel exposes the commit SHA; fall back to time.
 const BUILD_ID = (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 12) || String(Date.now());
 
+// When the dev Vite server and the box game server run on different ports, proxy /api so that
+// client-side fetches to /api/* (ticket C9 claim page, ticket B8 Instagram reward) reach the
+// game server instead of the Vite dev server itself. WebSocket traffic still uses VITE_GAME_WS.
+const gameApiTarget =
+  process.env.VITE_GAME_WS && process.env.VITE_GAME_WS !== 'auto'
+    ? process.env.VITE_GAME_WS.replace(/^ws/, 'http').replace(/\/ws$/, '')
+    : null;
+
 function versionFile() {
   return {
     name: 'xchief-version-file',
@@ -46,6 +54,13 @@ function adsBannersDev() {
 export default defineConfig({
   plugins: [react(), versionFile(), adsBannersDev()],
   base: './',
+  server: gameApiTarget
+    ? {
+        proxy: {
+          '/api': { target: gameApiTarget, changeOrigin: true },
+        },
+      }
+    : undefined,
   define: {
     __BUILD_ID__: JSON.stringify(BUILD_ID),
   },
