@@ -46,11 +46,20 @@ test.describe('tournaments as data (B1)', () => {
     await dismissFirstVisit(page);
     await goLeaderboard(page);
 
-    // ---- 1. the seeded tournament's header: title, dates, prize --------------------------------
-    await expect(page.locator('.lb-tournament-head')).toBeVisible({ timeout: 10000 });
-    const headerText = await page.locator('.lb-tournament-head').innerText();
+    // ---- 1. the seeded tournament's header, fused into the one leaderboard card (ticket U2):
+    // title, dates and prize all inside .lb-head; no separate prize image any more -----------------
+    await expect(page.locator('.lb-head')).toBeVisible({ timeout: 10000 });
+    const header = page.locator('.lb-head');
+    // .lb-head renders before the first leaderboard frame lands, with the "No tournament
+    // running" line; wait for the seeded tournament to arrive before reading it.
+    await expect(header).toContainText('Gold Rush Week 1', { timeout: 10000 });
+    const headerText = await header.innerText();
+    expect(headerText).toContain('Leaderboard');
+    expect(headerText).toContain('by record');
     expect(headerText).toContain('Gold Rush Week 1');
     expect(headerText).toContain('First prize');
+    expect(headerText, 'the date range lives in the fused card now').toContain('Sep');
+    await expect(page.locator('.lb-tournament-prize')).toHaveCount(0);
     await expect(page.locator('.lb-tournament-none')).toHaveCount(0);
     await page.screenshot({ path: path.join(REPORT_DIR, '01-tournament-header.png') });
 

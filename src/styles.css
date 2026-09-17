@@ -1223,6 +1223,14 @@ button:focus:not(:focus-visible) {
   border-color: var(--green);
   box-shadow: 0 0 20px rgba(53, 227, 111, 0.35);
 }
+/* The guest note is a <button>, so without this its text would take the browser's own button
+   colour (black on the green row). Keep the normal row text colour (ticket U2); the rank cell
+   stays empty. */
+.lb-row-guest {
+  color: #fff;
+  text-align: start;
+  width: 100%;
+}
 .lb-rank {
   width: 22px;
   font: 700 14px var(--en);
@@ -1261,7 +1269,10 @@ button:focus:not(:focus-visible) {
   flex: none;
   margin: 0 0 10px;
 }
-.lb-tournament-head {
+/* One fused header card (ticket U2): the cup icon at the left, then "Leaderboard / by record"
+   and, when a board is described, its tournament title, dates and prize title. Same card look
+   the old tournament header had. */
+.lb-head {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1270,21 +1281,22 @@ button:focus:not(:focus-visible) {
   background: rgba(255, 255, 255, 0.05);
   border: 1.5px solid rgba(255, 255, 255, 0.1);
 }
-.lb-tournament-prize {
-  width: 46px;
-  height: 46px;
-  border-radius: 10px;
-  object-fit: cover;
+.lb-head-icon {
   flex: none;
-  background: rgba(255, 255, 255, 0.06);
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.lb-tournament-info {
+.lb-head-info {
   min-width: 0;
   flex: 1;
 }
 .lb-tournament-title {
   font: 800 14px var(--fa);
   color: #fff;
+  margin-top: 6px;
 }
 .lb-tournament-dates {
   font: 600 11px var(--en);
@@ -1297,13 +1309,9 @@ button:focus:not(:focus-visible) {
   margin-top: 2px;
 }
 .lb-tournament-none {
-  padding: 12px 10px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1.5px solid rgba(255, 255, 255, 0.1);
   font: 600 12px var(--fa);
   color: rgba(255, 255, 255, 0.55);
-  text-align: center;
+  margin-top: 6px;
 }
 .lb-tournament-switcher {
   display: flex;
@@ -1372,6 +1380,9 @@ button:focus:not(:focus-visible) {
 }
 
 .lb-row-sticky {
+  /* Sits in the flex flow right after .lb-list so it pins to the bottom of the list container
+     instead of the absolute row positioning .lb-row gives a page row. */
+  position: static;
   flex: none;
   margin-top: 8px;
 }
