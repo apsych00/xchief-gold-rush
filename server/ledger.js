@@ -49,6 +49,10 @@ export const KNOWN_ERROR_CODES = [
   'too_many_attempts',
   'expired_code',
   'feed_stale',
+  // Ticket S18: sent directly by server/index.js's safe-mode gate, never raised in Postgres -
+  // listed here for the same reason feed_stale is, as documentation of every code a client may
+  // legitimately see.
+  'safe_mode',
 ];
 
 function mapError(err) {
@@ -374,6 +378,31 @@ export async function statusAggregates() {
          where last_seen_at > now() - interval '24 hours') as devices_24h
   `);
   return rows[0];
+}
+
+/**
+ * public.settings(key, value) - server-wide operator state mirrored across restarts (ticket
+ * S18, safe mode). Not a client table: no policy grants it to anon/authenticated, same
+ * treatment as dev_otps and otp_codes.
+ */
+export async function getSetting(key) {
+  const { rows } = await getPool().query('select value from public.settings where key = $1', [key]);
+  return rows[0] ? rows[0].value : null;
+}
+
+export async function setSetting(key, value) {
+  await getPool().query(
+    `insert into public.settings (key, value, updated_at) values ($1, $2, now())
+       on conflict (key) do update set value = excluded.value, updated_at = excluded.updated_at`,
+    [key, value],
+  );
+}
+
+/** A device's created_at (ticket S18 decision 2: "a valid device token older than 10 minutes"
+ * exempts a new anonymous player from a guarded refusal). Null when the token names no device. */
+export async function getDeviceCreatedAt(deviceId) {
+  const { rows } = await getPool().query('select created_at from public.devices where id = $1', [deviceId]);
+  return rows[0] ? rows[0].created_at : null;
 }
 
 /** Process start: nobody is left to honestly settle a round still marked open. */

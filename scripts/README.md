@@ -32,6 +32,7 @@ exits 0 without touching the database.
 | `export-coupons.mjs`              | `coupons:export` | `box:coupons:export`          | Prints all coupons as CSV `code,status,claimed_at`, oldest first. Redirect to a file: `npm run box:coupons:export > coupons.csv`.                                                                                         |
 | `load-coupons.mjs <file>`         | `coupons:load`   | `box:coupons:load -- <name>`  | Loads codes from a text file (one per line). Duplicates are skipped, so re-running is safe. Prints the inserted count. The `box:` form sees files in the repo directory as `/work`.                                       |
 | `peek-otp.mjs <email>`            | `otp:peek`       | `box:otp:peek`                | Dev only. Prints the newest captured login code for an email, or `none`. Empty in production.                                                                                                                             |
+| `safe-mode.mjs <level>`           | `safe-mode`      | `box:safe-mode`               | Sets the server-wide safe mode level (`normal`, `guarded`, `locked`); the server picks it up within 5 s (ticket S18, `docs/box-deploy.md` "If the box is attacked"). Also de-escalates on its own after quiet traffic; re-run to hold a level. |
 
 Add `--dry-run` after the args, e.g.:
 

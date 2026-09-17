@@ -20,6 +20,11 @@
                                 is playing, not a fault - see docs/box-deploy.md.
         - open sockets:        web + kiosk connections held by the server right now; shown
                                 for context, not coloured (empty is normal off-hours).
+
+      Safe mode banner (ticket S18): hidden while /status.safe_mode.level is 'normal'; amber
+      for 'guarded', red for 'locked'. Text is the level and the reason (a manual command, or
+      which automatic threshold tripped) so an operator glancing at this page can tell a real
+      attack from a busy booth - see docs/box-deploy.md "If the box is attacked".
     -->
     <style>
       :root {
@@ -106,10 +111,27 @@
         color: var(--red-fg);
         max-width: 640px;
       }
+      #safe-mode-banner {
+        display: none;
+        margin-bottom: 16px;
+        padding: 12px 16px;
+        border-radius: 8px;
+        max-width: 640px;
+        font-weight: 600;
+      }
+      #safe-mode-banner.guarded {
+        background: #3a2a10;
+        color: #fbbf24;
+      }
+      #safe-mode-banner.locked {
+        background: var(--red-bg);
+        color: var(--red-fg);
+      }
     </style>
   </head>
   <body>
     <h1>Gold Rush - ops</h1>
+    <div id="safe-mode-banner"></div>
     <div id="meta">Loading /status...</div>
     <table>
       <tbody>
@@ -148,6 +170,7 @@
 
         var metaEl = document.getElementById('meta');
         var errorEl = document.getElementById('error');
+        var safeModeBanner = document.getElementById('safe-mode-banner');
         var cells = {
           feed: document.getElementById('cell-feed'),
           age: document.getElementById('cell-age'),
@@ -163,7 +186,18 @@
           el.classList.add(state);
         }
 
+        function renderSafeMode(safeMode) {
+          if (!safeMode || safeMode.level === 'normal') {
+            safeModeBanner.style.display = 'none';
+            return;
+          }
+          safeModeBanner.className = safeMode.level === 'locked' ? 'locked' : 'guarded';
+          safeModeBanner.textContent = 'Safe mode: ' + safeMode.level.toUpperCase() + ' (' + safeMode.reason + ')';
+          safeModeBanner.style.display = 'block';
+        }
+
         function render(status) {
+          renderSafeMode(status.safe_mode);
           var sources = (status.feed && status.feed.sources) || {};
           var anyConnected = Object.keys(sources).some(function (id) {
             return sources[id].connected;

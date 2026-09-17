@@ -30,6 +30,19 @@ The domain is `xchief.academy`. The game runs at `goldrush.xchief.academy`.
 
 Hand over: confirmation of the record, and member access for the developer.
 
+The developer, once they have that access, sets up two more things themselves (ticket S18, the
+"if the box is attacked" hardening) - listed here so it is clear what "developer access" above is
+for, not something you need to do yourself:
+
+- **Bot Fight Mode**, turned on above: **Security** → **Bots** → **Bot Fight Mode** → **On**.
+- **A rate-limiting rule** on the game traffic: **Security** → **WAF** → **Rate limiting rules**
+  → **Create rule**. Name it, e.g., `goldrush-ws-api`; match expression
+  `(http.request.uri.path eq "/ws") or (http.request.uri.path.starts_with("/api/"))`; rate 60
+  requests per 1 minute per IP address; action **Block** for 1 minute; deploy.
+- The manual last resort, used only during a live attack and reverted after: **Security** →
+  **Settings** → **Security Level** → **I'm Under Attack**, set back to its previous value
+  once the attack has passed. This is a runtime toggle, not part of the initial setup.
+
 ## 3. Code repository access
 
 The server pulls the code from `github.com/AIT-ERP/xChief-Gold-Rush` over SSH. This needs a deploy key on that repository.
