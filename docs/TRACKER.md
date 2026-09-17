@@ -12,11 +12,11 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | L1 game on the box | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 7/7 | 0 | complete, load-tested (100 sockets, p95 settle 5024 ms), rehearsed through compose + Caddy |
 | L1.5 client experience | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 18/19 | C4b animation ⏳, Q1 rest 🟡 | booth and web flows built and verified end to end; red team: every loophole fixed (C10) |
 | L2 hardening | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 7/18 | S1, S3, S5, S6, S8, S10, S11, S12, S14, S15 are M2 scope creep | S2 rate limits and S18 safe mode merged; production numbers under review with the owner |
-| MKT Part B | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 13/16 | B8 📋, B12 ⏳, B13 ⏳ | B1, B4, B5, B14, B15 (build), B16 done |
+| MKT Part B | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 14/16 | B13 🔨, B12 ⏳ (content) | B1, B4, B5, B14, B15 (build), B16 done |
 | OPS | 🟩🟩🟩🟩🟩🟩⬜⬜⬜⬜ 3/5 | D3 run on the box, D4 schema apply (M2) | deploy scripts built; first real run happens on the box |
 | FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 
-**Demo milestone (M1):** 31 of 33 tickets done. Left: B8 Instagram and B13 hardening (both on OpenCode), then the showcase gate. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
+**Demo milestone (M1):** 32 of 33 tickets done. Left: B13 rewards hardening (OpenCode), then the showcase gate. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
 
 ### Landed on dev today (newest first)
 
@@ -24,6 +24,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 | Time | Ticket | What landed | Gates on the merged tree |
 |---|---|---|---|
+| 17:40 | B8 | Instagram reward bound to an OAuth-verified account, live the day the credentials arrive | 135 unit, 285 pgTAP, 85 integration, 30 E2E |
 | 17:05 | C11 | real first-visit tour and bilingual kiosk intro on the B10 mount points | 127 unit, 28 E2E |
 | 16:30 | T1 | Telegram alerts with an event catalogue and a recommendation per event; first OpenCode Go delivery | 127 unit, 277 pgTAP, 82 integration |
 | 16:05 | B6+B7+B9 | rewards released by the server: video progress, redirect-and-return, email and signup on verify; client renders the server task list | 277 pgTAP, 82 integration, 25 E2E |
@@ -47,7 +48,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 3. ✅ C9, B2+B3, B6+B7+B9 merged.
 4. ✅ S18 safe mode merged.
 5. ✅ B2+B3 merged.
-6. 🔨 B8 Instagram, 🔨 C11 tours, 🔨 B13 rewards hardening: all on OpenCode Go now.
+6. ✅ B8 and C11 merged; 🔨 B13 rewards hardening on OpenCode.
 9. ⏳ B12 YouTube list curation (content), C4b leaderboard animation (after B2).
 10. Demo gate: showcase run on the compose build, all E2E green, then M2 deployment on the box.
 
@@ -142,7 +143,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | B5 | MKT | Per-device identity for anonymous players | Sonnet (cbx) | ✅ done | 189 pgTAP, 40 integration on my run; `clientIp` now owned by S2's limits.js; merged | |
 | B6 | MKT | Reward: video watched (90 %) once per device, released by the server from reported progress | Sonnet (cbx) | ✅ done | `video_progress` with the 90 % threshold and fast-forward guard; released by the server; merged | |
 | B7 | MKT | Reward: redirect and return (Trustpilot, YouTube, Telegram), 5 s window | Sonnet (cbx) | ✅ done | `task_visits`, 5 s window, once per device or email; merged | B13 hardens |
-| B8 | MKT | Reward: Instagram, bound to an OAuth-verified Instagram account once per account, device and email (Instagram exposes no follow check to third parties); env-driven, fake for tests, live the day the app id and secret arrive | OpenCode kimi-k2.7-code | 🔨 building | ticket `docs/tickets/b8-instagram.md`; needs an Instagram app from the owner | after B6 |
+| B8 | MKT | Reward: Instagram, bound to an OAuth-verified Instagram account once per account, device and email (Instagram exposes no follow check to third parties); env-driven, fake for tests, live the day the app id and secret arrive | OpenCode kimi-k2.7-code | ✅ done | `instagram_accounts`, OAuth start/callback, fake Instagram server for tests, `not_configured` until the app credentials arrive, checklist in the runbook; 135 unit, 285 pgTAP, 85 integration, 30 E2E on my merged run; merged | owner: Instagram app id and secret |
 | B9 | MKT | Reward: email verified, released by the server on OTP success | Sonnet (cbx) | ✅ done | email and first-time signup rewards released on OTP verify; closes G1; merged | |
 | B10 | MKT | Tour-seen flag per device (web) and per boot (kiosk) | Sonnet (cbx) | ✅ done | tour placeholder (web, localStorage) and kiosk intro (once per boot); shared `dismissFirstVisit` E2E helper; 19 E2E on my merged run; merged | C11 real tour content |
 | B11 | MKT | Ad banner list served to the client | Sonnet (cbx) | ✅ done | `ads/banners.json` + `public/ads/`, `<AdZone/>` bottom 40 %% of the leaderboard, Caddy `handle_path /ads*`; merged | marketing drops real banners into `ads/` |
