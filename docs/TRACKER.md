@@ -10,13 +10,13 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | Layer | Progress | Open | Read |
 |---|---|---|---|
 | L1 game on the box | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 7/7 | 0 | complete, load-tested (100 sockets, p95 settle 5024 ms), rehearsed through compose + Caddy |
-| L1.5 client experience | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 15/19 | C9 QR claim 🔨, C11 tours ⏳, C4b animation ⏳, Q1 rest 🟡 | booth and web flows built and verified end to end; red team: every loophole fixed (C10) |
+| L1.5 client experience | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 17/19 | C11 tours ⏳, C4b animation ⏳, Q1 rest 🟡 | booth and web flows built and verified end to end; red team: every loophole fixed (C10) |
 | L2 hardening | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 7/18 | S1, S3, S5, S6, S8, S10, S11, S12, S14, S15 are M2 scope creep | S2 rate limits and S18 safe mode merged; production numbers under review with the owner |
 | MKT Part B | 🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜ 8/16 | B6+B7+B9 🔨, B2+B3 🔨, B8 📋, B12 ⏳, B13 ⏳ | B1, B4, B5, B14, B15 (build), B16 done |
 | OPS | 🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜ 2/4 | D3 run on the box (M2), T1 Telegram bot 📋 (M4) | deploy scripts built; first real run happens on the box |
 | FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 
-**Demo milestone (M1):** 24 of 31 tickets done. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
+**Demo milestone (M1):** 25 of 31 tickets done. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
 
 ### Landed on dev today (newest first)
 
@@ -24,6 +24,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 | Time | Ticket | What landed | Gates on the merged tree |
 |---|---|---|---|
+| 14:45 | C9 | prize by QR: reserved coupon + one-time claim link, kiosk QR screen with fa+en text and 20 s countdown, /claim page with email and gift card, expired links release the coupon | 114 unit, 236 pgTAP, 74 integration, 21 E2E |
 | 14:20 | B10+B11 | tour flag and placeholder tour/intro, ad banner zone on the leaderboard, shared first-visit E2E helper | 114 unit, 211 pgTAP, 68 integration, 19 E2E |
 | 14:08 | S18 | safe mode: guarded/locked levels, automatic escalation, operator script, /ops banner, Cloudflare runbook | 108 unit, 211 pgTAP, 68 integration, 17 E2E |
 | 13:55 | ops | OpenCode roster back to efficient builders only | |
@@ -39,7 +40,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 1. ✅ B10+B11 merged.
 2. ✅ B15 merged (clean boot verified).
-3. 🔨 C9 QR claim flow (running) and 🔨 B6+B7+B9 rewards (running): verify and merge as they land.
+3. ✅ C9 merged. 🔍 B6+B7+B9 and 🔍 B2+B3: worker reports green, my verification next.
 4. ✅ S18 safe mode merged.
 5. 📋 B2+B3 paged leaderboard and badges: dispatch now that B1 is merged.
 6. 📋 B8 Instagram: after B6+B7+B9 merges.
