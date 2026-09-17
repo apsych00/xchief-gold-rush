@@ -32,6 +32,7 @@ const LEADERBOARD_DEBOUNCE_MS = 1000; // docs/layers.md C4: "debounced to at mos
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PHONE_RE = /^\+?[0-9 ()-]{7,20}$/;
+const IP_RE = /^[0-9a-fA-F:.]{2,45}$/; // loose IPv4/IPv6 shape check before it reaches an `inet` column
 
 const str = (v, max) =>
   String(v ?? '')
@@ -112,6 +113,61 @@ export function needsRenewal(token, nowSeconds = Math.floor(Date.now() / 1000)) 
   const expiresAt = Number(token.split('.')[2]);
   const issuedAt = expiresAt - TOKEN_TTL_SECONDS;
   return nowSeconds - issuedAt > TOKEN_RENEW_AFTER_SECONDS;
+}
+
+/**
+ * `<deviceId>.<hmacHex>` (ticket B5, docs/tickets/b5-device-identity.md decision 2): signed
+ * with the same PLAYER_TOKEN_SECRET as the player token, but no version and no expiry - a
+ * device is never revoked and never renewed, it is just an opaque id the client happens to
+ * hold onto in localStorage under its own key, forever (or until storage is cleared for it).
+ */
+export function signDeviceToken(deviceId) {
+  const sig = crypto.createHmac('sha256', tokenSecret()).update(deviceId).digest('hex');
+  return `${deviceId}.${sig}`;
+}
+
+/**
+ * Invalid - bad shape, tampered - is treated exactly like absent (decision 2: "if absent or
+ * invalid the server creates a device row"), never an error: the caller (handleAuth) passes
+ * whatever this returns straight to ledger.touchDevice, which creates a fresh device for null.
+ */
+export function verifyDeviceToken(token) {
+  if (typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [id, sigHex] = parts;
+  if (!UUID_RE.test(id)) return null;
+  const expectedHex = crypto.createHmac('sha256', tokenSecret()).update(id).digest('hex');
+  let given;
+  let expected;
+  try {
+    given = Buffer.from(sigHex, 'hex');
+    expected = Buffer.from(expectedHex, 'hex');
+  } catch {
+    return null;
+  }
+  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
+  return id;
+}
+
+/**
+ * The device's own IP (ticket B5 decision 3): Cloudflare's CF-Connecting-IP first, then the
+ * first hop of X-Forwarded-For, else the raw socket address - the same fallback order the box
+ * sits behind for every other client-IP read. A value that does not look like an IP (a proxy
+ * sending garbage) is skipped rather than handed to Postgres's `inet` column to reject.
+ */
+function clientIp(req) {
+  const xff = req.headers['x-forwarded-for'];
+  const candidates = [
+    req.headers['cf-connecting-ip'],
+    Array.isArray(xff) ? xff[0] : typeof xff === 'string' ? xff.split(',')[0] : null,
+    req.socket && req.socket.remoteAddress,
+  ];
+  for (const c of candidates) {
+    const v = typeof c === 'string' ? c.trim() : null;
+    if (v && IP_RE.test(v)) return v;
+  }
+  return null;
 }
 
 async function readJsonBody(req) {
@@ -331,6 +387,7 @@ export function createApp({
       flats24h: aggregates.flats_24h,
       coupons: { available: aggregates.coupons_available, claimed: aggregates.coupons_claimed },
       kiosksActive: aggregates.kiosks_active,
+      devices24h: aggregates.devices_24h,
       db,
     });
   }
@@ -416,7 +473,17 @@ export function createApp({
           version = Number(frame.token.split('.')[1]);
         }
       }
-      if (!playerId) playerId = await ledger.createPlayer();
+
+      // Device identity (ticket B5): resolved before createPlayer, since a brand-new anonymous
+      // player's device_id is set once, at creation, from whichever device this auth frame
+      // carries (decision 2). touchDevice creates a fresh row for an absent or invalid token.
+      const deviceId = await ledger.touchDevice(
+        verifyDeviceToken(frame.device),
+        ws.clientIp,
+        ws.userAgent,
+      );
+
+      if (!playerId) playerId = await ledger.createPlayer(deviceId);
 
       const me = await ledger.getMe(playerId);
       ws.authed = true;
@@ -424,7 +491,7 @@ export function createApp({
       ws.identity = playerId;
       playerSockets.set(playerId, ws);
       const token = currentToken && !needsRenewal(currentToken) ? currentToken : signToken(playerId, version);
-      send(ws, { type: 'welcome', token, me });
+      send(ws, { type: 'welcome', token, device: signDeviceToken(deviceId), me });
       await sendHelloAndPending(ws, 'player', playerId);
     } catch (err) {
       send(ws, { type: 'error', code: err.code || 'unauthenticated' });
@@ -550,11 +617,13 @@ export function createApp({
     }
   }
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
     ws.authed = false;
     ws.kind = null;
     ws.identity = null;
     ws.missedPongs = 0;
+    ws.clientIp = clientIp(req);
+    ws.userAgent = str(req.headers['user-agent'], 200) || null;
 
     ws.on('pong', () => {
       ws.missedPongs = 0;

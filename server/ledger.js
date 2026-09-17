@@ -134,12 +134,42 @@ export async function settlePlayerRound(playerId, roundId, endPrice) {
   return { ...result, best_streak: rows[0] ? rows[0].best_streak : null };
 }
 
-/** New anonymous player: a bare auth.users row, then the players row via ensure_player. */
-export async function createPlayer() {
+/**
+ * New anonymous player: a bare auth.users row, then the players row via ensure_player.
+ * deviceId (ticket B5), if given, is passed straight through to ensure_player's p_device -
+ * applied only on the insert, so this new player's device_id is whichever device the socket's
+ * auth frame resolved to.
+ */
+export async function createPlayer(deviceId = null) {
   const { rows } = await getPool().query('insert into auth.users default values returning id');
   const id = rows[0].id;
-  await call('ensure_player', id);
+  await call('ensure_player', id, deviceId);
   return id;
+}
+
+/**
+ * Device identity (ticket B5, docs/tickets/b5-device-identity.md decision 2-3): resolves the
+ * device row for one `auth` frame. A verified deviceId gets last_seen_at and first_ip touched
+ * (decision 3: both update on every auth, unlike the "first" in the name); ua is set only if
+ * still null (first sight only). No deviceId, or one whose row is gone, creates a fresh device
+ * instead - "absent or invalid" both land here as a new row, which is what the caller then
+ * signs into the `device` token on `welcome`.
+ */
+export async function touchDevice(deviceId, ip, ua) {
+  if (deviceId) {
+    const { rows } = await getPool().query(
+      `update public.devices set last_seen_at = now(), first_ip = $2, ua = coalesce(ua, $3)
+         where id = $1
+       returning id`,
+      [deviceId, ip, ua],
+    );
+    if (rows[0]) return rows[0].id;
+  }
+  const { rows } = await getPool().query(
+    'insert into public.devices (first_ip, ua) values ($1, $2) returning id',
+    [ip, ua],
+  );
+  return rows[0].id;
 }
 
 /** The caller's players row, created if absent (get_me() inside a set app.player_id transaction). */
@@ -302,7 +332,9 @@ export async function statusAggregates() {
          where outcome = 'flat' and end_at > now() - interval '24 hours') as flats_24h,
       (select count(*)::int from public.coupons where status = 'available') as coupons_available,
       (select count(*)::int from public.coupons where status = 'claimed') as coupons_claimed,
-      (select count(*)::int from public.kiosks where status = 'active') as kiosks_active
+      (select count(*)::int from public.kiosks where status = 'active') as kiosks_active,
+      (select count(*)::int from public.devices
+         where last_seen_at > now() - interval '24 hours') as devices_24h
   `);
   return rows[0];
 }
