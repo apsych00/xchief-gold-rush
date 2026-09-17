@@ -160,9 +160,7 @@ const dict = {
       openAccount: 'ساخت حساب · {n}+',
       share: 'اشتراک رکوردم',
       shareText: 'رکوردم توی چالش طلای xChief: {record} سکه ({level}). می‌تونی بزنی؟ {url}',
-      reset: 'شروع دوباره',
-      resetConfirm: 'بله، پیشرفتم پاک بشه',
-      foot: 'پیشرفت روی همین دستگاه ذخیره می‌شه. شروع دوباره یعنی برگشت به {n} سکه.',
+      foot: 'پیشرفت روی همین دستگاه ذخیره می‌شه.',
     },
     tasks: {
       title: 'سکه بگیر',
@@ -438,9 +436,7 @@ const dict = {
       openAccount: 'Open account · +{n}',
       share: 'Share my record',
       shareText: 'My record in the xChief Gold Rush: {record} coins ({level}). Can you beat it? {url}',
-      reset: 'Start over',
-      resetConfirm: 'Yes, wipe my progress',
-      foot: 'Progress is saved on this device. Starting over resets you to {n} coins.',
+      foot: 'Progress is saved on this device.',
     },
     tasks: {
       title: 'Get coins',
