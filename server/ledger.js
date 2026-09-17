@@ -201,10 +201,10 @@ export async function touchDevice(deviceId, ip, ua) {
     );
     if (rows[0]) return rows[0].id;
   }
-  const { rows } = await getPool().query(
-    'insert into public.devices (first_ip, ua) values ($1, $2) returning id',
-    [ip, ua],
-  );
+  const { rows } = await getPool().query('insert into public.devices (first_ip, ua) values ($1, $2) returning id', [
+    ip,
+    ua,
+  ]);
   return rows[0].id;
 }
 
@@ -579,6 +579,28 @@ export async function setSetting(key, value) {
 export async function getDeviceCreatedAt(deviceId) {
   const { rows } = await getPool().query('select created_at from public.devices where id = $1', [deviceId]);
   return rows[0] ? rows[0].created_at : null;
+}
+
+/** Instagram account storage (ticket B8). Called by the OAuth callback after the adapter has
+ * verified the account. Throws on duplicate ig_user_id (the caller maps unique_violation to
+ * already_claimed). */
+export async function storeInstagramAccount(playerId, igUserId, username, deviceId = null) {
+  await getPool().query(
+    'insert into public.instagram_accounts (ig_user_id, username, player_id, device_id) values ($1, $2, $3, $4)',
+    [igUserId, username, playerId, deviceId],
+  );
+}
+
+/** Look up an Instagram account by its user id. */
+export async function findInstagramAccount(igUserId) {
+  const { rows } = await getPool().query('select * from public.instagram_accounts where ig_user_id = $1', [igUserId]);
+  return rows[0] || null;
+}
+
+/** The device_id currently stored on the player's row, or null. */
+export async function getPlayerDeviceId(playerId) {
+  const { rows } = await getPool().query('select device_id from public.players where id = $1', [playerId]);
+  return rows[0] ? rows[0].device_id : null;
 }
 
 /** Process start: nobody is left to honestly settle a round still marked open. */

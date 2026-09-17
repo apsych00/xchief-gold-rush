@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { PROMO_VIDEO_SECONDS, PROMO_VIDEO_URL, STAFF_PIN, TASK_ICONS, VERIFY_MODE } from './config.js';
 import { num, useLang } from './i18n.js';
+import { apiUrl } from './api/client.js';
+import { getStoredToken } from './api/socket.js';
 import Logo from './Logo.jsx';
 
 function PinModal({ onOk, onCancel }) {
@@ -155,7 +157,22 @@ export default function Tasks({
   const [waiting, setWaiting] = useState({}); // task id -> window-close timestamp
   const [pinFor, setPinFor] = useState(null);
   const [videoTask, setVideoTask] = useState(null);
+  const [igStatus, setIgStatus] = useState(() => new URLSearchParams(window.location.search).get('ig'));
   const pendingReturns = useRef(new Set());
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ig = params.get('ig');
+    if (ig) {
+      setIgStatus(ig);
+      params.delete('ig');
+      const qs = params.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+      // A successful return should refresh the task list so the instagram row shows claimed.
+      if (ig === 'done') onRefreshTasks?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 250);
@@ -233,6 +250,16 @@ export default function Tasks({
       onOpenIdentity?.();
       return;
     }
+    if (row.kind === 'instagram') {
+      const token = getStoredToken();
+      if (!token) {
+        onToast?.('unauthenticated');
+        return;
+      }
+      setIgStatus('connecting');
+      window.location.href = apiUrl(`/api/instagram/start?token=${encodeURIComponent(token)}`);
+      return;
+    }
     // 'manual' (none seeded, kept for future use): the same instant-claim / PIN-gated path this
     // screen always had for a task with no server-tracked progress of its own.
     if (VERIFY_MODE === 'pin') {
@@ -242,20 +269,42 @@ export default function Tasks({
     onClaim(row.id);
   };
 
+  const instagramBannerText =
+    igStatus === 'done'
+      ? t('tasks.instagramDone')
+      : igStatus === 'not_configured'
+        ? t('tasks.instagramComingSoon')
+        : igStatus === 'connecting'
+          ? t('tasks.instagramPending')
+          : igStatus
+            ? t('tasks.instagramFailed')
+            : null;
+
   return (
     <section className="tasks">
       <div className="screen-head">
         <div className="screen-title">{t('tasks.title')}</div>
         <div className="screen-sub">{t('tasks.sub')}</div>
       </div>
+      {instagramBannerText && (
+        <div
+          className={`instagram-status ${igStatus === 'done' ? 'instagram-status-done' : igStatus === 'not_configured' ? 'instagram-status-soon' : 'instagram-status-pending'}`}
+          role="status"
+        >
+          {instagramBannerText}
+        </div>
+      )}
       <div className="task-list">
         {tasksRows.map((row) => {
           const st = statusOf(row);
           const item = `tasks.items.${row.id}`;
           const done = st.kind === 'claimed';
-          const actionable = row.kind !== 'instagram'; // B8's own ticket, not built yet
+          const notConfigured = row.kind === 'instagram' && igStatus === 'not_configured';
           return (
-            <div key={row.id} className={`task ${row.id === 'signup' ? 'task-featured' : ''} ${done ? 'task-done' : ''}`}>
+            <div
+              key={row.id}
+              className={`task ${row.id === 'signup' ? 'task-featured' : ''} ${done ? 'task-done' : ''}`}
+            >
               <div className="task-icon" aria-hidden="true">
                 {TASK_ICONS[row.id] || '•'}
               </div>
@@ -273,9 +322,14 @@ export default function Tasks({
                     {t('tasks.waiting', { s: num(Math.ceil(st.left / 1000), lang) })}
                   </button>
                 )}
-                {st.kind === 'available' && actionable && (
+                {st.kind === 'available' && !notConfigured && (
                   <button type="button" className="task-btn" onClick={() => begin(row)}>
                     {row.kind === 'redirect' ? t('tasks.open') : t('tasks.start')}
+                  </button>
+                )}
+                {notConfigured && (
+                  <button type="button" className="task-btn" disabled>
+                    {t('tasks.instagramComingSoon')}
                   </button>
                 )}
               </div>

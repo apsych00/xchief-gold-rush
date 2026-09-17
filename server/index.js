@@ -20,6 +20,7 @@ import { createLimits, LIMITS } from './limits.js';
 import { createSafeMode } from './safemode.js';
 import * as ledger from './ledger.js';
 import * as otp from './otp.js';
+import * as instagram from './instagram.js';
 
 const PING_INTERVAL_MS = 25000;
 const MAX_MISSED_PONGS = 2;
@@ -169,6 +170,40 @@ export function verifyDeviceToken(token) {
   }
   if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
   return id;
+}
+
+/**
+ * Instagram OAuth state (ticket B8): a signed player id so the callback can recover who started
+ * the flow without keeping server-side state. The state is `<playerId>.<hmac>` - the HMAC proves
+ * the id was minted by this server, and the id itself is what the callback needs.
+ */
+export function signInstagramState(playerId) {
+  const sig = crypto.createHmac('sha256', tokenSecret()).update(playerId).digest('hex');
+  return `${playerId}.${sig}`;
+}
+
+export function readInstagramState(state) {
+  if (typeof state !== 'string') return null;
+  const parts = state.split('.');
+  if (parts.length !== 2) return null;
+  const [id, sigHex] = parts;
+  if (!UUID_RE.test(id)) return null;
+  const expectedHex = crypto.createHmac('sha256', tokenSecret()).update(id).digest('hex');
+  let given;
+  let expected;
+  try {
+    given = Buffer.from(sigHex, 'hex');
+    expected = Buffer.from(expectedHex, 'hex');
+  } catch {
+    return null;
+  }
+  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
+  return id;
+}
+
+function redirect(res, location) {
+  res.writeHead(302, { Location: location });
+  res.end();
 }
 
 /**
@@ -511,6 +546,7 @@ export function createApp({
       devices24h: aggregates.devices_24h,
       limits: limits.stats(),
       safe_mode: safeMode.status(),
+      instagram: instagram.status(),
       db,
     });
   }
@@ -555,6 +591,93 @@ export function createApp({
       const publicCode = code === 'claim_invalid' ? 'invalid' : code === 'claim_link_expired' ? 'expired' : code;
       sendJson(res, publicCode === 'internal' ? 500 : 409, { ok: false, error: publicCode });
     }
+  }
+
+  function parseQuery(url) {
+    const idx = url.indexOf('?');
+    return idx === -1 ? new URLSearchParams() : new URLSearchParams(url.slice(idx));
+  }
+
+  /**
+   * GET /api/instagram/start?token=<player token> (ticket B8): verifies the player token, signs
+   * the player's id into the OAuth state, and redirects to Instagram's authorize URL. Missing or
+   * invalid tokens redirect back to the SPA as unauthenticated; an unconfigured adapter redirects
+   * as not_configured.
+   */
+  async function handleInstagramStart(req, res) {
+    const query = parseQuery(req.url);
+    const token = query.get('token');
+    if (!token) {
+      redirect(res, '/?ig=unauthenticated');
+      return;
+    }
+    const playerId = await verifyToken(token);
+    if (!playerId) {
+      redirect(res, '/?ig=unauthenticated');
+      return;
+    }
+    const state = signInstagramState(playerId);
+    const auth = instagram.authorizeUrl({ state });
+    if (!auth.ok) {
+      redirect(res, `/?ig=${auth.code}`);
+      return;
+    }
+    redirect(res, auth.url);
+  }
+
+  /**
+   * GET /api/instagram/callback (ticket B8): Instagram sends back `code` and `state`. The state
+   * is verified to recover the player id; the code is exchanged for an access token, the token
+   * is used to read the user's id/username, the account is stored, and the instagram task reward
+   * is released server-side. Every failure redirects to `/?ig=<code>` so the SPA can show the
+   * right state.
+   */
+  async function handleInstagramCallback(req, res) {
+    const query = parseQuery(req.url);
+    const error = query.get('error');
+    if (error) {
+      redirect(res, `/?ig=${encodeURIComponent(error)}`);
+      return;
+    }
+    const code = query.get('code');
+    const state = query.get('state');
+    if (!code || !state) {
+      redirect(res, '/?ig=invalid_request');
+      return;
+    }
+    const playerId = readInstagramState(state);
+    if (!playerId) {
+      redirect(res, '/?ig=invalid_state');
+      return;
+    }
+    const exchanged = await instagram.exchangeCode({ code });
+    if (!exchanged.ok) {
+      redirect(res, `/?ig=${exchanged.code}`);
+      return;
+    }
+    const me = await instagram.readMe({ token: exchanged.access_token });
+    if (!me.ok) {
+      redirect(res, `/?ig=${me.code}`);
+      return;
+    }
+    try {
+      const deviceId = await ledger.getPlayerDeviceId(playerId);
+      await ledger.storeInstagramAccount(playerId, me.id, me.username, deviceId);
+    } catch (err) {
+      if (err && err.code === '23505') {
+        redirect(res, '/?ig=already_claimed');
+        return;
+      }
+      console.error('[instagram] store account error', err);
+      redirect(res, '/?ig=internal');
+      return;
+    }
+    const reward = await ledger.releaseTaskReward(playerId, 'instagram');
+    if (!reward) {
+      redirect(res, '/?ig=already_claimed');
+      return;
+    }
+    redirect(res, '/?ig=done');
   }
 
   const kioskIdleSweep = createKioskIdleSweep({
@@ -626,6 +749,30 @@ export function createApp({
           return;
         }
         res.writeHead(405, { Allow: 'GET, POST', 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'method_not_allowed' }));
+        return;
+      }
+      if (req.url.startsWith('/api/instagram/start')) {
+        if (req.method === 'GET') {
+          handleInstagramStart(req, res).catch((err) => {
+            console.error('[instagram] start error', err);
+            redirect(res, '/?ig=internal');
+          });
+          return;
+        }
+        res.writeHead(405, { Allow: 'GET', 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'method_not_allowed' }));
+        return;
+      }
+      if (req.url.startsWith('/api/instagram/callback')) {
+        if (req.method === 'GET') {
+          handleInstagramCallback(req, res).catch((err) => {
+            console.error('[instagram] callback error', err);
+            redirect(res, '/?ig=internal');
+          });
+          return;
+        }
+        res.writeHead(405, { Allow: 'GET', 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: 'method_not_allowed' }));
         return;
       }
@@ -874,7 +1021,11 @@ export function createApp({
           const taskId = str(frame.task, 40);
           const progress = await ledger.reportVideoProgress(id, taskId, Number(frame.seconds), Number(frame.duration));
           const me = await ledger.getMe(id);
-          send(ws, { type: 'me', ...me, ...(progress.reward != null ? { reward: progress.reward, task: taskId } : {}) });
+          send(ws, {
+            type: 'me',
+            ...me,
+            ...(progress.reward != null ? { reward: progress.reward, task: taskId } : {}),
+          });
           break;
         }
         case 'task_start': {

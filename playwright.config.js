@@ -14,6 +14,8 @@ const GAME_SERVER_PORT = process.env.PORT || '8787';
 // The Vite port follows BASE_URL so parallel checkouts can each run the suite on their own port.
 const VITE_PORT = new URL(BASE_URL).port || '5173';
 const GAME_SERVER_URL = `http://localhost:${GAME_SERVER_PORT}/health`;
+const FAKE_INSTAGRAM_PORT = process.env.FAKE_INSTAGRAM_PORT || '9876';
+const FAKE_INSTAGRAM_URL = `http://localhost:${FAKE_INSTAGRAM_PORT}`;
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -47,6 +49,12 @@ export default defineConfig({
         MAX_CONNECTIONS_PER_IP_PER_MIN: '1000',
         MAX_SOCKETS_PER_IP: '1000',
         MAX_OTP_REQUESTS_PER_IP_PER_10MIN: '1000',
+        // Instagram reward fake (ticket B8). Leave empty to test the real Instagram flow; the
+        // E2E suite uses the fake server defined below.
+        INSTAGRAM_APP_ID: process.env.INSTAGRAM_APP_ID || 'fake-app-id',
+        INSTAGRAM_APP_SECRET: process.env.INSTAGRAM_APP_SECRET || 'fake-app-secret',
+        INSTAGRAM_REDIRECT_URI: process.env.INSTAGRAM_REDIRECT_URI || `${BASE_URL}/api/instagram/callback`,
+        INSTAGRAM_API_BASE: process.env.INSTAGRAM_API_BASE || FAKE_INSTAGRAM_URL,
       },
     },
     {
@@ -55,6 +63,19 @@ export default defineConfig({
       url: BASE_URL,
       reuseExistingServer: true,
       timeout: 60_000,
+      env: {
+        VITE_GAME_WS: process.env.VITE_GAME_WS || `ws://localhost:${GAME_SERVER_PORT}/ws`,
+      },
+    },
+    {
+      // Fake Instagram OAuth server for ticket B8 E2E tests.
+      command: 'node test/fakes/instagram.mjs',
+      url: `${FAKE_INSTAGRAM_URL}/health`,
+      reuseExistingServer: true,
+      timeout: 10_000,
+      env: {
+        FAKE_INSTAGRAM_PORT: String(FAKE_INSTAGRAM_PORT),
+      },
     },
   ],
 });

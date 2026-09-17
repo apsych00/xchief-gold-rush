@@ -44,6 +44,10 @@ function readToken() {
   }
 }
 
+export function getStoredToken() {
+  return readToken();
+}
+
 function storeToken(token) {
   try {
     localStorage.setItem(TOKEN_KEY, token);

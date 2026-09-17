@@ -231,6 +231,30 @@ Done. The campaign runs itself from here.
 
 ---
 
+## Instagram follow reward (ticket B8)
+
+The "Follow on Instagram" task is built and ready, but it only activates once the Instagram app credentials are added. Until then `/status` reports `instagram: "not_configured"` and the task shows "Coming soon".
+
+### What the reward can and cannot prove
+
+Instagram does not provide a third-party endpoint that answers "does user X follow account Y". What the game can prove is that a real Instagram account completed Instagram Login (OAuth) and gave us its `user_id` and `username`. The reward is bound to that Instagram account once, and to the player's device and verified email per the existing reward rules (ticket B5). A second player or device that presents the same `ig_user_id` is refused with `already_claimed`.
+
+After OAuth the client deep-links to `INSTAGRAM_PROFILE_URL` with a "Follow, then come back" step. The actual follow is not verified by the API - the same lenient model as the other redirect-and-return tasks (ticket B7), with a hardening pass planned in ticket B13.
+
+### When the Instagram credentials arrive
+
+1. In the Instagram app dashboard, set the OAuth redirect URI to `https://<your-domain>/api/instagram/callback` (replace `<your-domain>` with the same `SITE_ADDRESS` value from step 3).
+2. Edit `.env.box` and fill in the four Instagram lines:
+   - `INSTAGRAM_APP_ID`
+   - `INSTAGRAM_APP_SECRET`
+   - `INSTAGRAM_REDIRECT_URI` - must match the URI registered in the Instagram dashboard.
+   - `INSTAGRAM_PROFILE_URL` - the xChief Instagram profile the player is asked to follow, e.g. `https://www.instagram.com/xchief/`.
+3. Run `deploy/deploy.sh` to restart the server with the new env.
+4. Smoke test: open the coins screen, tap "Follow on Instagram", complete the OAuth flow, and return. The URL should end with `?ig=done`, the task row should show "Claimed", and the balance should increase by the task reward (default 300).
+5. Check `https://<your-domain>/status` - the `instagram` field should now read `"configured"`.
+
+---
+
 ## When something breaks
 
 Stay calm and go in this order. All commands run in

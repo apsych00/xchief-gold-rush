@@ -2017,3 +2017,22 @@ button:focus:not(:focus-visible) {
     height: 40px;
   }
 }
+
+/* Instagram task status banner (ticket B8) */
+.instagram-status {
+  margin: 0 16px 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.08);
+}
+.instagram-status-done {
+  background: rgba(53, 227, 111, 0.16);
+  color: var(--green);
+}
+.instagram-status-soon,
+.instagram-status-pending {
+  background: rgba(233, 182, 42, 0.14);
+  color: var(--gold);
+}
