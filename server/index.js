@@ -391,8 +391,11 @@ export function createApp({
   }
 
   async function handleAuth(ws, frame) {
-    try {
-      if (frame.kiosk) {
+    // D7 (docs/reports/redteam.md): the kiosk parameter's presence is the signal, not its
+    // truthiness - `''` (a launch URL that lost its query string) must fail closed as a kiosk,
+    // never fall through and be welcomed as a fresh web player.
+    if (frame.kiosk !== undefined) {
+      try {
         const kioskId = await ledger.call('verify_kiosk', frame.kiosk);
         ws.authed = true;
         ws.kind = 'kiosk';
@@ -402,9 +405,16 @@ export function createApp({
         send(ws, { type: 'welcome', kiosk: true, streak: session.streak });
         send(ws, { type: 'kiosk_session', ...session });
         await sendHelloAndPending(ws, 'kiosk', kioskId);
-        return;
+      } catch (err) {
+        const code = ledger.KNOWN_ERROR_CODES.includes(err.code) ? err.code : 'internal';
+        if (code === 'internal') console.error('[auth] kiosk auth error', err);
+        send(ws, { type: 'error', code });
+        ws.close(4401, code);
       }
+      return;
+    }
 
+    try {
       let playerId = null;
       let currentToken = null;
       let version = 1;
@@ -427,7 +437,9 @@ export function createApp({
       send(ws, { type: 'welcome', token, me });
       await sendHelloAndPending(ws, 'player', playerId);
     } catch (err) {
-      send(ws, { type: 'error', code: err.code || 'unauthenticated' });
+      const code = ledger.KNOWN_ERROR_CODES.includes(err.code) ? err.code : 'internal';
+      if (code === 'internal') console.error('[auth] error', err);
+      send(ws, { type: 'error', code });
     }
   }
 
@@ -491,6 +503,12 @@ export function createApp({
           break;
         }
         case 'leaderboard': {
+          // D8 (docs/reports/redteam.md): a kiosk has no email and is never ranked; guarded the
+          // same way every other player-only frame already is.
+          if (kind !== 'player') {
+            send(ws, { type: 'error', code: 'not_available' });
+            break;
+          }
           send(ws, { type: 'leaderboard', rows: await ledger.leaderboard() });
           break;
         }
@@ -540,7 +558,12 @@ export function createApp({
           break; // unknown frame type: ignored, not an error
       }
     } catch (err) {
-      send(ws, { type: 'error', code: err.code || 'internal' });
+      // D9 (docs/reports/redteam.md): only a code the game contract owns ever reaches the
+      // client - a raw Postgres SQLSTATE (or any other unmapped error) becomes `internal`, and
+      // the original is logged here, tagged with the frame type that triggered it.
+      const code = ledger.KNOWN_ERROR_CODES.includes(err.code) ? err.code : 'internal';
+      if (code === 'internal') console.error(`[frame:${frame.type}] error`, err);
+      send(ws, { type: 'error', code });
       if (kind === 'kiosk' && err.code === 'insufficient_coins') {
         // open_kiosk_round marked the session broke when it refused the stake; the kiosk's
         // screen is driven by kiosk_session frames, so tell it (docs/layers.md C2).

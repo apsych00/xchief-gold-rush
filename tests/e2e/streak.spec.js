@@ -8,6 +8,8 @@ const KIOSK_SECRET = 'dev-kiosk-secret-0001';
 const KIOSK_URL = `/?k=${KIOSK_SECRET}`;
 
 function gameWsUrl() {
+  // The environment wins over .env so a run on another port resets the kiosk the browser uses.
+  if (process.env.VITE_GAME_WS) return process.env.VITE_GAME_WS.trim();
   const text = fs.readFileSync(new URL('../../.env', import.meta.url), 'utf8');
   const line = text.split(/\r?\n/).find((l) => l.startsWith('VITE_GAME_WS='));
   return line ? line.slice('VITE_GAME_WS='.length).trim() : null;

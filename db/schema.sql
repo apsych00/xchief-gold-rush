@@ -476,6 +476,12 @@ begin
   where id = p_kiosk and status = 'active'
   returning * into k;
   if not found then raise exception 'kiosk_unauthorized'; end if;
+  -- D1 (docs/reports/redteam.md): void any round still open for this kiosk so a late settle
+  -- (settle_kiosk_round finds status <> 'open' and raises round_not_open) can never apply its
+  -- delta to the fresh session this statement just started, and can never drag the screen back
+  -- out of attract mode into a stranger's verdict.
+  update public.rounds set status = 'settled', outcome = 'void', end_at = now()
+  where kiosk_id = p_kiosk and status = 'open';
   select count(*) into v_codes_left from public.coupons where status = 'available';
   return json_build_object('coins', k.session_coins, 'streak', k.streak, 'state', k.session_state, 'codes_left', v_codes_left);
 end $$;
@@ -496,6 +502,12 @@ begin
   where id = p_kiosk and status = 'active'
   returning * into k;
   if not found then raise exception 'kiosk_unauthorized'; end if;
+  -- D1 (docs/reports/redteam.md): void any round still open for this kiosk in the same
+  -- statement, so a verdict that lands after this reset finds nothing to settle (round_not_open)
+  -- rather than re-basing its delta onto the next visitor's fresh pot and pulling the screen
+  -- back out of attract mode.
+  update public.rounds set status = 'settled', outcome = 'void', end_at = now()
+  where kiosk_id = p_kiosk and status = 'open';
   select count(*) into v_codes_left from public.coupons where status = 'available';
   return json_build_object('coins', k.session_coins, 'streak', k.streak, 'state', k.session_state, 'codes_left', v_codes_left);
 end $$;

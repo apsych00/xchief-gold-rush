@@ -15,11 +15,13 @@ import pg from 'pg';
 
 function readEnv() {
   const out = {};
+  // The environment wins over .env so a run on another port resets the kiosk the browser uses.
   const text = fs.readFileSync(new URL('../../.env', import.meta.url), 'utf8');
   for (const line of text.split(/\r?\n/)) {
     const i = line.indexOf('=');
     if (i > 0 && !line.trim().startsWith('#')) out[line.slice(0, i).trim()] = line.slice(i + 1).trim();
   }
+  if (process.env.VITE_GAME_WS) out.VITE_GAME_WS = process.env.VITE_GAME_WS.trim();
   return out;
 }
 const ENV = readEnv();

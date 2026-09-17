@@ -112,11 +112,16 @@ function KioskNoCodesModal() {
   );
 }
 
-function KioskReconnecting() {
+// D7 (docs/reports/redteam.md): the same overlay a dropped connection shows, with one added
+// line when the server rejected this kiosk's secret (revoked, empty, too short) - reconnecting
+// keeps retrying but can never succeed on its own, so this is the booth's only signal to call
+// staff rather than wait it out.
+function KioskReconnecting({ unauthorized }) {
   return (
     <div className="modal-backdrop" role="status" aria-live="assertive">
       <div className="modal kiosk-modal">
         <div className="modal-title kiosk-reconnect-title">Reconnecting…</div>
+        {unauthorized && <div className="modal-sub">Kiosk not configured. Tell the booth staff.</div>}
       </div>
     </div>
   );
@@ -143,7 +148,9 @@ export default function KioskApp({ state, profile, actions, trackRef }) {
       {flow.abandonSecondsLeft !== null && (
         <KioskAbandonOverlay secondsLeft={flow.abandonSecondsLeft} onTap={flow.cancelAbandon} />
       )}
-      {flow.reconnecting && <KioskReconnecting />}
+      {(flow.reconnecting || flow.kioskUnauthorized) && (
+        <KioskReconnecting unauthorized={flow.kioskUnauthorized} />
+      )}
     </>
   );
 }

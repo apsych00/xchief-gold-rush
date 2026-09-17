@@ -5,7 +5,7 @@
 -- Runs in one transaction and rolls back, so the seeded 100 coupons are untouched afterwards.
 begin;
 
-select plan(31);
+select plan(41);
 
 -- start_kiosk_session: a fresh session, playing, full coins, no streak ---------------------
 select tests.create_kiosk('session-start', 'session-start-secret-00000') as k_start \gset
@@ -150,6 +150,71 @@ select is(
   (select session_state from public.kiosks where id = :'k_idle'),
   'playing',
   'the fresh session is playing'
+);
+
+-- D1 (docs/reports/redteam.md): reset_kiosk_session and start_kiosk_session void any round
+-- still open for that kiosk, so a late settle can never re-base its delta onto the next
+-- session's fresh pot or drag the screen back out of attract mode -------------------------
+select tests.create_kiosk('session-d1-reset', 'session-d1-reset-secret00') as k_d1_reset \gset
+update public.kiosks set session_coins = 200, streak = 0, session_state = 'playing',
+  last_round_at = now() where id = :'k_d1_reset';
+select (public.open_kiosk_round(:'k_d1_reset'::uuid, 'up', 100)->>'round_id')::uuid as rd_d1_reset \gset
+select public.reset_kiosk_session(:'k_d1_reset'::uuid) as reset_d1_json \gset
+select is(
+  (select status from public.rounds where id = :'rd_d1_reset'),
+  'settled',
+  'reset_kiosk_session voids the round it was standing on'
+);
+select is(
+  (select outcome from public.rounds where id = :'rd_d1_reset'),
+  'void',
+  'the voided round''s outcome is void'
+);
+select is(
+  (select session_coins from public.kiosks where id = :'k_d1_reset'),
+  1000,
+  'the reset itself still applies its own fresh-session coins'
+);
+select throws_like(
+  $$ select public.settle_kiosk_round('$$ || :'rd_d1_reset' || $$'::uuid, 101) $$,
+  '%round_not_open%',
+  'a late settle on the voided round raises round_not_open, exactly like any other settled round'
+);
+select is(
+  (select session_coins from public.kiosks where id = :'k_d1_reset'),
+  1000,
+  'the failed late settle changed no coins - the reset''s fresh pot is untouched'
+);
+select is(
+  (select session_state from public.kiosks where id = :'k_d1_reset'),
+  'idle',
+  'the failed late settle did not drag the session back out of attract mode'
+);
+
+select tests.create_kiosk('session-d1-start', 'session-d1-start-secret00') as k_d1_start \gset
+update public.kiosks set session_coins = 700, streak = 2, session_state = 'playing',
+  last_round_at = now() where id = :'k_d1_start';
+select (public.open_kiosk_round(:'k_d1_start'::uuid, 'up', 100)->>'round_id')::uuid as rd_d1_start \gset
+select public.start_kiosk_session(:'k_d1_start'::uuid) as start_d1_json \gset
+select is(
+  (select status from public.rounds where id = :'rd_d1_start'),
+  'settled',
+  'start_kiosk_session also voids the round it was standing on'
+);
+select is(
+  (select outcome from public.rounds where id = :'rd_d1_start'),
+  'void',
+  'the voided round''s outcome is void'
+);
+select throws_like(
+  $$ select public.settle_kiosk_round('$$ || :'rd_d1_start' || $$'::uuid, 101) $$,
+  '%round_not_open%',
+  'a late settle after start_kiosk_session also raises round_not_open'
+);
+select is(
+  (select session_coins from public.kiosks where id = :'k_d1_start'),
+  1000,
+  'the failed late settle changed no coins on the freshly started session'
 );
 
 select * from finish();
