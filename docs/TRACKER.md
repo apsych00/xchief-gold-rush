@@ -106,6 +106,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | C9 | L1.5 | Prize by QR: N wins in a row shows a QR with a one-time claim link (fa + en text), 20 s countdown and an "I've scanned it" button that resets the booth; the claim page asks for an email, shows the gift card with the code, emails it; coupon reserved at win, released after 24 h unclaimed | | 🔨 building | approved 2026-09-17, overrides the on-screen code and the reveal idea; ticket `docs/tickets/c9-qr-claim.md`; Sonnet (cbx, live) | verify, merge |
 | C10 | L1.5 | Red-team fixes: `kiosk_reset` cancels the round it stands on (D1, high); empty `?k=` refused (D7); `leaderboard` frame kind check (D8); SQLSTATE never escapes as an error code (D9); kiosk secret guessing throttled (D10) | Sonnet (cbx) | ✅ done | red-team reruns A7/A8/A16 HELD; 211 pgTAP, 58 integration, 17 E2E on my merged run; merged | |
 | D3 | OPS | Execute the runbook on the real box: install, DNS, deploy, rollback rehearsal, alerts, safe mode tried once | | ⏳ queued | needs the admin's box and Cloudflare access | M2 |
+| D4 | OPS | Schema apply on deploy: make `db/schema.sql` re-runnable against a live database (or add migrations) and call it from `deploy/deploy.sh`; smoke-test that `/status` answers after a redeploy | | ⏳ queued | gap G7; without it every schema ticket breaks the next redeploy | M2, before D3 |
 | T1 | OPS | Telegram bot: server events to a group (restart, feed silence/recovery, safe-mode change, IP block, coupon stock low, deploy done), one-line recommendation per event | | 📋 ready | ticket `docs/tickets/t1-telegram-alerts.md`; extends `server/alerts.js` | M4, after S18 |
 | Q1 | L1.5 | Blind E2E over every scenario | gpt-5.6-luna (B14) | 🟡 partly | five-win streak covered by B14; web flows covered by the player-promises and web-identity specs written with the tickets | blind pass for the rest after C4b |
 | B14 | L1.5 | Blind five-win streak tests, kiosk and web | gpt-5.6-luna | ✅ done | coupon row, session_over, exhausted pool, WIN modal E2E; merged `e4efdd0` | |
@@ -159,6 +160,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | G5b | The chart is shown only while a round runs (by design); the idle play screen has no chart. Checked 2026-09-16 on the compose build: it draws. | none; say so in the demo doc |
 | G5 | `npm run format:check` red on ~20 pre-existing files | cosmetic |
 | G6 | `get_tasks()` marks `claimed` per player only, so a task blocked by another player on the same device still looks open until the claim is refused | B6-B9 reworks get_tasks; fold in |
+| G7 | Schema changes never reach an existing database volume: `db/schema.sql` is applied only when the Postgres container initialises an empty volume, so a redeploy on the box after any schema ticket leaves the old tables in place (seen locally 2026-09-17: `public.settings does not exist` after the S18/C9 merges) | M2 blocker: D2's deploy step needs an idempotent apply (`create ... if not exists` plus `create or replace function`) or a migrations folder; card as D4 |
 
 ## Defects found and fixed (for the record)
 
