@@ -1505,6 +1505,30 @@ button:focus:not(:focus-visible) {
   gap: 8px;
   margin-top: 16px;
 }
+/* Ticket C11: the web first-visit tour's dots and Skip/Next row, on top of .modal-actions. */
+.tour-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 16px;
+}
+.tour-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.25);
+}
+.tour-dot-on {
+  background: var(--green);
+}
+.tour-actions {
+  justify-content: space-between;
+  align-items: center;
+}
+/* Keep the primary button on the right on every card, including the last, where Skip is absent. */
+.tour-actions .tour-primary {
+  margin-inline-start: auto;
+}
 .pin-input {
   display: block;
   width: 100%;
@@ -1884,6 +1908,18 @@ button:focus:not(:focus-visible) {
   width: 100%;
   height: 52px;
   font-size: 16px;
+}
+/* Ticket C11: the kiosk intro (A6), one card with both languages at once and larger type for
+   the booth. .modal/.modal-title/.modal-sub are reused; only the two type sizes are scaled up. */
+.kiosk-intro .modal-title {
+  font-size: clamp(22px, 5.6vw, 30px);
+  line-height: 1.4;
+}
+.kiosk-intro .modal-sub {
+  margin-top: 12px;
+  font-size: clamp(16px, 4vw, 21px);
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.8);
 }
 .kiosk-code {
   margin: 14px 0;

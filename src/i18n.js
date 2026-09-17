@@ -228,6 +228,25 @@ const dict = {
     },
     toast: { limit: 'سقف ۶۰ دور در ساعت؛ کمی استراحت کن', coins: '{n}+ سکه' },
     update: { text: 'نسخهٔ جدید بازی آماده‌ست', cta: 'به‌روزرسانی' },
+    // ticket C11: the web first-visit tour (A5), three cards shown one at a time. next/gotIt/skip
+    // are the controls the shared E2E helper (tests/e2e/first-visit.js) drives.
+    tour: {
+      card1: {
+        title: '۵ ثانیهٔ بعد را پیش‌بینی کن',
+        body: 'طلا بالا می‌رود یا پایین. پیش از شروع دور یکی را انتخاب کن.',
+      },
+      card2: {
+        title: 'سکه ببر، از جدول بالا برو',
+        body: 'هر پیش‌بینی درست به رکوردت اضافه می‌کند؛ بالای جدول جایزه می‌گیرد.',
+      },
+      card3: {
+        title: 'برای رتبه‌گرفتن ایمیلت را تأیید کن',
+        body: 'بازی بی‌نام اشکالی ندارد؛ فقط ایمیل‌های تأییدشده در لیدربورد دیده می‌شوند.',
+      },
+      next: 'بعدی',
+      gotIt: 'فهمیدم',
+      skip: 'رد کردن',
+    },
     // ticket C9: the kiosk WON screen shows both languages together, always, regardless of the
     // lang toggle - qrTitleFa/qrTitleEn and scannedBtnFa/scannedBtnEn are read directly by key
     // (never through the active-lang lookup) and so carry the same literal text in both dict.fa
@@ -237,6 +256,14 @@ const dict = {
       qrTitleEn: 'Congratulations! You won the xChief $100 bonus. Scan to claim your gift:',
       scannedBtnFa: 'اسکن کردم',
       scannedBtnEn: "I've scanned it",
+    },
+    // ticket C11: the kiosk intro (A6) shows both languages at once, like the C9 QR screen -
+    // kioskIntro.fa/kioskIntro.en are read directly by key (never through the active-lang
+    // lookup) and carry the same literal text in both dict.fa and dict.en. {n} is the streak
+    // target from the server's kiosk_session frame, never a number baked into the client.
+    kioskIntro: {
+      fa: 'طلا را برای ۵ ثانیه پیش‌بینی کن. {n} برد پشت‌سرهم بگیر و بونوس ۱۰۰ دلاری ایکس‌چیف را ببر.',
+      en: 'Predict gold for 5 seconds. Win {n} in a row and take home the $100 bonus.',
     },
     claim: {
       title: 'جایزهٔ ۱۰۰ دلاری xChief شما',
@@ -474,11 +501,38 @@ const dict = {
     },
     toast: { limit: '60 rounds per hour max. Take a breather', coins: '+{n} coins' },
     update: { text: 'A new version of the game is ready', cta: 'Update' },
+    // ticket C11: the web first-visit tour (A5), three cards shown one at a time. next/gotIt/skip
+    // are the controls the shared E2E helper (tests/e2e/first-visit.js) drives.
+    tour: {
+      card1: {
+        title: 'Call the next 5 seconds',
+        body: 'Gold goes up or down. Pick one before the round starts.',
+      },
+      card2: {
+        title: 'Win coins, climb the board',
+        body: 'Every right call adds to your record; the top of the board wins the prize.',
+      },
+      card3: {
+        title: 'Verify your email to be ranked',
+        body: 'Anonymous play is fine; only verified emails appear on the leaderboard.',
+      },
+      next: 'Next',
+      gotIt: 'Got it',
+      skip: 'Skip',
+    },
     kioskWin: {
       qrTitleFa: 'تبریک! شما برنده بونوس ۱۰۰ دلاری ایکس‌چیف شدید. برای دریافت هدیه اسکن کنید:',
       qrTitleEn: 'Congratulations! You won the xChief $100 bonus. Scan to claim your gift:',
       scannedBtnFa: 'اسکن کردم',
       scannedBtnEn: "I've scanned it",
+    },
+    // ticket C11: the kiosk intro (A6) shows both languages at once, like the C9 QR screen -
+    // kioskIntro.fa/kioskIntro.en are read directly by key (never through the active-lang
+    // lookup) and carry the same literal text in both dict.fa and dict.en. {n} is the streak
+    // target from the server's kiosk_session frame, never a number baked into the client.
+    kioskIntro: {
+      fa: 'طلا را برای ۵ ثانیه پیش‌بینی کن. {n} برد پشت‌سرهم بگیر و بونوس ۱۰۰ دلاری ایکس‌چیف را ببر.',
+      en: 'Predict gold for 5 seconds. Win {n} in a row and take home the $100 bonus.',
     },
     claim: {
       title: 'Your xChief $100 bonus',
