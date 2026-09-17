@@ -10,25 +10,49 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | Layer | Done | Open | Read |
 |---|---|---|---|
 | L1 game on the box | 7 / 7 | 0 | complete, load-tested (100 sockets, p95 settle 5024 ms), rehearsed through compose + Caddy |
-| L1.5 client experience | 13 / 16 | C9 WIN reveal (proposed), C4b animation, Q1 rest | the booth and the web flows are built and verified end to end |
-| OPS | 2 / 2 | 0 | deploy scripts built; first real run happens on the box |
-| FEED | 3 / 5 | MetaApi blocked on admin; Docker bridge in review | Finnhub live with PAXG fallbacks, 3-decimal publishing |
-| L2 hardening | 5 / 18 | S2 and S18 ready to dispatch; S3, S5, S6, S10, S12 next | audit 2026-09-16: S7, S9, S16 were already done by other tickets |
-| MKT Part B | 0 / 13 | B1+B4, B5, B10+B11 ready to dispatch; B2 after B1 | tickets written 2026-09-16 night |
+| L1.5 client experience | 13 / 17 | C10 red-team fixes (ready), C9 WIN reveal (proposed), C4b animation, Q1 rest | the booth and the web flows are built and verified end to end; red team: 2 loopholes, both carded in C10 |
+| OPS | 2 / 4 | D3 run on the box (M2), T1 Telegram bot (M4) | deploy scripts built; first real run happens on the box |
+| FEED | 3 / 5 | M3: MetaApi blocked on admin; Docker bridge hardened, unverified | Finnhub live with PAXG fallbacks, 3-decimal publishing |
+| L2 hardening | 5 / 18 | M1: S2, S18 (with S10, S12); rest moved to scope creep for M2 | audit 2026-09-16: S7, S9, S16 were already done by other tickets |
+| MKT Part B | 3 / 16 | all of B1-B13 are M1 | B14-B16 done; B1+B4, B5, B10+B11 ticketed |
 
 Play it now: compose stack at http://localhost:8080 (kiosk `/?k=dev-kiosk-secret-0001`), operator pages `/ops` and `/logs`.
 
-## Night handover 2026-09-16
+## Plan 2026-09-17: Demo, then the box, then the expansions
 
-Running at shutdown (their files stay in the worktrees; resume each with a RESUME NOTE at the top of its TICKET.md):
-- **B15 harden** on cb in Orca terminal "B15 harden", worktree `b15-review` (branch `nightmareinc/b15-review`, review committed, hardening uncommitted). Known blocker and the fix direction are in its TICKET.md.
-- **Opus demo + red team**, worktree `demo-redteam`: `demo/showcase.mjs`, `demo/redteam.mjs`, `docs/showcase.md`, `docs/reports/showcase-results.md`, `docs/reports/redteam.md` already on disk, uncommitted; the agent was finishing when the session closed. First thing tomorrow: read `docs/reports/redteam.md`, card every loophole, dispatch fixes to cb Sonnet workers.
+Four milestones, in order. Nothing outside the current milestone is picked up unless it blocks it. Anything discovered on the way goes into "Scope creep" below with a priority, and we move on.
 
-Tomorrow's dispatch order (all on cb; switch to this account's Sonnet when cb hits its 5-hour or weekly cap): S2 rate limits, B1+B4 tournaments, B5 device identity, B10+B11, then S18 after S2, B2 after B1, C9 after the owner's yes. Tickets are in `docs/tickets/`.
+**M1 Demo** (today's priority). A simple visitor can play the happy path on the kiosk and on the web, and the operator can run the campaign without code changes.
+- Gameplay and visuals: kiosk attract, play, WIN with code, idle reset; web sign in, play, broke path, leaderboard. Fix what the red team found (C10). C9 WIN reveal only if approved today.
+- Basic security: per-IP and per-socket limits (S2), safe mode with an automatic guarded/locked level and a manual command (S18), Cloudflare rate rule and Under Attack as the last resort. "Am I overwhelmed" is answered in one place: the `/ops` page shows the safe-mode banner, connections per minute and blocked IPs; the same events reach the phone through the alert webhook (Telegram in M4).
+- Tournaments as data: add, remove, change dates through documented SQL one-liners, overlap refused by the database (B1), leaderboard per tournament with paging and own row (B2), badge tiers (B3).
+- Ads: a banner list plus assets in the repo, rotated on the leaderboard (B11).
+- Rewards ("tasks" section): device identity (B5), video watched (B6), redirect and return (B7), Instagram follow with the API adapter built and waiting for credentials (B8), email verified reward (B9), tour flags (B10), hardening (B13). B4 and B12 alongside.
+- Definition of done: the showcase script (`demo/showcase.mjs`) runs green on the compose build, all E2E green, tracker rows above marked done.
 
-Awaiting the owner: MetaApi account UUID + broader token + quote interval 0; OpenCode Go top-up (cap is account-wide, every model refused); C9 decision (coupon reserved at win, released if never revealed).
+**M2 Deploy.** The moment M1 lands: execute `docs/box-deploy.md` on the real box (D3): install, DNS, deploy, rollback rehearsal, alerts wired, safe mode tried once. Needs the admin's box and Cloudflare access (`docs/admin-requirements-box.md`).
 
-Local stack: compose on http://localhost:8080 comes back by itself after boot (`restart: unless-stopped`); rebuild from `dev` with the compose command in `box-deploy.md` if it looks stale. Kept test DB `goldrush-box-keep` on 55432.
+**M3 Expansion 1, MT5.** Both feed paths in a plug-and-play state: the Docker bridge (B15) merged with its runbook, and MetaApi (S17) with a written "when the credentials arrive" checklist so the swap is a `.env.box` change plus one smoke test. Blocked on the admin for the live test.
+
+**M4 Telegram bot** (T1). Server events to a Telegram group: restart, feed silence and recovery, safe-mode changes, IP blocks, coupon stock low, deploy done, each with a one-line recommendation when it needs a hand.
+
+### The five stages for M1, in dispatch order
+
+1. Land the red-team and showcase work: commit, merge, card the defects (done in this commit).
+2. C10 (red-team fixes) and S2 (rate limits, now including OTP code supersession and the HTTP body cap) in parallel on cb Sonnet.
+3. B1+B4 (tournaments) and B5 (device identity) in parallel with stage 2; they touch schema and client, not the socket layer.
+4. Verify the B15 hardening report; merge or send back. Not on the M1 path, but it is finished work sitting on a branch.
+5. Behind those, in order: B10+B11, S18 after S2, B2 and B3 after B1, B6+B7+B9 after B5, B8 after B6, B13 last, then the showcase run as the M1 gate.
+
+### Scope creep (found on the way; carded, prioritised, not picked up)
+
+| ID | Found while | What | Priority | Goes to |
+|---|---|---|---|---|
+| X1 | red team | `/status` and `/health` answer anyone (D6) | low | M2, basic_auth on `/status` in Caddy if the admin wants it |
+| X2 | red team | `npm run format:check` red on pre-existing files (G5) | low | any idle worker |
+| X3 | tracker audit | S5/S15 Postgres least privilege, S6 nightly dump and restore | medium | M2 |
+| X4 | tracker audit | S3 kiosk secret out of the URL | medium | M2 (needs a booth procedure) |
+| X5 | tracker audit | S1 secret rotation procedure, S11 code retention | low | M2 |
 
 ## Tickets
 
@@ -47,16 +71,19 @@ Local stack: compose on http://localhost:8080 comes back by itself after boot (`
 | C7 | L1.5 | Broke on the web: refill, tasks, verify email; never a dead end | Sonnet | done | the signup-bonus dead end fixed; broke E2E; merged `a54eeff` | |
 | C8 | L1.5 | Kiosk with no prize codes left: server refuses new rounds, full-screen modal asks the visitor to tell the booth staff, recovers when codes are loaded | Sonnet (cb) | done | 176 pgTAP, 36 integration, kiosk + streak E2E 8/8 on my run; `reports/c8/no-codes.png`; merged | |
 | C9 | L1.5 | WIN reveal: masked code with a glowing Reveal button and confetti; reveal is a server call that returns the code and starts the 30 s photograph window; an unrevealed coupon returns to the pool after the reveal window | | proposed | two decisions with the owner: coupon reserved at win and released if never revealed; reveal window 10-15 s then the existing 30 s | dispatch on approval |
+| C10 | L1.5 | Red-team fixes: `kiosk_reset` cancels the round it stands on (D1, high); empty `?k=` refused (D7); `leaderboard` frame kind check (D8); SQLSTATE never escapes as an error code (D9); kiosk secret guessing throttled (D10) | | ready | red team 2026-09-16: 14 held, 7 partial, 2 loopholes; report `docs/reports/redteam.md` | dispatch now |
+| D3 | OPS | Execute the runbook on the real box: install, DNS, deploy, rollback rehearsal, alerts, safe mode tried once | | queued | needs the admin's box and Cloudflare access | M2 |
+| T1 | OPS | Telegram bot: server events to a group (restart, feed silence/recovery, safe-mode change, IP block, coupon stock low, deploy done), one-line recommendation per event | | queued | extends `server/alerts.js` (webhook already exists); `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | M4 |
 | Q1 | L1.5 | Blind E2E over every scenario | gpt-5.6-luna (B14) | partly | five-win streak covered by B14; web flows covered by the player-promises and web-identity specs written with the tickets | blind pass for the rest after C4b |
 | B14 | L1.5 | Blind five-win streak tests, kiosk and web | gpt-5.6-luna | done | coupon row, session_over, exhausted pool, WIN modal E2E; merged `e4efdd0` | |
 | B16 | L1.5 | E2E regression after the profile merge | Sonnet + orchestrator | done | kiosk crashed on the avatar's missing action; 13/13 E2E; merged `92bd000` | |
 | D1 | OPS | Monitoring: `/status`, `/ops`, `/logs`, alerts | Sonnet | done | merged `4839072`; `$` doubling trap documented | |
 | D2 | OPS | One-command deploy, auto-deploy on push, install, rollback | Sonnet | done | `deploy/*.sh`, `client.Dockerfile` (bundle built in Docker, verified: no dev socket address); box behaviour of install/cron/ufw untestable on Windows, to be rehearsed on the real box | rehearse on the box |
-| S17 | FEED | MT5 via MetaApi | orchestrator | blocked | code merged and reaches MetaApi; refused by token scope | admin: account UUID, token with account read, quote interval 0 |
-| B15 | FEED | MT5 terminal + tick bridge in Docker | Sonnet | verifying | build committed on `nightmareinc/b15-mt5-docker` (74 unit, 11 Python tests); base image pull truncated in the sandbox; independent review running on cb (`b15-review`), then harden, then blind tests | review, harden, tests, merge |
+| S17 | FEED | MT5 via MetaApi, plug-and-play | orchestrator | blocked | code merged and reaches MetaApi; refused by token scope | M3: write the "credentials arrived" checklist; admin: account UUID, token with account read, quote interval 0 |
+| B15 | FEED | MT5 terminal + tick bridge in Docker | Sonnet | verifying | build committed on `nightmareinc/b15-mt5-docker` (74 unit, 11 Python tests); base image pull truncated in the sandbox; review committed; hardening finished by the cb worker, report `docs/reports/b15-harden.md` on `b15-review`, unverified | M3: verify, merge |
 | F1 | FEED | Finnhub + PAXG continuous series, 3 decimals | | done | measured 9 moves / 5 s vs 1-2 on PAXG | |
 | S1 | L2 | Secret rotation procedure | | queued | folded into C3a except the procedure | |
-| S2 | L2 | Per-socket AND per-IP rate limits (sockets per IP, connections per minute, anonymous signups, OTP per IP, frame flood, frame size, play cadence), 15-minute IP block | | ready | audit 2026-09-16: only the SQL 400 rounds/hour per identity exists; ticket `docs/tickets/s2-rate-limits.md` | dispatch first tomorrow |
+| S2 | L2 | Per-socket AND per-IP rate limits (sockets per IP, connections per minute, anonymous signups, OTP per IP, frame flood, frame size, play cadence), 15-minute IP block | | ready | audit 2026-09-16: only the SQL 400 rounds/hour per identity exists; ticket `docs/tickets/s2-rate-limits.md`, amended with red-team D3 (superseded OTP codes invalidated) and D4 (HTTP body cap) | dispatch now |
 | S3 | L2 | Kiosk secret out of the URL; scrub `k=` from Caddy logs | | queued | audit: not done, secret still in `?k=` | |
 | S4 | L2 | OTP on a known email logs into that player | | done | in C3a | |
 | S5 | L2 | Postgres least privilege: an `app` role | | queued | audit: the server still connects as `postgres`; the compat roles exist only for pgTAP | |
@@ -66,25 +93,25 @@ Local stack: compose on http://localhost:8080 comes back by itself after boot (`
 | S9 | L2 | Coupon exhaustion wording | | done | C8's modal copy | |
 | S10 | L2 | Origin pinning on the socket, security headers, TLS-only cookies | | queued | audit: not done (Caddyfile comment marks the spot; no origin check in `server/index.js`) | with S2 |
 | S11 | L2 | Email consent text and code retention | | partly | audit: the lead forms carry "No spam. Unsubscribe anytime."; OTP code retention/cleanup not verified | |
-| S12 | L2 | Coupon audit and reconciliation, alert at N codes left | | queued | audit: `codes_left` now on every kiosk frame (C8) and `/status` has the counts; the low-stock alert is missing | small; with S2 |
+| S12 | L2 | Coupon audit and reconciliation, alert at N codes left | | queued | audit: `codes_left` now on every kiosk frame (C8) and `/status` has the counts; the low-stock alert is missing | with T1 |
 | S13 | L2 | OTP verify-attempt limiting | | done | in L1 (5 tries per code) | |
-| S14 | L2 | Kiosk hygiene: no player token on a kiosk, clean state between visitors | | queued | audit: state clears on every reset (C1/C2); whether `ensureSession` still mints a player token in kiosk mode is unverified | verify in the red-team follow-up |
+| S14 | L2 | Kiosk hygiene: no player token on a kiosk, clean state between visitors | | queued | red team D7: an empty `?k=` turns a booth into a web player | in C10 |
 | S15 | L2 | Least privilege, extended | | queued | with S5 | |
 | S16 | L2 | Leaderboard integrity at prize time: one row per verified email | | done | `players.email` is unique and `leaderboard()` ranks verified emails only; the export becomes per-tournament with B1 | |
-| S18 | L2 | Safe mode: guarded and locked levels, automatic escalation on connection and signup spikes, operator command, Cloudflare Under Attack runbook | | ready | design in `docs/tickets/s18-safe-mode.md`; depends on S2 | after S2 |
-| B1 | MKT | Tournaments as data (dates, prize image and title, broker bonus), adjustable without code | | ready | ticket `docs/tickets/b1-b4-tournaments.md` (with B4) | dispatch tomorrow |
-| B2 | MKT | Leaderboard API: 20 per page, own rank and row in every response, live top 20 | | queued | closes gap G3 | |
-| B3 | MKT | Badge tiers and the legend endpoint | | queued | | |
-| B4 | MKT | Name and phone removed from lead capture | | ready | in the B1 ticket | dispatch tomorrow |
-| B5 | MKT | Per-device identity for anonymous players | | ready | ticket `docs/tickets/b5-device-identity.md` | dispatch tomorrow |
-| B6 | MKT | Reward: video watched (90 %) once per device | | queued | | |
-| B7 | MKT | Reward: redirect and return (Trustpilot, YouTube, Telegram), 5 s window | | queued | lenient by design until B13 | |
-| B8 | MKT | Reward: Instagram follow verified through the Instagram API | | queued | needs an Instagram app and token | |
-| B9 | MKT | Reward: email verified | | queued | login already works | |
-| B10 | MKT | Tour-seen flag per device (web) and per boot (kiosk) | | ready | ticket `docs/tickets/b10-b11-tour-banners.md` (with B11) | dispatch tomorrow |
-| B11 | MKT | Ad banner list served to the client | | ready | in the B10 ticket | dispatch tomorrow |
+| S18 | L2 | Safe mode: guarded and locked levels, automatic escalation on connection and signup spikes, operator command, Cloudflare Under Attack runbook | | ready | design in `docs/tickets/s18-safe-mode.md`; depends on S2; this is the "am I overwhelmed" answer on `/ops` | after S2 |
+| B1 | MKT | Tournaments as data (dates, prize image and title, broker bonus), adjustable without code | | ready | ticket `docs/tickets/b1-b4-tournaments.md` (with B4) | stage 3 |
+| B2 | MKT | Leaderboard API: 20 per page, own rank and row in every response, live top 20 | | queued | closes gap G3 | after B1 |
+| B3 | MKT | Badge tiers and the legend endpoint | | queued | | after B1 |
+| B4 | MKT | Name and phone removed from lead capture | | ready | in the B1 ticket | stage 3 |
+| B5 | MKT | Per-device identity for anonymous players | | ready | ticket `docs/tickets/b5-device-identity.md` | stage 3 |
+| B6 | MKT | Reward: video watched (90 %) once per device | | queued | | after B5 |
+| B7 | MKT | Reward: redirect and return (Trustpilot, YouTube, Telegram), 5 s window | | queued | lenient by design until B13 | after B5 |
+| B8 | MKT | Reward: Instagram follow verified through the Instagram Graph API; adapter built against the documented endpoints, env-driven, stubbed until the app id, secret and token arrive | | queued | needs an Instagram app and token from the owner | after B6 |
+| B9 | MKT | Reward: email verified | | queued | login already works; closes G1 | after B5 |
+| B10 | MKT | Tour-seen flag per device (web) and per boot (kiosk) | | ready | ticket `docs/tickets/b10-b11-tour-banners.md` (with B11) | stage 5 |
+| B11 | MKT | Ad banner list served to the client | | ready | in the B10 ticket | stage 5 |
 | B12 | MKT | Curate the YouTube list (under one minute each) | | queued | content task | |
-| B13 | MKT | Hardening pass on rewards and device identity | | queued | after B5-B9 | |
+| B13 | MKT | Hardening pass on rewards and device identity | | queued | after B5-B9 | last in M1 |
 | A1-A8 | MKT | Screens and copy: ad zone, paged leaderboard, tournaments, profile, tours, rewards rework | marketing lead | queued | brief sent: `tasks-marketing-lead.md` / `.fa.md` | |
 
 ## Known gaps (small, carded above where they belong)
@@ -107,4 +134,5 @@ Local stack: compose on http://localhost:8080 comes back by itself after boot (`
 - 2026-09-16 morning: layered spec, Opus review folded in, feed decision changed to one continuous series.
 - 2026-09-16 midday: L1 built, verified, merged; box merged into `dev`; local production rehearsal PASS.
 - 2026-09-16 afternoon: C1, C2, C3, C3a, C4, D1 merged; 3-decimal publishing; MT5 specced and the MetaApi source built; admin requirements written; handover to the cbx account.
+- 2026-09-17 morning: red team and showcase landed (2 loopholes, 10 defects, carded as C10 and folded into S2); plan rewritten around four milestones (Demo, Deploy, MT5, Telegram).
 - 2026-09-16 evening: marketing lead's profile screen pulled (pull-only remote); B16 fix; B14, C5, C2b, C6+C7 merged; L1.5 closed except C4b and the rest of Q1. OpenCode Go hit its monthly cap and killed six workers; OpenCode roster raised for when it renews; workers now run as Orca terminals. Play screen stuck on Connecting traced to the bundle carrying the developer socket address; fixed at the root. D2 found never built; being built now.
