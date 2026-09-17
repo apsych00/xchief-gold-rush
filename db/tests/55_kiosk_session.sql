@@ -5,7 +5,7 @@
 -- Runs in one transaction and rolls back, so the seeded 100 coupons are untouched afterwards.
 begin;
 
-select plan(41);
+select plan(42);
 
 -- start_kiosk_session: a fresh session, playing, full coins, no streak ---------------------
 select tests.create_kiosk('session-start', 'session-start-secret-00000') as k_start \gset
@@ -72,15 +72,16 @@ select throws_like(
   'a session marked broke by insufficient_coins also refuses another round until it is reset'
 );
 
--- play to won: the 5th win claims a coupon and ends the session as won ---------------------
+-- play to won: the 5th win reserves a coupon and ends the session as won -------------------
 update public.coupons set status = 'claimed', claimed_at = now() where status = 'available';
 insert into public.coupons (code) values ('C1-TEST-CODE');
 select tests.create_kiosk('session-won', 'session-won-secret-00000') as k_won \gset
 update public.kiosks set streak = 4, session_state = 'playing' where id = :'k_won';
 select (public.open_kiosk_round(:'k_won'::uuid, 'up', 100)->>'round_id')::uuid as rd_won \gset
 select public.settle_kiosk_round(:'rd_won'::uuid, 101) as settle_won \gset
-select is((:'settle_won'::json->>'coupon'), 'C1-TEST-CODE', 'the 5th win claims the one available coupon');
-select is((:'settle_won'::json->>'state'), 'won', 'claiming the coupon ends the session as won');
+select ok((:'settle_won'::json->>'claim_token') is not null, 'the 5th win reserves the one available coupon and opens a claim link');
+select is((select status from public.coupons where code = 'C1-TEST-CODE'), 'reserved', 'the coupon itself is reserved, not claimed');
+select is((:'settle_won'::json->>'state'), 'won', 'reserving the coupon ends the session as won');
 
 select throws_like(
   $$ select public.open_kiosk_round('$$ || :'k_won' || $$'::uuid, 'up', 100) $$,
@@ -98,7 +99,7 @@ update public.kiosks set streak = 4, session_state = 'playing' where id = :'k_ex
 select (public.open_kiosk_round(:'k_exh'::uuid, 'up', 100)->>'round_id')::uuid as rd_exh \gset
 update public.coupons set status = 'claimed', claimed_at = now() where status = 'available';
 select public.settle_kiosk_round(:'rd_exh'::uuid, 101) as settle_exh \gset
-select ok((:'settle_exh'::json->>'coupon') is null, 'no coupon left in the pool to claim');
+select ok((:'settle_exh'::json->>'claim_token') is null, 'no coupon left in the pool to reserve');
 select is((:'settle_exh'::json->>'coupons_exhausted'), 'true', 'reported as exhausted');
 select is((:'settle_exh'::json->>'streak')::int, 5, 'the streak is kept, not reset, when the pool is empty');
 select is((:'settle_exh'::json->>'state'), 'playing', 'the session keeps playing when exhausted');

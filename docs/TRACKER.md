@@ -18,6 +18,23 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 
 **Demo milestone (M1):** 24 of 31 tickets done. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
 
+### Landed on dev today (newest first)
+
+Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge below is a push there). Each row is added the moment the merge commit is pushed, after the orchestrator's own gate run on the merged tree.
+
+| Time | Ticket | What landed | Gates on the merged tree |
+|---|---|---|---|
+| 14:20 | B10+B11 | tour flag and placeholder tour/intro, ad banner zone on the leaderboard, shared first-visit E2E helper | 114 unit, 211 pgTAP, 68 integration, 19 E2E |
+| 14:08 | S18 | safe mode: guarded/locked levels, automatic escalation, operator script, /ops banner, Cloudflare runbook | 108 unit, 211 pgTAP, 68 integration, 17 E2E |
+| 13:55 | ops | OpenCode roster back to efficient builders only | |
+| 13:45 | B15 | MT5 Docker bridge: build, review, two hardening passes; clean-volume boot 709 s, warm restart ok | lint, 96 unit, 28 Python |
+| 12:52 | tracker | emoji states, progress bars, pickup queue | |
+| 12:28 | C10 | red-team fixes: kiosk reset voids the round, empty secret fails closed, kiosk cannot read the board, contract-only error codes | 211 pgTAP, 58 integration, 17 E2E |
+| 12:05 | B1+B4 | tournaments as data with no-overlap constraint, per-tournament records, client header and switcher; email-only leads | 201 pgTAP, 54 integration, 16 E2E |
+| 11:45 | S2 | per-IP and per-socket rate limits, OTP supersession, HTTP body cap, 15-minute IP block | 189 pgTAP, integration green, load 100 sockets p95 5061 ms |
+| 11:20 | B5 | device identity: devices table, signed device token, rewards once per device or email | 189 pgTAP, 40 integration |
+| 10:30 | red team | showcase 13/13, red team 14 held / 7 partial / 2 loopholes, plan and tickets | |
+
 ### Queue, in the exact order it is picked up
 
 1. ✅ B10+B11 merged.

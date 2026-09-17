@@ -4,7 +4,7 @@
 -- Runs in one transaction and rolls back, so the seeded 100 coupons are untouched afterwards.
 begin;
 
-select plan(18);
+select plan(19);
 
 -- 400 rounds per player per rolling hour ----------------------------------
 select tests.create_confirmed_player('ratelimit@example.com') as p_rate \gset
@@ -79,8 +79,8 @@ select (public.open_kiosk_round(:'k_nocoup'::uuid, 'up', 100)->>'round_id')::uui
 update public.coupons set status = 'claimed', claimed_at = now() where status = 'available';
 select public.settle_kiosk_round(:'rd_nocoup'::uuid, 101) as settle_nocoup \gset
 select ok(
-  (:'settle_nocoup'::json->>'coupon') is null,
-  'a 5th win with no coupon available returns no coupon'
+  (:'settle_nocoup'::json->>'claim_token') is null,
+  'a 5th win with no coupon available returns no claim token'
 );
 select is(
   (:'settle_nocoup'::json->>'coupons_exhausted'),
@@ -104,10 +104,14 @@ select tests.create_kiosk('has-coupon', 'has-coupon-secret-0000000000') as k_cou
 update public.kiosks set streak = 4, session_state = 'playing' where id = :'k_coup';
 select (public.open_kiosk_round(:'k_coup'::uuid, 'up', 100)->>'round_id')::uuid as rd_coup \gset
 select public.settle_kiosk_round(:'rd_coup'::uuid, 101) as settle_coup \gset
+select ok(
+  (:'settle_coup'::json->>'claim_token') is not null,
+  'a 5th win reserves the one available coupon and returns a claim token'
+);
 select is(
-  (:'settle_coup'::json->>'coupon'),
-  'BOX-TEST-CODE',
-  'a 5th win claims the one available coupon'
+  (select status from public.coupons where code = 'BOX-TEST-CODE'),
+  'reserved',
+  'the coupon itself is reserved, not claimed, by the win'
 );
 select is(
   (:'settle_coup'::json->>'coupons_exhausted'),

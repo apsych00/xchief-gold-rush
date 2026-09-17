@@ -37,6 +37,9 @@ export const LIMITS = {
   // request_otp_code has no such check (grepped; nothing per-email anywhere in the schema).
   // Implemented here instead, in memory, alongside the IP one; see the ticket report.
   MAX_OTP_REQUESTS_PER_EMAIL_PER_10MIN: envInt('MAX_OTP_REQUESTS_PER_EMAIL_PER_10MIN', 3),
+  // POST /api/claim/* (ticket C9 decision 4): 5 per 10 minutes per IP, the same shape as the
+  // OTP-per-IP window above - a claim page has no session of its own to rate-limit by socket.
+  MAX_CLAIM_REQUESTS_PER_IP_PER_10MIN: envInt('MAX_CLAIM_REQUESTS_PER_IP_PER_10MIN', 5),
 
   MAX_FRAMES_PER_SOCKET_PER_MIN: envInt('MAX_FRAMES_PER_SOCKET_PER_MIN', 200),
   MAX_FRAME_BYTES: envInt('MAX_FRAME_BYTES', 4 * 1024),
@@ -168,6 +171,7 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
   const anonPlayerWindow = new SlidingWindow(10 * MINUTE);
   const otpIpWindow = new SlidingWindow(10 * MINUTE);
   const otpEmailWindow = new SlidingWindow(10 * MINUTE);
+  const claimIpWindow = new SlidingWindow(10 * MINUTE);
   const frameWindow = new SlidingWindow(MINUTE); // keyed by a per-socket id, not by IP
   const playInterval = new MinInterval(LIMITS.PLAY_MIN_INTERVAL_MS); // keyed by socket id
   const queryInterval = new MinInterval(LIMITS.QUERY_MIN_INTERVAL_MS); // keyed by `${socketId}:${type}`
@@ -311,6 +315,17 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
     return { allowed: true };
   }
 
+  /** POST /api/claim/* budget (ticket C9 decision 4): 5 per 10 minutes per IP. */
+  function checkClaimIp(ip) {
+    const t = now();
+    const count = claimIpWindow.record(ip, t);
+    if (count > LIMITS.MAX_CLAIM_REQUESTS_PER_IP_PER_10MIN) {
+      recordRefusal(ip, 'too many claim attempts');
+      return { allowed: false, retryMs: claimIpWindow.retryMs(ip, t) };
+    }
+    return { allowed: true };
+  }
+
   /** `play` at most once every PLAY_MIN_INTERVAL_MS per socket (ticket S2 decision 3). The SQL
    * 400-rounds-per-hour rule (open_round) stays as the backstop; this is the per-round-cadence
    * front line. */
@@ -356,6 +371,7 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
     anonPlayerWindow.sweep(t);
     otpIpWindow.sweep(t);
     otpEmailWindow.sweep(t);
+    claimIpWindow.sweep(t);
     frameWindow.sweep(t);
     playInterval.sweep(t);
     queryInterval.sweep(t);
@@ -381,6 +397,7 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
     checkAnonAuth,
     checkOtpIp,
     checkOtpEmail,
+    checkClaimIp,
     checkFrameRate,
     checkPlayRate,
     checkQueryRate,

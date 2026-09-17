@@ -38,3 +38,8 @@ on conflict (code) do nothing;
 insert into public.kiosks (label, secret_hash)
 select 'dev-kiosk', crypt('dev-kiosk-secret-0001', gen_salt('bf'))
 where not exists (select 1 from public.kiosks where label = 'dev-kiosk');
+
+-- Default streak target (ticket C9 decision 1); server/index.js mirrors KIOSK_STREAK_TARGET
+-- over this at every boot when that env var is set, so a fresh box without it still gets 5.
+insert into public.settings (key, value) values ('kiosk_streak_target', '5')
+on conflict (key) do nothing;

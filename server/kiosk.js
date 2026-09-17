@@ -74,8 +74,8 @@ export function createKioskIdleSweep({
     }
   }
 
-  /** One pass over every stale kiosk, plus the pool-crossing check. Exposed so tests can drive
-   * it without waiting on the timer. */
+  /** One pass over every stale kiosk, the claim-link expiry release, and the pool-crossing
+   * check. Exposed so tests can drive it without waiting on the timer. */
   async function sweepOnce() {
     const staleIds = await ledger.staleKiosks(idleMs);
     for (const kioskId of staleIds) {
@@ -88,6 +88,15 @@ export function createKioskIdleSweep({
       } catch (err) {
         log(`kiosk idle sweep: reset of ${kioskId} failed: ${err.message}`);
       }
+    }
+    // ticket C9: a claim link nobody scanned within its 24 h window releases its coupon back to
+    // 'available' - run before checkCoupons() below so a release that crosses the pool from
+    // empty to non-empty is exactly the crossing that push observes.
+    try {
+      const released = await ledger.releaseExpiredClaims();
+      if (released) log(`released ${released} expired claim link(s) back to the pool`);
+    } catch (err) {
+      log(`kiosk idle sweep: claim release failed: ${err.message}`);
     }
     await checkCoupons();
   }

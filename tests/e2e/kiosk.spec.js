@@ -178,12 +178,16 @@ test.describe.serial('kiosk visitor flow', () => {
     await expect(forbiddenUi(page)).toHaveCount(0);
   });
 
-  test('4. a five-win streak shows the WON modal with the code, and Claim returns to ATTRACT', async ({ page }) => {
+  test('4. a five-win streak shows the QR claim screen with both texts, and the button returns to ATTRACT', async ({
+    page,
+  }) => {
     await tapToPlay(page);
 
-    await page.evaluate(() => {
-      // The exact shape server/rounds.js sends for a kiosk round that lands a coupon, followed
-      // by the mirror server/index.js sends right after it.
+    const claimUrl = 'http://localhost:5359/claim/e2e-synthetic-token';
+    await page.evaluate((url) => {
+      // The exact shape server/rounds.js sends for a kiosk round that reserves a coupon
+      // (ticket C9), followed by the mirror server/index.js sends right after it - never a
+      // code, only the one-time claim_url.
       window.__xchief.inject({
         type: 'round_settled',
         round_id: 'e2e-synthetic-round',
@@ -191,22 +195,68 @@ test.describe.serial('kiosk visitor flow', () => {
         delta: 300,
         mult: 3,
         coins: 1500,
-        streak: 5,
-        coupon: 'TESTCODE-1234',
+        streak: 0,
+        claim_url: url,
+        claim_expires_at: new Date(Date.now() + 86400000).toISOString(),
         coupons_exhausted: false,
         state: 'won',
         start_price: 2000,
         end_price: 2001,
       });
-      window.__xchief.inject({ type: 'kiosk_session', coins: 1500, streak: 5, state: 'won' });
-    });
+      window.__xchief.inject({
+        type: 'kiosk_session',
+        coins: 1500,
+        streak: 0,
+        state: 'won',
+        codes_left: 1,
+        streak_target: 5,
+        claim_url: url,
+        claim_expires_at: new Date(Date.now() + 86400000).toISOString(),
+      });
+    }, claimUrl);
 
-    await expect(page.getByText('You won!')).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText('TESTCODE-1234')).toBeVisible();
+    await expect(
+      page.getByText('Congratulations! You won the xChief $100 bonus. Scan to claim your gift:'),
+    ).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('تبریک! شما برنده بونوس ۱۰۰ دلاری ایکس‌چیف شدید. برای دریافت هدیه اسکن کنید:')).toBeVisible();
+    await expect(page.locator('.kiosk-qr')).toBeVisible();
     await expect(forbiddenUi(page)).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Claim' }).click();
+    await page.getByRole('button', { name: "I've scanned it" }).click();
     await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('4b. the QR screen resets the booth on its own once its own countdown reaches zero, without a press', async ({
+    page,
+  }) => {
+    await tapToPlay(page);
+    // Shrink the QR screen's own timer (ticket C9) through the DEV-only
+    // window.__xchief.kioskTiming.QR_MS property the ticket names - set BEFORE the win frame
+    // lands, since the countdown effect reads it once, the moment the screen becomes 'won'.
+    await page.evaluate(() => {
+      window.__xchief.kioskTiming.QR_MS = 1200;
+    });
+    await page.evaluate(() => {
+      window.__xchief.inject({
+        type: 'round_settled',
+        round_id: 'e2e-qr-timeout',
+        outcome: 'win',
+        delta: 300,
+        mult: 3,
+        coins: 1500,
+        streak: 0,
+        claim_url: 'http://localhost:5359/claim/e2e-qr-timeout-token',
+        claim_expires_at: new Date(Date.now() + 86400000).toISOString(),
+        coupons_exhausted: false,
+        state: 'won',
+        start_price: 2000,
+        end_price: 2001,
+      });
+      window.__xchief.inject({ type: 'kiosk_session', coins: 1500, streak: 0, state: 'won', codes_left: 1 });
+    });
+    await expect(page.locator('.kiosk-qr')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 5000 });
+    await expect(forbiddenUi(page)).toHaveCount(0);
   });
 
   test('5. idle countdown (C2b): overlay after idle, pointer move hides it, zero returns to ATTRACT', async ({
@@ -293,4 +343,46 @@ test.describe.serial('kiosk visitor flow', () => {
       await pool.end();
     }
   });
+});
+
+// The claim page itself (ticket C9 decision 4): a real claim_links row, not a synthetic frame -
+// scanning is simulated by opening claim_url in a second tab of the same browser context, the
+// closest a headless run gets to a visitor's own phone. Independent of the serial kiosk suite
+// above: it never touches a kiosk's own session state.
+test('claim page: scanning a real claim_url shows the gift card once, and reopening shows claimed', async ({
+  context,
+}) => {
+  const { default: pg } = await import('pg');
+  const pool = new pg.Pool({ connectionString: DATABASE_URL });
+  const suffix = Date.now();
+  const code = `E2E-CLAIM-${suffix}`;
+  const token = `e2e-claim-token-${suffix}`;
+  try {
+    const { rows: couponRows } = await pool.query(
+      "insert into public.coupons (code, status) values ($1, 'reserved') returning id",
+      [code],
+    );
+    const { rows: kioskRows } = await pool.query("select id from public.kiosks where label = 'dev-kiosk'");
+    await pool.query(
+      "insert into public.claim_links (token, coupon_id, kiosk_id, expires_at) values ($1, $2, $3, now() + interval '24 hours')",
+      [token, couponRows[0].id, kioskRows[0].id],
+    );
+
+    const claimPage = await context.newPage();
+    await claimPage.goto(`/claim/${token}`);
+    await expect(claimPage.getByText('Your xChief $100 bonus')).toBeVisible({ timeout: 10000 });
+    await claimPage.locator('input[type="email"]').fill('e2e-claim@example.com');
+    await claimPage.getByRole('button', { name: 'Get my code' }).click();
+    await expect(claimPage.getByText(code)).toBeVisible({ timeout: 10000 });
+    await expect(claimPage.getByText('Sent to e2e-claim@example.com')).toBeVisible();
+    await claimPage.close();
+
+    const reopenPage = await context.newPage();
+    await reopenPage.goto(`/claim/${token}`);
+    await expect(reopenPage.getByText(/claimed by/i)).toBeVisible({ timeout: 10000 });
+    await expect(reopenPage.getByText(code)).toHaveCount(0); // reopening a claimed link never shows the code again
+    await reopenPage.close();
+  } finally {
+    await pool.end();
+  }
 });

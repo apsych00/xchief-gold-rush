@@ -51,6 +51,9 @@ const LEADERBOARD_DEBOUNCE_MS = 1000; // docs/layers.md C4: "debounced to at mos
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+// /api/claim/<token>: the token is the base64url string settle_kiosk_round mints (ticket C9),
+// never re-validated for shape here - an unknown or malformed token both just read as 'invalid'.
+const CLAIM_PATH_RE = /^\/api\/claim\/([^/]+)$/;
 
 const str = (v, max) =>
   String(v ?? '')
@@ -474,7 +477,11 @@ export function createApp({
         settled24h: aggregates.rounds_settled_24h,
       },
       flats24h: aggregates.flats_24h,
-      coupons: { available: aggregates.coupons_available, claimed: aggregates.coupons_claimed },
+      coupons: {
+        available: aggregates.coupons_available,
+        claimed: aggregates.coupons_claimed,
+        reserved: aggregates.coupons_reserved,
+      },
       kiosksActive: aggregates.kiosks_active,
       devices24h: aggregates.devices_24h,
       limits: limits.stats(),
@@ -482,6 +489,49 @@ export function createApp({
       db,
     });
   }
+  /** GET /api/claim/<token> (ticket C9 decision 4): the claim page's own read - never a
+   * decision, just what claim_prize would do if called right now. */
+  async function handleClaimGet(res, token) {
+    sendJson(res, 200, await ledger.getClaimStatus(token));
+  }
+
+  /**
+   * POST /api/claim/<token> {email} (ticket C9 decision 4): one atomic claim_prize() call, then
+   * the bonus code is emailed through server/otp.js's Elastic sender - a mail failure is logged
+   * and never undoes the claim that already committed in Postgres. claim_prize's own
+   * `claim_invalid`/`claim_link_expired` become the wire contract's `invalid`/`expired` here;
+   * `already_claimed` is already the public name.
+   */
+  async function handleClaimPost(req, res, token, ip) {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      if (err.code === 'body_too_large') {
+        sendJson(res, 413, { ok: false, error: 'body_too_large' });
+        return;
+      }
+      throw err;
+    }
+    const email = str(body.email, 254).toLowerCase();
+    if (!EMAIL_RE.test(email)) {
+      sendJson(res, 400, { ok: false, error: 'invalid_email' });
+      return;
+    }
+    try {
+      const result = await ledger.claimPrize(token, email, ip && ip !== 'unknown' ? ip : null);
+      otp.sendClaimCode(email, result.code).catch((err) => {
+        console.error('[claim] sendClaimCode failed', err?.message || err);
+      });
+      sendJson(res, 200, { ok: true, code: result.code, email });
+    } catch (err) {
+      const code = ledger.KNOWN_ERROR_CODES.includes(err.code) ? err.code : 'internal';
+      if (code === 'internal') console.error('[claim] unhandled error', err);
+      const publicCode = code === 'claim_invalid' ? 'invalid' : code === 'claim_link_expired' ? 'expired' : code;
+      sendJson(res, publicCode === 'internal' ? 500 : 409, { ok: false, error: publicCode });
+    }
+  }
+
   const kioskIdleSweep = createKioskIdleSweep({
     ledger,
     getSocket,
@@ -508,6 +558,49 @@ export function createApp({
       const ip = limits.clientIp(req);
       if (limits.checkApiRequest(ip)) {
         sendJson(res, 429, { ok: false, error: 'rate_limited' });
+        return;
+      }
+      const claimMatch = req.url.match(CLAIM_PATH_RE);
+      if (claimMatch) {
+        const token = decodeURIComponent(claimMatch[1]);
+        // CORS (ticket C9): production serves the SPA and /api/* from one Caddy origin, where
+        // this header is a no-op, but the dev recipe (docs/tickets/c9-qr-claim.md) runs Vite and
+        // this server on two different ports - a claim page fetch is then cross-origin, and a
+        // JSON POST triggers a preflight OPTIONS the server must answer. Safe wide open: nothing
+        // this route does is cookie/session-authorized, the token in the URL is the only proof
+        // of anything, exactly like a bearer secret.
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204, {
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+          });
+          res.end();
+          return;
+        }
+        if (req.method === 'GET') {
+          handleClaimGet(res, token).catch((err) => {
+            console.error('[claim] unhandled error', err);
+            sendJson(res, 500, { ok: false, error: 'internal' });
+          });
+          return;
+        }
+        if (req.method === 'POST') {
+          // ticket C9 decision 4: 5 per 10 minutes per IP, its own budget - a claim attempt has
+          // no socket or player identity to key S2's other windows on.
+          const budget = limits.checkClaimIp(ip);
+          if (!budget.allowed) {
+            sendJson(res, 429, { ok: false, error: 'rate_limited', retry_ms: budget.retryMs });
+            return;
+          }
+          handleClaimPost(req, res, token, ip).catch((err) => {
+            console.error('[claim] unhandled error', err);
+            sendJson(res, 500, { ok: false, error: 'internal' });
+          });
+          return;
+        }
+        res.writeHead(405, { Allow: 'GET, POST', 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'method_not_allowed' }));
         return;
       }
     }
@@ -954,6 +1047,12 @@ export function createApp({
      */
     async start(port = Number(process.env.PORT) || 8787, { startFeed = true } = {}) {
       await ledger.voidOpenRounds();
+      // ticket C9 decision 1: KIOSK_STREAK_TARGET mirrors into public.settings only when the
+      // env var is actually set, so a restart with nothing set never clobbers a value the
+      // owner changed by hand with a running box's own SQL update.
+      if (process.env.KIOSK_STREAK_TARGET) {
+        await ledger.upsertSetting('kiosk_streak_target', String(Number(process.env.KIOSK_STREAK_TARGET) || 5));
+      }
       if (startFeed) feed.start();
       limits.start();
       alerts.start();

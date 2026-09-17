@@ -93,7 +93,7 @@ export function createRoundManager({ feed, ledger, getSocket, log = console.log,
         settled =
           kind === 'player'
             ? await ledger.settlePlayerRound(id, roundId, end.price)
-            : await ledger.call('settle_kiosk_round', roundId, end.price);
+            : await ledger.settleKioskRound(roundId, end.price);
       } catch (err) {
         log(`round ${roundId} ${kind}:${id} settle failed: ${err.code || err.message}`);
         roundClosed();
