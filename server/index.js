@@ -930,7 +930,10 @@ export function createApp({
           return;
         }
       }
-      const deviceId = await ledger.touchDevice(verifyDeviceToken(frame.device), ws.clientIp, ws.userAgent);
+      const presentedDeviceId = verifyDeviceToken(frame.device);
+      const deviceId = presentedDeviceId || !playerId
+        ? await ledger.touchDevice(presentedDeviceId, ws.clientIp, ws.userAgent)
+        : null;
 
       if (!playerId) playerId = await ledger.createPlayer(deviceId);
 
@@ -938,9 +941,20 @@ export function createApp({
       ws.authed = true;
       ws.kind = 'player';
       ws.identity = playerId;
+      ws.deviceId = me.device_id || null;
+      // Ticket B13: the no-device reward budget keys on whether this socket ends up with a
+      // device id at all - minted just now for a brand-new player, presented on a return visit,
+      // or already on the player's own row - not on whether the client happened to present a
+      // token on this specific connection. A fresh browser's first-ever claim has one (the
+      // server mints it during this same auth and returns it on `welcome`); only a player whose
+      // own row has never carried a device_id (a client from before device identity existed, or
+      // one that has never stored the token welcome gave it) is actually "no device".
+      ws.hasDevice = ws.deviceId != null;
       playerSockets.set(playerId, ws);
       const token = currentToken && !needsRenewal(currentToken) ? currentToken : signToken(playerId, version);
-      send(ws, { type: 'welcome', token, device: signDeviceToken(deviceId), me });
+      const welcome = { type: 'welcome', token, me };
+      if (deviceId) welcome.device = signDeviceToken(deviceId);
+      send(ws, welcome);
       await sendHelloAndPending(ws, 'player', playerId);
     } catch (err) {
       // D9: only codes the contract names reach the client; anything else is logged here.
@@ -948,6 +962,17 @@ export function createApp({
       if (code === 'internal') console.error('[auth] error', err);
       send(ws, { type: 'error', code });
     }
+  }
+
+  /**
+   * Ticket B13: one line per refused reward claim, with the contract code and the player's
+   * device id (null for old clients). Called both for direct refusals and from handleFrame's
+   * catch for errors raised by the ledger.
+   */
+  function logRewardRefusal(ws, frameType, code) {
+    console.log(
+      `[rewards] refused claim: code=${code} device_id=${ws.deviceId || 'none'} player=${ws.identity || 'none'} ip=${ws.clientIp} frame=${frameType}`,
+    );
   }
 
   async function handleFrame(ws, frame) {
@@ -993,20 +1018,36 @@ export function createApp({
           // way request_otp/verify_otp already are, not the bare 'unauthenticated' a player
           // would get for a stale/bad session.
           if (kind !== 'player') {
+            logRewardRefusal(ws, 'claim_task', 'not_available');
             send(ws, { type: 'error', code: 'not_available' });
             break;
           }
-          const claimed = await ledger.claimTask(id, frame.task_id);
+          const rewardBudget = limits.checkRewardClaimIp(ws.clientIp, ws.hasDevice);
+          if (!rewardBudget.allowed) {
+            logRewardRefusal(ws, 'claim_task', 'rate_limited');
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: rewardBudget.retryMs });
+            break;
+          }
+          const claimed = await ledger.claimTask(id, frame.task_id, ws.clientIp);
+          limits.recordRewardClaim(ws.clientIp, ws.hasDevice);
           const me = await ledger.getMe(id);
           send(ws, { type: 'me', ...me, reward: claimed.reward, task: frame.task_id });
           break;
         }
         case 'free_refill': {
           if (kind !== 'player') {
+            logRewardRefusal(ws, 'free_refill', 'not_available');
             send(ws, { type: 'error', code: 'not_available' });
             break;
           }
+          const rewardBudget = limits.checkRewardClaimIp(ws.clientIp, ws.hasDevice);
+          if (!rewardBudget.allowed) {
+            logRewardRefusal(ws, 'free_refill', 'rate_limited');
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: rewardBudget.retryMs });
+            break;
+          }
           const refilled = await ledger.freeRefill(id);
+          limits.recordRewardClaim(ws.clientIp, ws.hasDevice);
           const me = await ledger.getMe(id);
           send(ws, { type: 'me', ...me, reward: refilled.reward });
           break;
@@ -1017,11 +1058,24 @@ export function createApp({
           // once 90% is crossed - this reply is the usual `me`, with `reward`/`task` only when
           // that happened on this call.
           if (kind !== 'player') {
+            logRewardRefusal(ws, 'task_progress', 'not_available');
             send(ws, { type: 'error', code: 'not_available' });
             break;
           }
+          const taskFrameBudget = limits.checkQueryRate(ws.socketId, 'task_progress');
+          if (!taskFrameBudget.allowed) {
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: taskFrameBudget.retryMs });
+            break;
+          }
           const taskId = str(frame.task, 40);
-          const progress = await ledger.reportVideoProgress(id, taskId, Number(frame.seconds), Number(frame.duration));
+          const rewardBudget = limits.checkRewardClaimIp(ws.clientIp, ws.hasDevice);
+          if (!rewardBudget.allowed) {
+            logRewardRefusal(ws, 'task_progress', 'rate_limited');
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: rewardBudget.retryMs });
+            break;
+          }
+          const progress = await ledger.reportVideoProgress(id, taskId, Number(frame.seconds), Number(frame.duration), ws.clientIp);
+          if (progress.reward != null) limits.recordRewardClaim(ws.clientIp, ws.hasDevice);
           const me = await ledger.getMe(id);
           send(ws, {
             type: 'me',
@@ -1037,6 +1091,11 @@ export function createApp({
             send(ws, { type: 'error', code: 'not_available' });
             break;
           }
+          const taskFrameBudget = limits.checkQueryRate(ws.socketId, 'task_start');
+          if (!taskFrameBudget.allowed) {
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: taskFrameBudget.retryMs });
+            break;
+          }
           const taskId = str(frame.task, 40);
           const started = await ledger.startTaskVisit(id, taskId);
           send(ws, { type: 'task_started', ...started });
@@ -1047,11 +1106,24 @@ export function createApp({
           // passed; `not_yet`/`already_claimed` arrive as the usual error frame (with `retry_ms`
           // on `not_yet`, from the catch block below).
           if (kind !== 'player') {
+            logRewardRefusal(ws, 'task_return', 'not_available');
             send(ws, { type: 'error', code: 'not_available' });
             break;
           }
+          const taskFrameBudget = limits.checkQueryRate(ws.socketId, 'task_return');
+          if (!taskFrameBudget.allowed) {
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: taskFrameBudget.retryMs });
+            break;
+          }
+          const rewardBudget = limits.checkRewardClaimIp(ws.clientIp, ws.hasDevice);
+          if (!rewardBudget.allowed) {
+            logRewardRefusal(ws, 'task_return', 'rate_limited');
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: rewardBudget.retryMs });
+            break;
+          }
           const taskId = str(frame.task, 40);
-          const released = await ledger.returnTaskVisit(id, taskId);
+          const released = await ledger.returnTaskVisit(id, taskId, ws.clientIp);
+          if (released.reward != null) limits.recordRewardClaim(ws.clientIp, ws.hasDevice);
           const me = await ledger.getMe(id);
           send(ws, { type: 'me', ...me, reward: released.reward, task: taskId });
           break;
@@ -1165,14 +1237,25 @@ export function createApp({
             // the `signup` task if this is the first time this device has verified - both go
             // through release_task_reward, which is a no-op (not an error) once already granted
             // on this device or verified email, so calling it unconditionally here is safe.
-            const emailReward = await ledger.releaseTaskReward(id, 'email').catch((err) => {
-              console.error('[otp] email task release failed', err);
-              return null;
-            });
-            const signupReward = await ledger.releaseTaskReward(id, 'signup').catch((err) => {
-              console.error('[otp] signup task release failed', err);
-              return null;
-            });
+            // Ticket B13: no-device players share a tight per-IP reward budget; skip the reward
+            // release when that budget is exhausted, but still complete the verification.
+            const rewardBudget = limits.checkRewardClaimIp(ws.clientIp, ws.hasDevice);
+            let emailReward = null;
+            let signupReward = null;
+            if (rewardBudget.allowed) {
+              emailReward = await ledger.releaseTaskReward(id, 'email', ws.clientIp).catch((err) => {
+                console.error('[otp] email task release failed', err);
+                return null;
+              });
+              if (emailReward?.reward != null) limits.recordRewardClaim(ws.clientIp, ws.hasDevice);
+              signupReward = await ledger.releaseTaskReward(id, 'signup', ws.clientIp).catch((err) => {
+                console.error('[otp] signup task release failed', err);
+                return null;
+              });
+              if (signupReward?.reward != null) limits.recordRewardClaim(ws.clientIp, ws.hasDevice);
+            } else {
+              logRewardRefusal(ws, 'verify_otp', 'rate_limited');
+            }
             const reward = (emailReward?.reward || 0) + (signupReward?.reward || 0);
             const me = await ledger.getMe(id);
             send(ws, { type: 'me', ...me, ...(reward ? { reward } : {}) });
@@ -1188,6 +1271,10 @@ export function createApp({
       // the original is logged here, tagged with the frame type that triggered it.
       const code = ledger.KNOWN_ERROR_CODES.includes(err.code) ? err.code : 'internal';
       if (code === 'internal') console.error(`[frame:${frame.type}] error`, err);
+      // Ticket B13: log refused reward claims with the contract code and device id.
+      if (['claim_task', 'free_refill', 'task_progress', 'task_return'].includes(frame.type)) {
+        logRewardRefusal(ws, frame.type, code);
+      }
       send(ws, { type: 'error', code, ...(err.retryMs != null ? { retry_ms: err.retryMs } : {}) });
       if (kind === 'kiosk' && err.code === 'insufficient_coins') {
         // open_kiosk_round marked the session broke when it refused the stake; the kiosk's

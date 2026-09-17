@@ -240,7 +240,10 @@ create table public.task_claims (
   -- The claiming player's own device_id at claim time (ticket B5), null when they have none.
   -- Denormalized off players.device_id so the once-per-device check and its unique index below
   -- do not need to join players for every claim attempt.
-  device_id uuid references public.devices (id)
+  device_id uuid references public.devices (id),
+  -- The IP the claim came from, when the server knew it (ticket B13). Null for rows created
+  -- before this column existed or for calls made without setting app.client_ip.
+  claimed_ip inet
 );
 
 -- Video watch progress (ticket B6, docs/tickets/b6-b7-b9-rewards.md decision 2): the client
@@ -372,6 +375,10 @@ create unique index uniq_open_round_per_kiosk on public.rounds (kiosk_id)
   where status = 'open' and kiosk_id is not null;
 create index rounds_player_created on public.rounds (player_id, created_at desc);
 create index task_claims_player_task on public.task_claims (player_id, task_id, claimed_at desc);
+-- Per-player per-task idempotency on every release path (ticket B13): the atomic backstop
+-- that makes concurrent release_task_reward / claim_task calls idempotent. A duplicate insert
+-- becomes an already_claimed outcome instead of a double credit.
+create unique index uniq_task_claim_per_player_task on public.task_claims (player_id, task_id);
 -- Once per device per task (ticket B5, docs/tickets/b5-device-identity.md decision 4): the
 -- atomic backstop claim_task relies on (catching unique_violation) so two concurrent claims
 -- from the same device can never both succeed. Partial on device_id is not null so a player
@@ -1038,8 +1045,10 @@ declare
   v_coins int;
   v_device_id uuid;
   v_email text;
+  v_ip inet;
 begin
   if v_uid is null then raise exception 'unauthenticated'; end if;
+  v_ip := nullif(current_setting('app.client_ip', true), '')::inet;
   select * into t from public.tasks where id = p_task;
   if not found then raise exception 'unknown_task'; end if;
   -- ticket B6+B7+B9 decision 5: claim_task from the client remains only for kind='manual' - every
@@ -1073,8 +1082,8 @@ begin
   end if;
 
   begin
-    insert into public.task_claims (player_id, task_id, reward, device_id)
-    values (v_uid, p_task, t.reward, v_device_id);
+    insert into public.task_claims (player_id, task_id, reward, device_id, claimed_ip)
+    values (v_uid, p_task, t.reward, v_device_id, v_ip);
   exception when unique_violation then
     raise exception 'already_claimed';
   end;
@@ -1181,7 +1190,9 @@ declare
   v_device_id uuid;
   v_email text;
   v_coins int;
+  v_ip inet;
 begin
+  v_ip := nullif(current_setting('app.client_ip', true), '')::inet;
   select * into t from public.tasks where id = p_task;
   if not found then raise exception 'unknown_task'; end if;
 
@@ -1203,8 +1214,8 @@ begin
   end if;
 
   begin
-    insert into public.task_claims (player_id, task_id, reward, device_id)
-    values (p_player, p_task, t.reward, v_device_id);
+    insert into public.task_claims (player_id, task_id, reward, device_id, claimed_ip)
+    values (p_player, p_task, t.reward, v_device_id, v_ip);
   exception when unique_violation then
     return null;
   end;
@@ -1413,6 +1424,24 @@ begin
     from ranked
     where ranked.player_id = auth.uid();
 end $$;
+
+-- --------------------------------------------------------------------- reward audit --
+
+-- Operator audit view for every task reward the server released (ticket B13): one row per
+-- task_claims, with the player's email, the device it was claimed against, and the IP the
+-- server saw at claim time. Runs with the view owner's privileges so an operator query sees
+-- every row; no client policy is granted on this view.
+create or replace view public.reward_audit with (security_invoker = false) as
+select
+  p.id as player,
+  tc.device_id as device,
+  p.email,
+  tc.task_id as task,
+  tc.reward,
+  tc.claimed_at,
+  tc.claimed_ip as ip
+from public.task_claims tc
+join public.players p on p.id = tc.player_id;
 
 -- -------------------------------------------------------------------------- otp codes --
 

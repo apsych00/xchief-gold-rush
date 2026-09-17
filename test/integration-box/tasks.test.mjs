@@ -9,6 +9,7 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { WebSocket } from 'ws';
 import pg from 'pg';
 
@@ -93,8 +94,16 @@ function send(ws, frame) {
   ws.send(JSON.stringify(frame));
 }
 
+function freshDeviceToken() {
+  const id = crypto.randomUUID();
+  const sig = crypto.createHmac('sha256', process.env.PLAYER_TOKEN_SECRET).update(id).digest('hex');
+  return `${id}.${sig}`;
+}
+
 async function authAnonymous(ws) {
-  send(ws, { type: 'auth' });
+  // Ticket B13: give every test player a device token so the shared no-device reward cap
+  // does not leak between tests. The device-identity tests below use explicit tokens.
+  send(ws, { type: 'auth', device: freshDeviceToken() });
   return nextFrame(ws, (f) => f.type === 'welcome');
 }
 
@@ -184,6 +193,9 @@ test('task_progress reports watch progress and the me reply carries reward only 
     "update public.video_progress set updated_at = now() - interval '60 seconds' where task_id = 'video' and player_id = $1",
     [welcome.me.id],
   );
+  // task_progress shares the S2 1/s-per-socket query budget (ticket B13); wait it out before
+  // the second send on this socket.
+  await new Promise((r) => setTimeout(r, 1100));
   send(ws, { type: 'task_progress', task: 'video', seconds: 55, duration: 60 });
   const above = await nextFrame(ws, (f) => f.type === 'me');
   assert.equal(above.task, 'video', 'the me reply names the task once a reward was released');
@@ -230,12 +242,16 @@ test('task_start answers task_started with the window, task_return refuses befor
     [welcome.me.id],
   );
 
+  // task_return shares the S2 1/s-per-socket query budget (ticket B13); wait it out between
+  // repeat sends on this socket.
+  await new Promise((r) => setTimeout(r, 1100));
   send(ws, { type: 'task_return', task: 'telegram' });
   const rewarded = await nextFrame(ws, (f) => f.type === 'me');
   assert.equal(rewarded.task, 'telegram', 'the me reply names which task was rewarded');
   assert.equal(typeof rewarded.reward, 'number', 'past the window, the me reply carries the reward that was released');
   assert.ok(rewarded.reward > 0, 'the reward is a real, positive amount');
 
+  await new Promise((r) => setTimeout(r, 1100));
   send(ws, { type: 'task_return', task: 'telegram' });
   const again = await nextFrame(ws, (f) => f.type === 'error');
   assert.equal(again.code, 'already_claimed', 'returning again after the reward already landed is refused');

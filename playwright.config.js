@@ -55,6 +55,10 @@ export default defineConfig({
         INSTAGRAM_APP_SECRET: process.env.INSTAGRAM_APP_SECRET || 'fake-app-secret',
         INSTAGRAM_REDIRECT_URI: process.env.INSTAGRAM_REDIRECT_URI || `${BASE_URL}/api/instagram/callback`,
         INSTAGRAM_API_BASE: process.env.INSTAGRAM_API_BASE || FAKE_INSTAGRAM_URL,
+        // Ticket B13: the no-device reward window (legacy clients only; a fresh browser is bound to
+        // the device minted at auth). Raised here like the four per-IP budgets above so the suite's
+        // shared loopback address can never trip it.
+        MAX_REWARD_CLAIMS_PER_IP_PER_HOUR_NO_DEVICE: '1000',
       },
     },
     {

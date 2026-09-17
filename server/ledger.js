@@ -129,14 +129,40 @@ export async function call(fnName, ...args) {
 }
 
 /**
+ * Like call(), but with `app.client_ip` set for the duration (ticket B13) so a function that
+ * reads it - release_task_reward, to stamp task_claims.claimed_ip - sees the caller's IP. Needs
+ * its own transaction: SET LOCAL only holds for the transaction it runs in, and call()'s bare
+ * query has none.
+ */
+export async function callWithIp(fnName, ip, ...args) {
+  const client = await getPool().connect();
+  try {
+    await client.query('begin');
+    await client.query("select set_config('app.client_ip', $1, true)", [ip || null]);
+    const placeholders = args.map((_, i) => `$${i + 1}`).join(', ');
+    const { rows } = await client.query(`select ${fnName}(${placeholders}) as result`, args);
+    await client.query('commit');
+    return rows[0] ? rows[0].result : null;
+  } catch (err) {
+    await client.query('rollback').catch(() => {});
+    throw mapError(err);
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Run fn(client) inside a transaction with `app.player_id` set for the duration, so
  * auth.uid() resolves inside functions written for Supabase (get_me, claim_task, free_refill).
+ * `ip` (ticket B13), when given, is also set as `app.client_ip` so claim_task and any
+ * release_task_reward call nested under it stamp task_claims.claimed_ip.
  */
-export async function withPlayer(playerId, fn) {
+export async function withPlayer(playerId, fn, ip) {
   const client = await getPool().connect();
   try {
     await client.query('begin');
     await client.query("select set_config('app.player_id', $1, true)", [playerId]);
+    if (ip) await client.query("select set_config('app.client_ip', $1, true)", [ip]);
     const result = await fn(client);
     await client.query('commit');
     return result;
@@ -216,11 +242,15 @@ export async function getMe(playerId) {
   });
 }
 
-export async function claimTask(playerId, taskId) {
-  return withPlayer(playerId, async (client) => {
-    const { rows } = await client.query('select public.claim_task($1) as result', [taskId]);
-    return rows[0].result;
-  });
+export async function claimTask(playerId, taskId, ip) {
+  return withPlayer(
+    playerId,
+    async (client) => {
+      const { rows } = await client.query('select public.claim_task($1) as result', [taskId]);
+      return rows[0].result;
+    },
+    ip,
+  );
 }
 
 export async function freeRefill(playerId) {
@@ -247,21 +277,25 @@ export async function getTasks(playerId) {
  * Resolves to null, not an error, when the reward was already claimed - see the SQL function's
  * own comment.
  */
-export async function releaseTaskReward(playerId, taskId) {
-  return call('release_task_reward', playerId, taskId);
+export async function releaseTaskReward(playerId, taskId, ip) {
+  return callWithIp('release_task_reward', ip, playerId, taskId);
 }
 
 /** Video watch progress (ticket B6 decision 2): upserts, and releases the reward itself once
  * 90% is crossed - never through claim_task, which refuses this task's kind. */
-export async function reportVideoProgress(playerId, taskId, seconds, duration) {
-  return withPlayer(playerId, async (client) => {
-    const { rows } = await client.query('select public.report_video_progress($1, $2, $3) as result', [
-      taskId,
-      seconds,
-      duration,
-    ]);
-    return rows[0].result;
-  });
+export async function reportVideoProgress(playerId, taskId, seconds, duration, ip) {
+  return withPlayer(
+    playerId,
+    async (client) => {
+      const { rows } = await client.query('select public.report_video_progress($1, $2, $3) as result', [
+        taskId,
+        seconds,
+        duration,
+      ]);
+      return rows[0].result;
+    },
+    ip,
+  );
 }
 
 /** Redirect-and-return, opening the 5 s window (ticket B7 decision 3). */
@@ -279,18 +313,22 @@ export async function startTaskVisit(playerId, taskId) {
  * already gets from call()'s mapError - `not_yet` also carries `retryMs` so the caller can tell
  * the client when to try again, the same way it carries `retry_ms` over the wire.
  */
-export async function returnTaskVisit(playerId, taskId) {
-  return withPlayer(playerId, async (client) => {
-    const { rows } = await client.query('select public.return_task_visit($1) as result', [taskId]);
-    const result = rows[0].result;
-    if (result && result.error) {
-      const err = new Error(result.error);
-      err.code = result.error;
-      if (result.retry_ms != null) err.retryMs = result.retry_ms;
-      throw err;
-    }
-    return result;
-  });
+export async function returnTaskVisit(playerId, taskId, ip) {
+  return withPlayer(
+    playerId,
+    async (client) => {
+      const { rows } = await client.query('select public.return_task_visit($1) as result', [taskId]);
+      const result = rows[0].result;
+      if (result && result.error) {
+        const err = new Error(result.error);
+        err.code = result.error;
+        if (result.retry_ms != null) err.retryMs = result.retry_ms;
+        throw err;
+      }
+      return result;
+    },
+    ip,
+  );
 }
 
 /** One 20-row page of one tournament's board (ticket B2), no identity involved. `tournamentId`

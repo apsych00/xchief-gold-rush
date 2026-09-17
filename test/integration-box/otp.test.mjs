@@ -11,6 +11,7 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { WebSocket } from 'ws';
 import pg from 'pg';
 
@@ -98,8 +99,16 @@ function send(ws, frame) {
   ws.send(JSON.stringify(frame));
 }
 
+function freshDeviceToken() {
+  const id = crypto.randomUUID();
+  const sig = crypto.createHmac('sha256', process.env.PLAYER_TOKEN_SECRET).update(id).digest('hex');
+  return `${id}.${sig}`;
+}
+
 async function authAnonymous(ws) {
-  send(ws, { type: 'auth' });
+  // Ticket B13: give every test player a device token so the shared no-device reward cap
+  // does not leak between tests.
+  send(ws, { type: 'auth', device: freshDeviceToken() });
   return nextFrame(ws, (f) => f.type === 'welcome');
 }
 

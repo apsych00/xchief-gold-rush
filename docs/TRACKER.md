@@ -12,11 +12,11 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | L1 game on the box | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 7/7 | 0 | complete, load-tested (100 sockets, p95 settle 5024 ms), rehearsed through compose + Caddy |
 | L1.5 client experience | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 18/19 | C4b animation ⏳, Q1 rest 🟡 | booth and web flows built and verified end to end; red team: every loophole fixed (C10) |
 | L2 hardening | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 7/18 | S1, S3, S5, S6, S8, S10, S11, S12, S14, S15 are M2 scope creep | S2 rate limits and S18 safe mode merged; production numbers under review with the owner |
-| MKT Part B | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 14/16 | B13 🔨, B12 ⏳ (content) | B1, B4, B5, B14, B15 (build), B16 done |
+| MKT Part B | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 15/16 | B12 ⏳ (content, marketing) | B1, B4, B5, B14, B15 (build), B16 done |
 | OPS | 🟩🟩🟩🟩🟩🟩⬜⬜⬜⬜ 3/5 | D3 run on the box, D4 schema apply (M2) | deploy scripts built; first real run happens on the box |
 | FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin (may be moot: the Docker bridge is live with the demo account) | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 
-**Demo milestone (M1):** 32 of 33 tickets done. Left: B13 rewards hardening (in rework on cb), then the showcase gate and the `demo-1` tag. MT5 Docker bridge is live on the local stack with the broker demo account. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
+**Demo milestone (M1):** 33 of 33 tickets merged. Gate: showcase run on the compose build, then the `demo-1` tag. MT5 Docker bridge is live on the local stack with the broker demo account. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
 
 ### Landed on dev today (newest first)
 
@@ -24,6 +24,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 | Time | Ticket | What landed | Gates on the merged tree |
 |---|---|---|---|
+| 19:50 | B13 | rewards hardening: nine attacks held, claim audit, device-bound claims | 137 unit, 287 pgTAP, 97 integration, 31 E2E |
 | 19:25 | OD1 | OTP budgets raised to venue-safe values, visible 'too many connections' line, wrong-code regression spec; proven: no verify without the right code, no reward without verify | 137 unit, 87 integration, 31 E2E |
 | 18:35 | feed | Finnhub through the gold price relay (`FEED_RELAY_WS`), `/status` shows the publishing source (closes G10) | 137 unit |
 | 17:40 | B8 | Instagram reward bound to an OAuth-verified account, live the day the credentials arrive | 135 unit, 285 pgTAP, 85 integration, 30 E2E |
@@ -150,7 +151,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | B10 | MKT | Tour-seen flag per device (web) and per boot (kiosk) | Sonnet (cbx) | ✅ done | tour placeholder (web, localStorage) and kiosk intro (once per boot); shared `dismissFirstVisit` E2E helper; 19 E2E on my merged run; merged | C11 real tour content |
 | B11 | MKT | Ad banner list served to the client | Sonnet (cbx) | ✅ done | `ads/banners.json` + `public/ads/`, `<AdZone/>` bottom 40 %% of the leaderboard, Caddy `handle_path /ads*`; merged | marketing drops real banners into `ads/` |
 | B12 | MKT | Curate the YouTube list (under one minute each) | | ⏳ queued | content task | |
-| B13 | MKT | Hardening pass on rewards and device identity: nine attacks scripted, fixes decided, audit view and export | Sonnet (cb) | 🔨 building | first pass: nine attacks HELD, two real bugs fixed (claim IP never recorded; task frames on the wrong budget); sent back once for a browser-path regression, and again because a fresh visitor's first claim counted as no-device (must bind claims to the device minted at auth) | verify, merge; last in M1 |
+| B13 | MKT | Hardening pass on rewards and device identity: nine attacks scripted, fixes decided, audit view and export | Sonnet (cb) | ✅ done | nine attacks HELD (`docs/reports/redteam-rewards.md`); claim IP recorded, task frames on the shared budget, claims bound to the device minted at auth, no-device window for legacy clients only, `reward_audit` view and export; 137 unit, 287 pgTAP, 97 integration, 31 E2E on my merged run; merged | |
 | A1-A8 | MKT | Screens and copy: ad zone, paged leaderboard, tournaments, profile, tours, rewards rework | us (owner's call 2026-09-17: nothing landed on `apsych/main`) | ⏳ queued | A1 in B11, A2 in B2, A3 in B1+B3, A4 exists (profile screen pulled earlier), A7 in B6-B9; A5+A6 real tour content is the only standalone piece: C11 | in Demo |
 | C11 | L1.5 | First-visit tour (web) and kiosk intro with real content on the B10 mount points | OpenCode deepseek-v4.1-flash | ✅ done | three web cards with Next/Skip/Got it, bilingual kiosk intro with the server's streak target; 127 unit, 28 E2E on my merged run; Persian copy written by the worker, one brand-name edit by the orchestrator, still wants a native read; merged | native fa read |
 

@@ -12,6 +12,7 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { WebSocket } from 'ws';
 import pg from 'pg';
 
@@ -135,8 +136,16 @@ function maskEmail(email) {
   return `${local[0]}${stars}${local.at(-1)}@${domain}`;
 }
 
+function freshDeviceToken() {
+  const id = crypto.randomUUID();
+  const sig = crypto.createHmac('sha256', process.env.PLAYER_TOKEN_SECRET).update(id).digest('hex');
+  return `${id}.${sig}`;
+}
+
 async function authAnonymous(ws) {
-  send(ws, { type: 'auth' });
+  // Ticket B13: give every test player a device token so the shared no-device reward cap
+  // does not leak between tests.
+  send(ws, { type: 'auth', device: freshDeviceToken() });
   return nextFrame(ws, (f) => f.type === 'welcome');
 }
 
@@ -354,7 +363,11 @@ test('own-row identity is the player id, not the masked display string (closes g
   await createScoredPlayer(emailOther, recordMine + 1000000); // a higher-ranked stranger with the same masked display
 
   send(ws, { type: 'leaderboard' });
-  const lb = await nextFrame(ws, (f) => f.type === 'leaderboard');
+  // A debounced unsolicited push from the previous test's round settlement can still land in
+  // this socket's inbox before the explicit reply does; only the direct-request reply carries
+  // `legend` (ticket B3 decision 3), so filter on that instead of matching the first frame of
+  // the right type.
+  const lb = await nextFrame(ws, (f) => f.type === 'leaderboard' && f.legend);
   assert.equal(lb.me.display, maskEmail(emailMine));
   assert.equal(lb.me.record, recordMine, "my own record, not the same-masked stranger's higher one");
   ws.close();
