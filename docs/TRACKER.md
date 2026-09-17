@@ -85,8 +85,9 @@ Demo tickets are all merged (33/33). The showcase run against the compose build 
 | K1 | Open kiosk route `/kiosk`, self-provisioning with a locally persisted identity (accepted leak, decommission after the expo) | change | 🔨 OpenCode |
 | K2 | Kiosk intro: three exciting cards, first showing ends on a QR code for the web version; English only (owner 2026-09-17 late: "only 1 locale (eng)"); no coins or missions on the kiosk (owner confirmed the kiosk is already Play only) | change | 📋 ticketed, queued after U1 and K1 |
 | K3 | Instagram follow verified through the BoxAPI data API (handle first, then redirect to the Instagram app); `BOXAPI_TOKEN` placeholder for the owner | change | 📋 ticketed, queued after K4 |
-| K4 | Coins tab becomes Missions: YouTube missions with a non-seekable watch-progress player; redirect rewards release the moment the timer ends | change | 📋 ticketed, next to dispatch |
+| K4 | Coins tab becomes Missions: YouTube missions with a non-seekable watch-progress player; redirect rewards release the moment the timer ends | change | 🔨 OpenCode |
 | U5 | English only: the Persian locale is wiped from every page; i18n plumbing stays with one language, the switcher returns in a later version (owner 2026-09-17 late: "a lot of dual locale pages right next to each other") | change | 📋 ticketed; dispatched after the in-flight U2-U4, K1, K5 land (they all touch i18n.js) |
+| D5 | Screenshots of every screen (separate PNGs + one high-quality sprite) for a design agent, git-ignored under `design/screens/` (owner 2026-09-17 late) | one-off | 🔨 OpenCode |
 | K5 | Nicer server-side email mask that shows more of a long address; masked on the server everywhere | change | 🔨 OpenCode |
 
 Working mode during the owner's walk: the main checkout runs a Vite dev server on http://localhost:5173 with a game server on 8787 against the compose database, so the owner can tweak the UI on `dev` directly. Workers stay in worktrees. Before every merge the orchestrator commits the owner's working-tree edits on `dev` as "Owner UI tweaks" so nothing is overwritten.
