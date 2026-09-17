@@ -15,6 +15,7 @@ if (!process.env.DATABASE_URL) {
 process.env.PLAYER_TOKEN_SECRET ??= 'test-secret';
 
 const { createApp } = await import('../../server/index.js');
+const { LIMITS } = await import('../../server/limits.js');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let app;
@@ -171,6 +172,10 @@ test('kiosk claims a coupon on the fifth win, ends, then reset starts a fresh se
       { coins: 1000, streak: 0, state: 'idle' },
     );
 
+    // The refused play at line 163 already consumed this socket's play-cadence budget (ticket
+    // S2 decision 3: at most 1 play per PLAY_MIN_INTERVAL_MS, regardless of outcome) - wait it
+    // out so the post-reset replay gets round_opened rather than rate_limited.
+    await sleep(LIMITS.PLAY_MIN_INTERVAL_MS + 50);
     const freshWin = await playWin(ws, 4000);
     assert.equal(freshWin.outcome, 'win');
     assert.equal(freshWin.coins, 1100);

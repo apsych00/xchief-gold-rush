@@ -24,13 +24,17 @@ async function postAlert(url, text) {
 /**
  * @param {object} deps
  * @param {() => { t: number } | null} deps.latest - feed.latest, read for silence detection
+ * @param {() => number} [deps.blockedCount] - server/limits.js's blockedIpsCount(), read for the
+ *   ticket S2 block-list alert (decision 5: "the alerts module posts one line when the block
+ *   list is non-empty and again when it clears").
  * @param {(line: string) => void} [deps.log]
  * @param {() => number} [deps.now]
  */
-export function createAlerts({ latest, log = console.log, now = Date.now } = {}) {
+export function createAlerts({ latest, blockedCount = () => 0, log = console.log, now = Date.now } = {}) {
   const webhookUrl = process.env.ALERT_WEBHOOK_URL || null;
   const lastSentAt = new Map(); // condition -> timestamp of the last webhook post
   let silenceOngoing = false;
+  let blocklistOngoing = false;
   let timer = null;
 
   /**
@@ -66,11 +70,28 @@ export function createAlerts({ latest, log = console.log, now = Date.now } = {})
     }
   }
 
+  function checkBlocklist() {
+    const n = blockedCount();
+    if (n > 0) {
+      fire('blocklist_active', `Gold Rush: ${n} IP(s) currently blocked`).catch(() => {});
+      blocklistOngoing = true;
+    } else {
+      if (blocklistOngoing) {
+        lastSentAt.delete('blocklist_active'); // the next block list is a new event, alert on it promptly
+        fire('blocklist_cleared', 'Gold Rush: block list cleared').catch(() => {});
+      }
+      blocklistOngoing = false;
+    }
+  }
+
   return {
-    /** Fire the one-off start alert and begin polling for feed silence. */
+    /** Fire the one-off start alert and begin polling for feed silence and the block list. */
     start() {
       fire('server_start', 'Gold Rush: server started').catch(() => {});
-      timer = setInterval(checkSilence, CHECK_INTERVAL_MS);
+      timer = setInterval(() => {
+        checkSilence();
+        checkBlocklist();
+      }, CHECK_INTERVAL_MS);
       timer.unref();
     },
     stop() {
@@ -81,5 +102,7 @@ export function createAlerts({ latest, log = console.log, now = Date.now } = {})
     _isSilenceOngoing() {
       return silenceOngoing;
     },
+    /** Test hook: run the block-list check on demand instead of waiting on the timer. */
+    _checkBlocklist: checkBlocklist,
   };
 }

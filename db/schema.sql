@@ -772,6 +772,11 @@ returns text language plpgsql security definer set search_path = public, extensi
 declare
   v_code text;
 begin
+  -- Ticket S2 / red team D3: a new code supersedes every earlier unused one for the same
+  -- email, so verify_otp_code's "newest unused code" lookup always finds this one - guessing
+  -- an older still-live code stops being a way to keep the 5-attempt budget going forever.
+  update public.otp_codes set used_at = now() where email = p_email and used_at is null;
+
   v_code := to_char(floor(random() * 100000000)::int, 'FM00000000');
   insert into public.otp_codes (player_id, email, code_hash, expires_at)
   values (p_player, p_email, encode(extensions.digest(v_code, 'sha256'), 'hex'), now() + interval '10 minutes');

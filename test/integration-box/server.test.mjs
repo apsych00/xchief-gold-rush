@@ -26,8 +26,15 @@ if (!process.env.DATABASE_URL) {
   );
 }
 process.env.PLAYER_TOKEN_SECRET ??= 'dev-secret';
+// This file authenticates far more than MAX_ANON_PLAYERS_PER_IP_PER_10MIN's production default
+// (10) worth of fresh anonymous players and kiosk auths, all from the same address (every
+// connection here is direct, no X-Forwarded-For) - ticket S2's per-IP budget is exercised on
+// its own terms, with fake IPs, in test/integration-box/limits.test.mjs. Raise it here so that
+// budget never collides with this file's own, unrelated tests.
+process.env.MAX_ANON_PLAYERS_PER_IP_PER_10MIN ??= '1000';
 
 const { createApp, signToken } = await import('../../server/index.js');
+const { LIMITS } = await import('../../server/limits.js');
 const DAY = 24 * 60 * 60;
 
 const DEV_KIOSK_SECRET = 'dev-kiosk-secret-0001';
@@ -253,7 +260,7 @@ test('a lost round debits the stake and resets the streak', async () => {
   ws.close();
 });
 
-test('two plays 500ms apart: the second is round_in_flight', async () => {
+test('two plays 500ms apart: the second is rate_limited (ticket S2 play cadence)', async () => {
   const ws = connect();
   await whenOpen(ws);
   await authAnonymous(ws);
@@ -264,6 +271,28 @@ test('two plays 500ms apart: the second is round_in_flight', async () => {
   await nextFrame(ws, (f) => f.type === 'round_opened');
 
   await sleep(500);
+  send(ws, { type: 'play', dir: 'down', lever: 1 });
+  const second = await nextFrame(ws, (f) => f.type === 'round_opened' || f.type === 'error');
+  assert.equal(second.type, 'error');
+  assert.equal(second.code, 'rate_limited');
+  assert.ok(second.retry_ms > 0);
+
+  // Drain the first round's verdict so it does not leak into a later test.
+  await nextFrame(ws, (f) => f.type === 'round_settled', 5500);
+  ws.close();
+});
+
+test('a play past PLAY_MIN_INTERVAL_MS but before the round settles is round_in_flight', async () => {
+  const ws = connect();
+  await whenOpen(ws);
+  await authAnonymous(ws);
+
+  currentPrice = 3000;
+  await sleep(250);
+  send(ws, { type: 'play', dir: 'up', lever: 1 });
+  await nextFrame(ws, (f) => f.type === 'round_opened');
+
+  await sleep(LIMITS.PLAY_MIN_INTERVAL_MS + 50); // past the cadence gate, still inside the 5s round
   send(ws, { type: 'play', dir: 'down', lever: 1 });
   const second = await nextFrame(ws, (f) => f.type === 'round_opened' || f.type === 'error');
   assert.equal(second.type, 'error');
@@ -424,6 +453,10 @@ test('a lever the session cannot cover ends it as broke; the session then refuse
   const broke = await nextFrame(ws, (f) => f.type === 'kiosk_session');
   assert.equal(broke.state, 'broke', 'the refusal is followed by the session state so the screen can react');
 
+  // The refused first play already consumed this socket's play-cadence budget (ticket S2
+  // decision 3); wait it out so the second play reaches rounds.play() and gets session_over
+  // rather than rate_limited.
+  await sleep(LIMITS.PLAY_MIN_INTERVAL_MS + 50);
   send(ws, { type: 'play', dir: 'up', lever: 1 });
   const err2 = await nextFrame(ws, (f) => f.type === 'error' || f.type === 'round_opened');
   assert.equal(err2.type, 'error');
