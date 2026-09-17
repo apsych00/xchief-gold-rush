@@ -29,6 +29,8 @@ const SWEEP_INTERVAL_MS = 10000;
  * @param {(kind: 'player'|'kiosk', id: string) => import('ws').WebSocket | undefined} deps.getSocket
  * @param {() => Iterable<[string, import('ws').WebSocket]>} [deps.listKioskSockets] every
  *   currently connected kiosk id/socket pair, for the pool-crossing broadcast below.
+ * @param {{fireEvent?: (code: string, params?: object, opts?: object) => Promise<void>}} [deps.alerts]
+ *   optional alerts module for coupon-stock events (ticket T1).
  * @param {number} [deps.idleMs]
  * @param {number} [deps.intervalMs]
  * @param {(line: string) => void} [deps.log]
@@ -37,6 +39,7 @@ export function createKioskIdleSweep({
   ledger,
   getSocket,
   listKioskSockets = () => [],
+  alerts = null,
   idleMs = IDLE_MS,
   intervalMs = SWEEP_INTERVAL_MS,
   log = console.log,
@@ -45,9 +48,12 @@ export function createKioskIdleSweep({
   // null until the first tick has observed a baseline: only a genuine crossing after that
   // triggers the broadcast, not the sweep's own startup.
   let lastCodesLeftZero = null;
+  // The actual previous count, tracked so coupon-stock alerts can detect threshold crossings.
+  let lastCodesLeft = null;
 
   /** Pushes a fresh kiosk_session to every connected kiosk when the pool just crossed zero,
-   * either way. Runs every tick alongside the idle reset below, not only when kiosks are stale. */
+   * either way, and posts low-stock alerts to the configured transports (ticket T1). Runs every
+   * tick alongside the idle reset below, not only when kiosks are stale. */
   async function checkCoupons() {
     let codesLeft;
     try {
@@ -59,8 +65,21 @@ export function createKioskIdleSweep({
     const isZero = codesLeft === 0;
     if (lastCodesLeftZero === null) {
       lastCodesLeftZero = isZero;
+      lastCodesLeft = codesLeft;
       return;
     }
+    if (alerts && lastCodesLeft !== null) {
+      if (lastCodesLeft > 20 && codesLeft <= 20) {
+        alerts.fireEvent('coupons_low', { left: codesLeft }, { conditionKey: 'coupons_low:20' }).catch(() => {});
+      }
+      if (lastCodesLeft > 5 && codesLeft <= 5) {
+        alerts.fireEvent('coupons_low', { left: codesLeft }, { conditionKey: 'coupons_low:5' }).catch(() => {});
+      }
+      if (lastCodesLeft > 0 && codesLeft === 0) {
+        alerts.fireEvent('coupons_exhausted').catch(() => {});
+      }
+    }
+    lastCodesLeft = codesLeft;
     if (isZero === lastCodesLeftZero) return;
     lastCodesLeftZero = isZero;
     for (const [kioskId, ws] of listKioskSockets()) {
