@@ -16,7 +16,7 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | OPS | 🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜ 2/4 | D3 run on the box (M2), T1 Telegram bot 📋 (M4) | deploy scripts built; first real run happens on the box |
 | FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 
-**Demo milestone (M1):** 25 of 31 tickets done. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
+**Demo milestone (M1):** 27 of 31 tickets done. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
 
 ### Landed on dev today (newest first)
 
@@ -24,6 +24,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 | Time | Ticket | What landed | Gates on the merged tree |
 |---|---|---|---|
+| 15:20 | B2+B3 | paged leaderboard with the own row pinned, badge tiers and legend | 261 pgTAP, 78 integration, 22 E2E |
 | 14:45 | C9 | prize by QR: reserved coupon + one-time claim link, kiosk QR screen with fa+en text and 20 s countdown, /claim page with email and gift card, expired links release the coupon | 114 unit, 236 pgTAP, 74 integration, 21 E2E |
 | 14:20 | B10+B11 | tour flag and placeholder tour/intro, ad banner zone on the leaderboard, shared first-visit E2E helper | 114 unit, 211 pgTAP, 68 integration, 19 E2E |
 | 14:08 | S18 | safe mode: guarded/locked levels, automatic escalation, operator script, /ops banner, Cloudflare runbook | 108 unit, 211 pgTAP, 68 integration, 17 E2E |
@@ -42,7 +43,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 2. ✅ B15 merged (clean boot verified).
 3. ✅ C9 merged. 🔍 B6+B7+B9 and 🔍 B2+B3: worker reports green, my verification next.
 4. ✅ S18 safe mode merged.
-5. 📋 B2+B3 paged leaderboard and badges: dispatch now that B1 is merged.
+5. ✅ B2+B3 merged.
 6. 📋 B8 Instagram: after B6+B7+B9 merges.
 7. ⏳ C11 tours with real content: after B10 merges (ticket to write).
 8. ⏳ B13 hardening pass on rewards: after B5 to B9.
@@ -134,8 +135,8 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | S16 | L2 | Leaderboard integrity at prize time: one row per verified email | | ✅ done | `players.email` is unique and `leaderboard()` ranks verified emails only; the export becomes per-tournament with B1 | |
 | S18 | L2 | Safe mode: guarded and locked levels, automatic escalation on connection and signup spikes, operator command, Cloudflare Under Attack runbook | Sonnet (cbx) | ✅ done | `server/safemode.js`, `public.settings`, `scripts/safe-mode.mjs`, /ops banner, Cloudflare runbook; 98 unit, 68 integration, 17 E2E on my merged run; merged | thresholds revisited with the owner's venue numbers |
 | B1 | MKT | Tournaments as data (dates, prize image and title, broker bonus), adjustable without code | Sonnet (cbx) | ✅ done | tournaments table, no-overlap constraint, per-tournament records, SQL one-liners in the runbook; merged | B2, B3 |
-| B2 | MKT | Leaderboard API: 20 per page, own rank and row in every response, live top 20 | | 📋 ready | closes gap G3; ticket `docs/tickets/b2-b3-leaderboard-pages-badges.md` | after B1 |
-| B3 | MKT | Badge tiers and the legend endpoint | | 📋 ready | in the B2 ticket | after B1 |
+| B2 | MKT | Leaderboard API: 20 per page, own rank and row in every response, live top 20 | Sonnet (cbx) | ✅ done | 20 per page, `my_rank` by player id (closes G3), per-socket `me` on every push; 261 pgTAP, 78 integration, 22 E2E on my merged run; merged | C4b animation |
+| B3 | MKT | Badge tiers and the legend endpoint | Sonnet (cbx) | ✅ done | `badge_tiers` table, `tier_for_rank`, `badge_legend()`, six placeholder SVGs; merged | real badge art from marketing |
 | B4 | MKT | Name and phone removed from lead capture | Sonnet (cbx) | ✅ done | email only in forms, storage and /api/lead; merged | |
 | B5 | MKT | Per-device identity for anonymous players | Sonnet (cbx) | ✅ done | 189 pgTAP, 40 integration on my run; `clientIp` now owned by S2's limits.js; merged | |
 | B6 | MKT | Reward: video watched (90 %) once per device, released by the server from reported progress | | 📋 ready | ticket `docs/tickets/b6-b7-b9-rewards.md` | after B5 |
@@ -161,7 +162,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 |---|---|---|
 | G1 | The Trader-level signup prompt on the play screen calls `claim_task('signup')` for unverified players and fails with `email_required`; same dead end C7 fixed in the broke overlay | small fix; do with B9 |
 | G2 | `round_settled` carries no `stake`; the win pane's stake text is still the client's own number for the lever it sent | add `stake` to the frame; with C4b |
-| G3 | Leaderboard own-row match compares masked emails, so colliding masks highlight two rows | B2 |
+| G3 | Leaderboard own-row match compares masked emails, so colliding masks highlight two rows | closed by B2 (own row by player id) |
 | G4 | Nothing tests the production bundle; the Connecting trap slipped past every E2E because they run on the Vite dev server | a compose smoke test in the deploy gate; with D2 |
 | G5b | The chart is shown only while a round runs (by design); the idle play screen has no chart. Checked 2026-09-16 on the compose build: it draws. | none; say so in the demo doc |
 | G5 | `npm run format:check` red on ~20 pre-existing files | cosmetic |

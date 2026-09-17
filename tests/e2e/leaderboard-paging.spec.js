@@ -18,6 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
 import pg from 'pg';
+import { dismissFirstVisit } from './first-visit.js';
 
 const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REPORT_DIR = path.join(REPO_ROOT, 'docs', 'reports', 'b2-b3');
@@ -61,6 +62,7 @@ test.describe('paged leaderboard, own row and badge tiers (B2, B3)', () => {
       }
 
       await page.goto('/');
+      await dismissFirstVisit(page);
       await goLeaderboard(page);
 
       // ---- 1. verify an email, play one round: a tournament_scores row is created at the
