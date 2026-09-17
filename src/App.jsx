@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { COMBO_MAX, comboMult, ECON, levelFor, nextLevel, SIGNUP_PROMPT_LEVEL } from './config.js';
 import { ENABLED_LANGS, LANG_KEY, LangContext, makeT, money, num, readStoredLang, useLang } from './i18n.js';
 import UpdateBanner from './UpdateBanner.jsx';
@@ -790,12 +790,15 @@ export function Console({ state, profile, actions, trackRef, onOpenIdentity }) {
 
 /* ---------- leaderboard ---------- */
 
-// Tournament header (title, date range, time left, prize) and the past/upcoming switcher
-// (ticket B1, docs/tasks-marketing-lead.md A3). `tournament` is the header for whichever board
-// is currently on screen (the live one by default, or a past/upcoming one once switched to);
-// `tournaments` is the full list every chip in the switcher is drawn from. No new colours,
-// fonts or components: the chips reuse `.lang-btn`, the copy reuses `.screen-*`.
-function TournamentHeader({ tournament, tournaments, selectedId, onSelect }) {
+// One fused header card (ticket U2): the cup icon that used to sit next to the "Leaderboard"
+// title now sits at the left of the card, then "Leaderboard / by record" and, for whichever
+// board is on screen, the tournament's title, date range with time left and prize title - all in
+// their existing styles. The prize image is gone entirely. The past/upcoming switcher
+// (ticket B1, docs/tasks-marketing-lead.md A3) still lives under the card: `tournament` describes
+// the board currently shown (live, or a past/upcoming one once switched to) and `tournaments` is
+// the full list every chip is drawn from. No new colours, fonts or components: the chips reuse
+// `.lang-btn`, the title/sub reuse `.screen-*`.
+function LeaderboardHeader({ tournament, tournaments, selectedId, onSelect }) {
   const { t, lang } = useLang();
   const [, forceTick] = useState(0);
   useEffect(() => {
@@ -821,22 +824,28 @@ function TournamentHeader({ tournament, tournaments, selectedId, onSelect }) {
 
   return (
     <div className="lb-tournament">
-      {tournament ? (
-        <div className="lb-tournament-head">
-          <img className="lb-tournament-prize" src={tournament.prize_image} alt={tournament.prize_title} />
-          <div className="lb-tournament-info">
-            <div className="lb-tournament-title">{tournament.title}</div>
-            <div className="lb-tournament-dates">
-              {fmtDate(tournament.starts_at)} – {fmtDate(tournament.ends_at)}
-              {' · '}
-              {timeLeft()}
-            </div>
-            <div className="lb-tournament-prize-title">{tournament.prize_title}</div>
-          </div>
+      <div className="lb-head">
+        <span className="lb-head-icon">
+          <TrophyIcon stroke={GOLD} size={48} />
+        </span>
+        <div className="lb-head-info">
+          <div className="screen-title">{t('lb.title')}</div>
+          <div className="screen-sub">{t('lb.byRecord')}</div>
+          {tournament ? (
+            <>
+              <div className="lb-tournament-title">{tournament.title}</div>
+              <div className="lb-tournament-dates">
+                {fmtDate(tournament.starts_at)} – {fmtDate(tournament.ends_at)}
+                {' · '}
+                {timeLeft()}
+              </div>
+              <div className="lb-tournament-prize-title">{tournament.prize_title}</div>
+            </>
+          ) : (
+            <div className="lb-tournament-none">{t('tournament.none')}</div>
+          )}
         </div>
-      ) : (
-        <div className="lb-tournament-none">{t('tournament.none')}</div>
-      )}
+      </div>
       {tournaments.length > 1 && (
         <div className="lb-tournament-switcher">
           {tournaments.map((tt) => (
@@ -894,6 +903,31 @@ function Leaderboard({
     onSelectTournament?.(id);
   };
 
+  // The guest note's placement (ticket U2) is the own-row rule from B2 applied to a logged-out
+  // player: below the last listed row while the list fits its container, pinned to the bottom of
+  // the list container once the rows overflow it. Rows are absolutely positioned over
+  // `.lb-spacer`, so "overflow" is measured from that spacer's height rather than from
+  // scrollHeight - the guest row itself never counts toward the content height.
+  const rows = others || [];
+  const listRef = useRef(null);
+  const [listOverflows, setListOverflows] = useState(false);
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) {
+      setListOverflows(false);
+      return undefined;
+    }
+    const measure = () => {
+      const spacer = el.querySelector('.lb-spacer');
+      const content = spacer ? spacer.getBoundingClientRect().height : 0;
+      setListOverflows(content > el.clientHeight + 1);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [rows.length]);
+
   // The no-server demo path (VITE_GAME_WS unset - a preview build or local UI work with no
   // backend, src/api/client.js): `others` is the static dummy list, with no rank, tier or
   // server-computed `me` to page or badge. Keep the old synthetic "you" row for that case only;
@@ -903,13 +937,12 @@ function Leaderboard({
     const sorted = [...entries].sort((a, b) => b.s - a.s);
     return (
       <section className="lb">
-        <div className="screen-head">
-          <div className="screen-title">
-            <TrophyIcon stroke={GOLD} size={24} /> {t('lb.title')}
-          </div>
-          <div className="screen-sub">{t('lb.byRecord')}</div>
-        </div>
-        <TournamentHeader tournament={tournament} tournaments={tournaments} selectedId={selectedId} onSelect={selectTournament} />
+        <LeaderboardHeader
+          tournament={tournament}
+          tournaments={tournaments}
+          selectedId={selectedId}
+          onSelect={selectTournament}
+        />
         <div className="lb-list">
           <div className="lb-spacer" style={{ '--n': entries.length }} />
           {entries.map((r) => {
@@ -935,25 +968,19 @@ function Leaderboard({
   // public.leaderboard(). `me` is this player's own row from public.my_rank(), matched by
   // player id, never the masked display string (closes gap G3); null for a guest/unverified
   // player, who sees the guest CTA row instead.
-  const rows = others || [];
   const ownRowOnPage = me != null && rows.some((r) => r.rank === me.rank);
+  const guest = guestMode && me == null;
 
   return (
     <section className="lb">
-      <div className="screen-head">
-        <div className="screen-title">
-          <TrophyIcon stroke={GOLD} size={24} /> {t('lb.title')}
-        </div>
-        <div className="screen-sub">{t('lb.byRecord')}</div>
-      </div>
-      <TournamentHeader
+      <LeaderboardHeader
         tournament={tournament}
         tournaments={tournaments}
         selectedId={selectedId}
         onSelect={selectTournament}
       />
-      <div className="lb-list">
-        <div className="lb-spacer" style={{ '--n': rows.length + (guestMode && me == null ? 1 : 0) }} />
+      <div className="lb-list" ref={listRef}>
+        <div className="lb-spacer" style={{ '--n': rows.length }} />
         {rows.map((r, i) => {
           const mine = me != null && r.rank === me.rank;
           return (
@@ -968,13 +995,43 @@ function Leaderboard({
           );
         })}
         {/* Unverified web players never get a synthetic score row - the leaderboard is exactly
-            where the ticket asks for the guest prompt instead (docs/layers.md C3, C4). */}
-        {guestMode && me == null && (
-          <button type="button" className="lb-row lb-row-me" style={{ '--i': rows.length }} onClick={onOpenIdentity}>
+            where the ticket asks for the guest prompt instead (docs/layers.md C3, C4). It sits
+            below the last listed row while the list fits (ticket U2). */}
+        {guest && !listOverflows && (
+          <button
+            type="button"
+            className="lb-row lb-row-me lb-row-guest"
+            style={{ '--i': rows.length }}
+            onClick={onOpenIdentity}
+          >
+            <span className="lb-rank" aria-hidden="true" />
             <span className="lb-name">{t('lb.guestNote')}</span>
           </button>
         )}
       </div>
+      {/* Pinned to the bottom of the list container when the rows do not fit (ticket U2's guest
+          note) or whenever `me`'s rank is not one of the rows on the current page (ticket B2
+          decision 4, docs/tasks-marketing-lead.md A2). */}
+      {guest && listOverflows && (
+        <button
+          type="button"
+          className="lb-row lb-row-me lb-row-sticky lb-row-guest"
+          onClick={onOpenIdentity}
+        >
+          <span className="lb-rank" aria-hidden="true" />
+          <span className="lb-name">{t('lb.guestNote')}</span>
+        </button>
+      )}
+      {me != null && !ownRowOnPage && (
+        <div className="lb-row lb-row-me lb-row-sticky">
+          <span className="lb-rank">{num(me.rank, lang)}</span>
+          <span className="lb-name" dir="ltr">
+            {me.display}
+            <BadgeIcon tier={me.tier} legend={legend} />
+          </span>
+          <span className="lb-score">{num(me.record, lang)}</span>
+        </div>
+      )}
       {pages > 1 && (
         <div className="lb-pager">
           <button type="button" className="lang-btn" disabled={page <= 1} onClick={onPrevPage}>
@@ -984,18 +1041,6 @@ function Leaderboard({
           <button type="button" className="lang-btn" disabled={page >= pages} onClick={onNextPage}>
             {t('lb.next')}
           </button>
-        </div>
-      )}
-      {/* The sticky own row (ticket B2 decision 4, docs/tasks-marketing-lead.md A2): pinned to
-          the bottom whenever `me`'s rank is not one of the rows on the current page. */}
-      {me != null && !ownRowOnPage && (
-        <div className="lb-row lb-row-me lb-row-sticky">
-          <span className="lb-rank">{num(me.rank, lang)}</span>
-          <span className="lb-name" dir="ltr">
-            {me.display}
-            <BadgeIcon tier={me.tier} legend={legend} />
-          </span>
-          <span className="lb-score">{num(me.record, lang)}</span>
         </div>
       )}
       {legend?.length > 0 && (
