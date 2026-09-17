@@ -9,6 +9,8 @@
 import { expect, test } from '@playwright/test';
 import { WebSocket } from 'ws';
 
+import { dismissFirstVisit } from './first-visit.js';
+
 const KIOSK_SECRET = 'dev-kiosk-secret-0001';
 const KIOSK_URL = `/?k=${KIOSK_SECRET}`;
 const GAME_WS = process.env.VITE_GAME_WS;
@@ -61,17 +63,17 @@ function forbiddenUi(page) {
 test.describe('web: tour placeholder and the ad zone (B10, B11)', () => {
   test.setTimeout(60000);
 
-  test('the tour placeholder shows once, and the leaderboard ad zone renders an image', async ({ page }) => {
+  test('the first-visit tour shows once, and the leaderboard ad zone renders an image', async ({ page }) => {
     // Every Playwright test already runs in its own fresh browser context (docs/layers.md,
     // same as every other spec in this suite) - localStorage starts empty with no setup here.
     await page.goto('/');
 
-    // ---- 1. the tour placeholder appears on a fresh device --------------------------------
+    // ---- 1. the first-visit tour appears on a fresh device --------------------------------
     await expect(page.locator('.modal-backdrop .modal')).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('.modal-title')).toHaveText('Welcome to Gold Rush');
-    await page.screenshot({ path: `${REPORT_DIR}/01-web-tour-placeholder.png` });
+    await expect(page.locator('.modal-title')).toHaveText('Call the next 5 seconds');
+    await page.screenshot({ path: `${REPORT_DIR}/01-web-tour-card1.png` });
 
-    await page.getByRole('button', { name: 'Got it' }).click();
+    await dismissFirstVisit(page);
     await expect(page.locator('.modal-backdrop')).toHaveCount(0);
 
     // ---- 2. the leaderboard's ad zone renders an image, chosen from ads/banners.json ------
@@ -115,15 +117,17 @@ test.describe.serial('kiosk: no ad zone or web chrome, intro once per boot (B10,
     await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
     await expect(forbiddenUi(page)).toHaveCount(0);
 
-    // ---- 1. first tap this boot: the intro placeholder, not PLAYING directly --------------
+    // ---- 1. first tap this boot: the intro, not PLAYING directly --------------------------
     await page.locator('.btn-start').click();
     await expect(page.locator('.modal-backdrop .modal')).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('.modal-title')).toHaveText('Welcome to Gold Rush');
+    await expect(
+      page.getByText('Predict gold for 5 seconds. Win 5 in a row and take home the $100 bonus.'),
+    ).toBeVisible();
     await expect(forbiddenUi(page)).toHaveCount(0);
     await page.screenshot({ path: `${REPORT_DIR}/04-kiosk-intro.png` });
 
     // Dismissing it counts as activity and starts PLAYING (docs/layers.md, B10 decision 2).
-    await page.getByRole('button', { name: 'Got it' }).click();
+    await page.getByRole('button', { name: 'Start' }).click();
     await expect(page.locator('.modal-backdrop')).toHaveCount(0);
     await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
     await expect(forbiddenUi(page)).toHaveCount(0);

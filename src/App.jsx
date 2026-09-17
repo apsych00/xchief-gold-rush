@@ -189,17 +189,43 @@ function Toast({ toast }) {
   );
 }
 
-// Ticket B10: a placeholder for the marketing lead's real first-visit tour (A5), reusing the
-// existing .modal-backdrop/.modal vocabulary so it looks at home until it is replaced. Shown
-// once per device - src/useGame.js's tourSeen/markTourSeen own the localStorage side of that.
+// Ticket C11: the real first-visit tour (A5) on the B10 mount point, reusing the existing
+// .modal-backdrop/.modal vocabulary. Three cards, one at a time, with dots; Next advances and
+// the last card's button is "Got it" (tests/e2e/first-visit.js clicks it). Cards 1-2 also offer
+// Skip, and either path ends the tour through onDone - markTourSeen() in src/useGame.js, which
+// owns the xchief.tour_seen flag that shows the tour once per device.
+const TOUR_CARDS = ['card1', 'card2', 'card3'];
+
 function TourPlaceholder({ onDone }) {
+  const { t } = useLang();
+  const [step, setStep] = useState(0);
+  const last = step === TOUR_CARDS.length - 1;
+  const card = TOUR_CARDS[step];
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Welcome to Gold Rush">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t(`tour.${card}.title`)}>
       <div className="modal">
-        <div className="modal-title">Welcome to Gold Rush</div>
-        <div className="modal-actions">
-          <button type="button" className="btn-primary" onClick={onDone}>
-            Got it
+        <div className="modal-title">{t(`tour.${card}.title`)}</div>
+        <div className="modal-sub">{t(`tour.${card}.body`)}</div>
+        <div className="tour-dots" aria-hidden="true">
+          {TOUR_CARDS.map((c, i) => (
+            <span key={c} className={i === step ? 'tour-dot tour-dot-on' : 'tour-dot'} />
+          ))}
+        </div>
+        <div className="modal-actions tour-actions">
+          {!last && (
+            <button type="button" className="link-btn" onClick={onDone}>
+              {t('tour.skip')}
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn-primary tour-primary"
+            onClick={() => {
+              if (last) onDone();
+              else setStep(step + 1);
+            }}
+          >
+            {last ? t('tour.gotIt') : t('tour.next')}
           </button>
         </div>
       </div>

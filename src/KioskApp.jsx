@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { Console, TopBar } from './App.jsx';
-import { useLang } from './i18n.js';
+import { num, useLang } from './i18n.js';
 import { QR_MS, useKioskFlow } from './useKioskFlow.js';
 
 // showButton is false for the no_codes screen (ticket C8, docs/layers.md): same attract
@@ -153,17 +153,27 @@ function KioskNoCodesModal() {
   );
 }
 
-// Ticket B10: a placeholder for the real kiosk intro (A6), shown once per boot between ATTRACT
-// and the first play. Reuses the same .modal-backdrop/.modal vocabulary as the web tour
-// placeholder in App.jsx.
-function KioskIntroModal({ onDone }) {
+// Ticket C11: the real kiosk intro (A6) on the B10 once-per-boot mount point, shown between
+// ATTRACT and the first play. One card, both languages at once like the C9 QR screen, larger
+// type for the booth. The streak target comes from the server's kiosk_session frame
+// (useKioskFlow's streakTarget, default 5 before the first frame), never a number baked in here.
+function KioskIntroModal({ streakTarget, onDone }) {
+  const { t } = useLang();
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Welcome to Gold Rush">
-      <div className="modal kiosk-modal">
-        <div className="modal-title">Welcome to Gold Rush</div>
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('kioskIntro.en', { n: streakTarget })}
+    >
+      <div className="modal kiosk-modal kiosk-intro">
+        <div className="modal-title" dir="rtl">
+          {t('kioskIntro.fa', { n: num(streakTarget, 'fa') })}
+        </div>
+        <div className="modal-sub">{t('kioskIntro.en', { n: streakTarget })}</div>
         <div className="modal-actions">
           <button type="button" className="btn-primary kiosk-modal-btn" onClick={onDone}>
-            Got it
+            Start
           </button>
         </div>
       </div>
@@ -213,7 +223,7 @@ export default function KioskApp({ state, profile, actions, trackRef }) {
       {flow.abandonSecondsLeft !== null && (
         <KioskAbandonOverlay secondsLeft={flow.abandonSecondsLeft} onTap={flow.cancelAbandon} />
       )}
-      {flow.showIntro && <KioskIntroModal onDone={flow.dismissIntro} />}
+      {flow.showIntro && <KioskIntroModal streakTarget={flow.streakTarget} onDone={flow.dismissIntro} />}
       {(flow.reconnecting || flow.kioskUnauthorized) && (
         <KioskReconnecting unauthorized={flow.kioskUnauthorized} />
       )}
