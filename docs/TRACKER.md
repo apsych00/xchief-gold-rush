@@ -24,6 +24,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 | Time | Ticket | What landed | Gates on the merged tree |
 |---|---|---|---|
+| 21:20 | U1 | wipe button gone (code kept), user-icon avatar, themed scrollbars, client keeps one socket to our server only (direct Finnhub/OKX/Binance sources removed from the client) | 137 unit, 33 E2E |
 | 19:50 | B13 | rewards hardening: nine attacks held, claim audit, device-bound claims | 137 unit, 287 pgTAP, 97 integration, 31 E2E |
 | 19:25 | OD1 | OTP budgets raised to venue-safe values, visible 'too many connections' line, wrong-code regression spec; proven: no verify without the right code, no reward without verify | 137 unit, 87 integration, 31 E2E |
 | 18:35 | feed | Finnhub through the gold price relay (`FEED_RELAY_WS`), `/status` shows the publishing source (closes G10) | 137 unit |
@@ -77,7 +78,7 @@ Demo tickets are all merged (33/33). The showcase run against the compose build 
 |---|---|---|---|
 | A1 | MT5 route is secure and looks like an ordinary xChief client; nothing leaks through the server | assumption; needs a written audit: bridge port never published, VNC loopback-only behind `PASSWORD`, investor password only, mt5 container env narrowed (G11), logs never carry credentials | 📋 carded as S19 |
 | A2 | The client has one socket, ours; the server ingests every feed and is the relay; ladder MT5, then Finnhub, then others | true on the server (priority 0, 1, 2, 3). False on the client until U1 lands: `src/priceFeed.js` still carries direct Finnhub, OKX and Binance sources from the Supabase era | fixed in U1 |
-| U1 | Remove the wipe button (code kept), user icon instead of the "Y" avatar, themed scrollbars everywhere, one socket only | change | 🔨 OpenCode |
+| U1 | Remove the wipe button (code kept), user icon instead of the "Y" avatar, themed scrollbars everywhere, one socket only | change | ✅ merged (my gates on the merged tree: 137 unit, 295 pgTAP, 97 server, 33 E2E) |
 | U2 | Leaderboard: one header card (cup icon, title, tournament info), the switcher toggles it; the guest note readable and placed as the own row (below the list when it fits, pinned when it overflows) | change; the same own-row rule as B2 applied to a logged-out player | 🔨 OpenCode |
 | U3 | Ad zone: the two animated xChief banners (`ads/banners/`), rotating when each finishes, zone height at their 1072:310 aspect | change | 🔨 OpenCode |
 | U4 | Share: modal with banner preview, copy link and social shortcuts; public `/s/<token>` page with CTAs to play | change | 🔨 OpenCode |
