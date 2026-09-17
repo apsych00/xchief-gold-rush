@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { COMBO_MAX, comboMult, ECON, levelFor, nextLevel, SIGNUP_PROMPT_LEVEL, TASKS } from './config.js';
+import { COMBO_MAX, comboMult, ECON, levelFor, nextLevel, SIGNUP_PROMPT_LEVEL } from './config.js';
 import { ENABLED_LANGS, LANG_KEY, LangContext, makeT, money, num, readStoredLang, useLang } from './i18n.js';
 import UpdateBanner from './UpdateBanner.jsx';
 import LeadCapture from './LeadCapture.jsx';
@@ -15,11 +15,11 @@ import Profile, { initialsOf } from './Profile.jsx';
 
 import { LEVERS, maxAffordableLever, stakeFor, useGame } from './useGame.js';
 
-// Offline-only fallback (docs/layers.md C5): src/config.js's own TASKS list, used solely for
-// the no-backend preview mode (VITE_GAME_WS unset - see src/api/client.js). Whenever a real
-// server is connected, the signup reward shown here always comes from state.tasksRows (the
-// `tasks` frame, docs/layers.md C5) instead - never this constant.
-const FALLBACK_SIGNUP_REWARD = TASKS.find((t) => t.id === 'signup')?.reward ?? 1000;
+// Offline-only fallback (docs/layers.md C5): the no-backend preview mode (VITE_GAME_WS unset -
+// see src/api/client.js) never gets a `tasks` frame to read a reward number from. Whenever a
+// real server is connected, the signup reward shown here always comes from state.tasksRows
+// instead - never this constant.
+const FALLBACK_SIGNUP_REWARD = 1000;
 
 const GREEN = '#35E36F';
 const GOLD = '#E9B62A';
@@ -544,9 +544,22 @@ export function Console({ state, profile, actions, trackRef, onOpenIdentity }) {
     !signupDone &&
     !profile.prompts.signup_trader &&
     levelFor(profile.record).id === SIGNUP_PROMPT_LEVEL;
+  // G1 fix (ticket B6+B7+B9): this used to always open the broker SignupForm, whose "done"
+  // unconditionally called claim_task('signup') - a dead end for an unverified player, who the
+  // server always refused (first email_required, now not_claimable since signup is no longer a
+  // client-claimable task kind at all - db/schema.sql's claim_task, decision 5). The signup
+  // reward is granted server-side by verify_otp_code once verified (decision 4), so an
+  // unverified player reaching this prompt goes to the OTP screen instead; a verified player
+  // (whose signup reward already landed there) still sees the broker SignupForm.
   useEffect(() => {
-    if (traderPrompt && !signupFor) setSignupFor('signup_trader');
-  }, [traderPrompt, signupFor]);
+    if (!traderPrompt || signupFor) return;
+    if (profile.emailVerified) {
+      setSignupFor('signup_trader');
+    } else {
+      actions.markPrompt('signup_trader');
+      onOpenIdentity();
+    }
+  }, [traderPrompt, signupFor, profile.emailVerified, actions, onOpenIdentity]);
 
   const closeSignup = () => {
     if (signupFor) actions.markPrompt(signupFor);
@@ -675,11 +688,12 @@ export function Console({ state, profile, actions, trackRef, onOpenIdentity }) {
               C7: never a dead end. The primary CTA is whichever unconditional path is still open
               (the once-only free refill, then the tasks screen) - both work with no email at
               all. Verify-email and the signup bonus are offered as extra links, never gates on
-              the primary path: db/schema.sql's claim_task('signup') requires email_confirmed_at
-              (t.requires_email), so that CTA only appears once profile.emailVerified is true -
-              offering it earlier used to send the player through SignupForm's local lead capture
-              only to have the server's claim_task reject with `email_required`, a dead end this
-              ticket closes. */}
+              the primary path: the signup reward is granted server-side once verify_otp_code
+              confirms an email (ticket B6+B7+B9 decision 4), so this broker-signup CTA only
+              appears once profile.emailVerified is already true - offering it earlier used to
+              send the player through SignupForm only to have the server's claim_task reject with
+              `email_required`, a dead end G1 (same ticket) closes by sending an unverified
+              player to the OTP screen instead. */}
           {!IS_KIOSK && broke && (
             <div className="broke">
               <div className="broke-title">{!profile.freeRefillUsed ? t('game.freeTitle') : t('game.brokeTitle')}</div>
@@ -717,10 +731,10 @@ export function Console({ state, profile, actions, trackRef, onOpenIdentity }) {
           source={signupFor}
           balance={profile.coins}
           reward={num(signupReward, lang)}
-          onDone={() => {
-            actions.markPrompt(signupFor);
-            actions.claimTask('signup');
-          }}
+          // The signup reward is granted server-side by verify_otp_code once verified (ticket
+          // B6+B7+B9 decision 4), not by a client claim - this form only shows once
+          // profile.emailVerified is already true, so the reward has already landed by now.
+          onDone={() => actions.markPrompt(signupFor)}
           onCancel={closeSignup}
         />
       )}
@@ -909,10 +923,13 @@ export default function App() {
               )}
               {screen === 'tasks' && (
                 <Tasks
-                  profile={profile}
                   tasksRows={state.tasksRows}
                   onClaim={actions.claimTask}
                   onRefreshTasks={actions.refreshTasks}
+                  onReportVideoProgress={actions.reportVideoProgress}
+                  onStartTaskVisit={actions.startTaskVisit}
+                  onReturnTaskVisit={actions.returnTaskVisit}
+                  onOpenIdentity={() => setOtpOpen(true)}
                   onToast={(txt) => actions.toast?.(txt)}
                 />
               )}

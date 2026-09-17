@@ -8,10 +8,16 @@
 // authenticated with; this file opens its own tiny WebSocket to the same server, authenticates
 // with that same token, and sends get_me - the same round trip the app itself makes, run
 // independently so the assertion cannot be fooled by anything the page renders.
-import { expect, test } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { expect, test } from '@playwright/test';
 import { WebSocket } from 'ws';
 import pg from 'pg';
+
+const REPORT_DIR = path.join(fileURLToPath(new URL('../..', import.meta.url)), 'docs', 'reports', 'b6-b9');
+fs.mkdirSync(REPORT_DIR, { recursive: true });
 
 function readEnv() {
   const out = {};
@@ -23,7 +29,11 @@ function readEnv() {
   return out;
 }
 const ENV = readEnv();
-const GAME_WS = ENV.VITE_GAME_WS;
+// A VITE_GAME_WS in the environment (the ticket's own recipe: "VITE_GAME_WS on the Vite command
+// line" when the game server runs on a non-default port) overrides .env the same way it already
+// does for the app's own bundle - this file's independent verification socket must point at the
+// same server the page under test does, not whatever .env happens to say.
+const GAME_WS = process.env.VITE_GAME_WS || ENV.VITE_GAME_WS;
 
 // Read the socket's player token off the page's dev-only hook the way the app itself holds it
 // (src/api/socket.js sets window.__xchief.token once `welcome` lands).
@@ -131,6 +141,16 @@ async function setCoinsInDb(playerId, coins) {
   }
 }
 
+// Same dev-only lookup web-identity.spec.js uses: node scripts/peek-otp.mjs <email> against
+// DATABASE_URL, never a guessed or faked code.
+function peekOtp(email) {
+  const out = execFileSync('node', ['scripts/peek-otp.mjs', email], { env: process.env, encoding: 'utf8' }).trim();
+  expect(out, `no dev-captured OTP code found for ${email} - is DATABASE_URL set to the test database?`).not.toBe(
+    'none',
+  );
+  return out;
+}
+
 test.describe('player-visible promises', () => {
   test.setTimeout(180000);
 
@@ -224,9 +244,27 @@ test.describe('player-visible promises', () => {
     ).toHaveCount(0);
   });
 
-  test('4. claiming a task credits exactly the reward the server granted, and the balance shown matches the server (docs/layers.md C5)', async ({
+  test('4. claiming a task credits exactly the reward the server granted, and the balance shown matches the server (docs/layers.md C5; ticket B6+B7+B9 decision 5)', async ({
     page,
   }) => {
+    // claim_task now only accepts kind='manual' tasks (db/schema.sql decision 5); every seeded
+    // task has a server-released kind of its own (video/redirect/email/signup/instagram), so
+    // this suite seeds its own manual fixture the same way test/integration-box does, rather
+    // than reach for a task id whose kind no longer supports a direct client claim.
+    const databaseUrl = process.env.DATABASE_URL;
+    expect(databaseUrl, 'DATABASE_URL must be set to seed the manual test task').toBeTruthy();
+    const client = new pg.Client({ connectionString: databaseUrl });
+    await client.connect();
+    const taskId = `e2e_manual_${Date.now()}`;
+    try {
+      await client.query(
+        "insert into public.tasks (id, title, reward, kind) values ($1, 'E2E manual test task', 260, 'manual')",
+        [taskId],
+      );
+    } finally {
+      await client.end();
+    }
+
     // Land on Home, not Game: the nav bar (and so the tasks tab) is hidden while a round is on
     // screen (App.jsx renders Nav only outside the 'game' screen) - see startGame() above for
     // the flow the other tests use instead.
@@ -243,14 +281,12 @@ test.describe('player-visible promises', () => {
     await page.locator('.nav-btn').nth(2).click();
     await expect(page.locator('.tasks')).toBeVisible({ timeout: 5000 });
 
-    // TASKS order is fixed (config.js): index 3 is 'instagram', a plain link task with no
-    // form/modal of its own - open it, wait out the task's timer, then claim it.
-    const task = page.locator('.task').nth(3);
+    // A 'manual' task has no i18n copy of its own; src/i18n.js's t() falls back to the raw key
+    // for a missing entry (Identity.jsx's errorText relies on the same fallback), which is
+    // enough to find this fixture's row uniquely.
+    const task = page.locator('.task').filter({ hasText: `tasks.items.${taskId}.title` });
     await expect(task).toBeVisible({ timeout: 5000 });
     await task.locator('.task-btn').click();
-    const claimBtn = task.locator('.task-btn-ready');
-    await expect(claimBtn, 'the task must become claimable after its wait timer').toBeVisible({ timeout: 20000 });
-    await claimBtn.click();
 
     // The reward is the server's number, not a client guess (docs/layers.md C5): once the
     // claim reply lands the task shows "claimed" and the balance chip reflects the new coins.
@@ -304,5 +340,129 @@ test.describe('player-visible promises', () => {
     await expect(overlay, 'the overlay must clear itself once the balance can afford a round').toHaveCount(0);
     await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 10000 });
     await expect(page.locator('.btn-down')).toBeEnabled({ timeout: 10000 });
+  });
+
+  test('6. watching the promo video to the end releases its reward from the server, shown as a toast (ticket B6)', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await expect
+      .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), { timeout: 10000 })
+      .toBe('server');
+    const before = await getMe(page);
+
+    await page.locator('.nav-btn').nth(2).click();
+    await expect(page.locator('.tasks')).toBeVisible({ timeout: 5000 });
+
+    const videoTask = page.locator('.task').filter({ hasText: 'Watch the xChief video' });
+    await expect(videoTask).toBeVisible();
+    await videoTask.locator('.task-btn').click();
+
+    // No VITE_PROMO_VIDEO_URL configured in this dev setup: VideoModal's fallback countdown
+    // plays out for real (src/Tasks.jsx), reporting progress to the server on the same cadence
+    // a real <video>'s onTimeUpdate would - report_video_progress (db/schema.sql) is what
+    // actually decides when 90% has been crossed and releases the reward, never this screen.
+    await expect(page.locator('.promo-fallback')).toBeVisible({ timeout: 3000 });
+    await page.screenshot({ path: path.join(REPORT_DIR, '01-video-modal-playing.png') });
+    await expect(page.locator('.modal-backdrop')).toHaveCount(0, { timeout: 25000 });
+
+    await expect(page.locator('.toast')).toBeVisible({ timeout: 5000 });
+    await expect(videoTask.locator('.task-state')).toBeVisible({ timeout: 5000 });
+    await page.screenshot({ path: path.join(REPORT_DIR, '02-video-task-claimed-toast.png') });
+
+    const after = await getMe(page);
+    expect(after.coins, 'the server must have released the video task reward').toBeGreaterThan(before.coins);
+    await expect.poll(() => screenCoins(page), { timeout: 5000 }).toBe(after.coins);
+  });
+
+  test('7. a redirect task opens its destination, refuses the reward before the 5 s window and grants it after (ticket B7)', async ({
+    page,
+    context,
+  }) => {
+    await page.goto('/');
+    await expect
+      .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), { timeout: 10000 })
+      .toBe('server');
+    const before = await getMe(page);
+
+    await page.locator('.nav-btn').nth(2).click();
+    await expect(page.locator('.tasks')).toBeVisible({ timeout: 5000 });
+
+    const telegramTask = page.locator('.task').filter({ hasText: 'Join the Telegram channel' });
+    await expect(telegramTask).toBeVisible();
+
+    // Returning (the tab regaining focus) under the 5 s window must grant nothing: the client
+    // dispatches its own focus listener deterministically here rather than depending on a real
+    // OS-level window-switch under headless Chromium, but the promise under test is the
+    // server's return_task_visit refusal (db/schema.sql), not the browser's focus plumbing.
+    // One window only - src/Tasks.jsx never re-arms it on a refused return (statusOf keeps
+    // showing the same disabled "waiting" countdown from the original click until the real
+    // window passes), so this is one task_start, two returns against the same window.
+    const [popup] = await Promise.all([context.waitForEvent('page'), telegramTask.locator('.task-btn').click()]);
+    await popup.waitForLoadState('domcontentloaded').catch(() => {});
+
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.waitForTimeout(500);
+    const tooEarly = await getMe(page);
+    expect(tooEarly.coins, 'returning under the 5 s window must not grant the reward').toBe(before.coins);
+    await page.screenshot({ path: path.join(REPORT_DIR, '03-redirect-task-waiting.png') });
+
+    await popup.close();
+    await page.waitForTimeout(5200);
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+
+    await expect(telegramTask.locator('.task-state')).toBeVisible({ timeout: 5000 });
+    await page.screenshot({ path: path.join(REPORT_DIR, '04-redirect-task-claimed.png') });
+    const after = await getMe(page);
+    expect(after.coins, 'past the 5 s window, the server must have released the reward').toBeGreaterThan(
+      before.coins,
+    );
+    await expect.poll(() => screenCoins(page), { timeout: 5000 }).toBe(after.coins);
+  });
+
+  test('8. signing in with OTP releases the email (and first-time signup) reward from the server (ticket B9, gap G1)', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await expect
+      .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), { timeout: 10000 })
+      .toBe('server');
+    const before = await getMe(page);
+
+    await page.locator('.nav-btn').nth(2).click();
+    await expect(page.locator('.tasks')).toBeVisible({ timeout: 5000 });
+
+    // decision 4 / gap G1: the email task's own "start" button opens the OTP screen now,
+    // never a client claim_task('email') call.
+    const emailTask = page.locator('.task').filter({ hasText: 'Save your email' });
+    await expect(emailTask).toBeVisible();
+    await emailTask.locator('.task-btn').click();
+    await expect(page.locator('.modal-backdrop .modal')).toBeVisible({ timeout: 5000 });
+
+    const email = `e2e-b9-${Date.now()}@example.com`;
+    await page.locator('.modal input[type="email"]').fill(email);
+    await page.locator('.modal').getByRole('button', { name: /send code/i }).click();
+
+    await expect(page.locator('.modal .pin-input')).toBeVisible({ timeout: 10000 });
+    const code = peekOtp(email);
+    await page.locator('.modal .pin-input').fill(code);
+    await page.locator('.modal').getByRole('button', { name: /verify/i }).click();
+    await expect(page.locator('.modal .signup-done-title')).toBeVisible({ timeout: 10000 });
+    await page.screenshot({ path: path.join(REPORT_DIR, '05-otp-verified-done.png') });
+    await page.locator('.modal').getByRole('button', { name: /done/i }).click();
+    await expect(page.locator('.modal-backdrop')).toHaveCount(0);
+
+    // verify_otp_code releases both the email (200) and, on a first verification on this
+    // device, the signup (1000) reward itself (db/schema.sql decision 4) - 1200 total (seed).
+    const after = await getMe(page);
+    expect(after.coins, 'verifying must release the email + signup rewards from the server').toBe(before.coins + 1200);
+    await expect.poll(() => screenCoins(page), { timeout: 5000 }).toBe(after.coins);
+
+    await expect(emailTask.locator('.task-state')).toBeVisible({ timeout: 10000 });
+    // src/i18n.js's English copy for this task, not db/seed.sql's own title text (Tasks.jsx
+    // renders from the i18n key, never the server row's raw title).
+    const signupTask = page.locator('.task').filter({ hasText: 'Open an xChief account' });
+    await expect(signupTask.locator('.task-state')).toBeVisible({ timeout: 5000 });
+    await page.screenshot({ path: path.join(REPORT_DIR, '06-email-and-signup-claimed.png') });
   });
 });

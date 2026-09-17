@@ -155,12 +155,21 @@ create table public.rounds (
 -- duplicated as numbers in src/ - get_tasks() below is what the client's tasks screen renders
 -- from. title is plain English; the client's own i18n (src/i18n.js) still owns the localized
 -- copy keyed by id, the same way it already does for every other piece of task copy.
+-- kind (ticket B6+B7+B9, docs/tickets/b6-b7-b9-rewards.md decision 1) drives which release path a
+-- task takes and what the client renders: 'video' (B6, progress-reported, released by the server
+-- at 90%), 'redirect' (B7, task_start/task_return window), 'email' and 'signup' (B9, released by
+-- verify_otp_code on the socket that verified), 'instagram' (B8, not built here), 'manual' (the
+-- only kind claim_task still accepts from the client - none seeded, kept for future use). url is
+-- the redirect destination; null for every other kind.
 create table public.tasks (
   id text primary key,
   title text not null,
   reward int not null,
   repeat_ms bigint, -- null = one-time
-  requires_email boolean not null default false
+  requires_email boolean not null default false,
+  kind text not null default 'manual'
+    check (kind in ('video', 'redirect', 'email', 'signup', 'instagram', 'manual')),
+  url text
 );
 
 create table public.task_claims (
@@ -173,6 +182,33 @@ create table public.task_claims (
   -- Denormalized off players.device_id so the once-per-device check and its unique index below
   -- do not need to join players for every claim attempt.
   device_id uuid references public.devices (id)
+);
+
+-- Video watch progress (ticket B6, docs/tickets/b6-b7-b9-rewards.md decision 2): the client
+-- reports {seconds, duration} at most every 5 s while the video plays and once on ended;
+-- report_video_progress() below upserts this row and releases the task's reward itself once
+-- seconds_watched crosses 90% of duration. updated_at is the anchor the too-fast check reads -
+-- "since the last report", not since started_at.
+create table public.video_progress (
+  player_id uuid not null references public.players (id) on delete cascade,
+  task_id text not null references public.tasks (id),
+  seconds_watched int not null default 0,
+  duration int not null,
+  started_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (player_id, task_id)
+);
+
+-- Redirect-and-return visits (ticket B7, docs/tickets/b6-b7-b9-rewards.md decision 3): task_start
+-- upserts started_at and clears returned_at; task_return checks the 5 s window against
+-- started_at and, once past it, releases the reward and stamps returned_at. One row per
+-- (player, task) is enough for the lenient B7 rule (one visit per task per device); B13 hardens.
+create table public.task_visits (
+  player_id uuid not null references public.players (id) on delete cascade,
+  task_id text not null references public.tasks (id),
+  started_at timestamptz not null default now(),
+  returned_at timestamptz,
+  primary key (player_id, task_id)
 );
 
 -- The $100 codes. Claimed atomically, once each.
@@ -239,6 +275,8 @@ create index coupons_available on public.coupons (created_at) where status = 'av
 create index dev_otps_email_created on public.dev_otps (email, created_at desc);
 create index otp_codes_email_created on public.otp_codes (email, created_at desc);
 create index devices_last_seen on public.devices (last_seen_at); -- /status devices24h (D1)
+create index video_progress_updated on public.video_progress (updated_at);
+create index task_visits_started on public.task_visits (started_at);
 
 -- ----------------------------------------------------------------- RLS + policies --
 --
@@ -256,6 +294,8 @@ alter table public.coupons enable row level security;
 alter table public.dev_otps enable row level security;
 alter table public.otp_codes enable row level security;
 alter table public.devices enable row level security;
+alter table public.video_progress enable row level security;
+alter table public.task_visits enable row level security;
 
 create policy players_select_own on public.players
   for select to authenticated using (id = auth.uid());
@@ -269,7 +309,8 @@ create policy task_claims_select_own on public.task_claims
 create policy tasks_select_all on public.tasks
   for select to anon, authenticated using (true);
 
--- kiosks, coupons, dev_otps, otp_codes and devices deliberately have NO client policy:
+-- kiosks, coupons, dev_otps, otp_codes, devices, video_progress and task_visits deliberately have
+-- NO client policy:
 -- service-role tables (devices per ticket B5 decision 5 - "nothing identifies a device to
 -- other players"; a player's own device_id rides on get_me() instead). The public top-10
 -- leaderboard is exposed through the
@@ -733,6 +774,10 @@ begin
   if v_uid is null then raise exception 'unauthenticated'; end if;
   select * into t from public.tasks where id = p_task;
   if not found then raise exception 'unknown_task'; end if;
+  -- ticket B6+B7+B9 decision 5: claim_task from the client remains only for kind='manual' - every
+  -- other kind is released by the server itself (report_video_progress, return_task_visit,
+  -- verify_otp_code), never by a client-initiated claim.
+  if t.kind <> 'manual' then raise exception 'not_claimable'; end if;
 
   perform public.ensure_player(v_uid);
   -- Serialize all claims for this player: the check below and the insert run under this lock.
@@ -823,9 +868,10 @@ end $$;
 -- both come from here, never from client-side config, so the tasks screen can never show a
 -- number the ledger did not actually grant. The `claimed` predicate mirrors claim_task's own
 -- eligibility check exactly (repeat_ms null = one-time; otherwise still inside the cooldown
--- window since the last claim) so the two can never disagree.
+-- window since the last claim) so the two can never disagree. kind and url (ticket B6+B7+B9) are
+-- what the client renders from - it keeps no task table of its own any more.
 create function public.get_tasks()
-returns table (id text, title text, reward int, claimed boolean)
+returns table (id text, title text, reward int, claimed boolean, kind text, url text)
 language plpgsql security definer set search_path = public as $$
 declare
   v_uid uuid := auth.uid();
@@ -841,9 +887,185 @@ begin
         select 1 from public.task_claims c
         where c.player_id = v_uid and c.task_id = t.id
           and (t.repeat_ms is null or c.claimed_at > now() - make_interval(secs => t.repeat_ms / 1000.0))
-      ) as claimed
+      ) as claimed,
+      t.kind,
+      t.url
     from public.tasks t
     order by t.reward desc, t.id;
+end $$;
+
+-- ------------------------------------------------------------------ server-released rewards --
+--
+-- ticket B6+B7+B9 (docs/tickets/b6-b7-b9-rewards.md): every reward below is granted from state
+-- the server tracked itself, never from a client assertion of its own success.
+
+-- Shared release path (service-role only, identity given as an argument like ensure_player):
+-- the same once-per-device-or-verified-email rule claim_task enforces, but idempotent rather
+-- than raising - every caller below (report_video_progress, return_task_visit, the verify_otp
+-- handler) already knows whether it is allowed to grant this task and just wants "did it land",
+-- not an exception to catch. Returns null, never an error, when the reward was already claimed
+-- on this device or by this verified email - the caller decides what that means for its own
+-- response shape.
+create function public.release_task_reward(p_player uuid, p_task text)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  t public.tasks%rowtype;
+  v_device_id uuid;
+  v_email text;
+  v_coins int;
+begin
+  select * into t from public.tasks where id = p_task;
+  if not found then raise exception 'unknown_task'; end if;
+
+  perform public.ensure_player(p_player);
+  perform 1 from public.players where id = p_player for update;
+
+  select device_id, email into v_device_id, v_email from public.players where id = p_player;
+
+  if exists (select 1 from public.task_claims where player_id = p_player and task_id = p_task) then
+    return null;
+  end if;
+
+  if v_email is not null and exists (
+    select 1 from public.task_claims tc
+    join public.players p2 on p2.id = tc.player_id
+    where tc.task_id = p_task and p2.email = v_email and tc.player_id <> p_player
+  ) then
+    return null;
+  end if;
+
+  begin
+    insert into public.task_claims (player_id, task_id, reward, device_id)
+    values (p_player, p_task, t.reward, v_device_id);
+  exception when unique_violation then
+    return null;
+  end;
+
+  update public.players set
+    coins = coins + t.reward,
+    record = greatest(record, coins + t.reward),
+    updated_at = now()
+  where id = p_player
+  returning coins into v_coins;
+
+  return json_build_object('coins', v_coins, 'reward', t.reward);
+end $$;
+
+-- Video watch progress (ticket B6 decision 2), client-callable via auth.uid(). Progress never
+-- moves backwards in storage (a rewind is a silent no-op, not an error - only the touched
+-- updated_at moves) and is capped at duration + 5. The one hard rejection is a jump faster than
+-- 2x the wall-clock time since the LAST REPORT (not since started_at, so the very first report
+-- of a mid-video seconds value is never mistaken for a fast-forward): a client cannot claim to
+-- have watched more than it could have in the time between two reports. Crossing 90% (and a
+-- duration of at least 10 s, so a near-zero-length "video" cannot be claimed instantly) releases
+-- the reward itself, through release_task_reward - never through claim_task, which refuses this
+-- task's kind.
+create function public.report_video_progress(p_task text, p_seconds int, p_duration int)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  v_uid uuid := auth.uid();
+  t public.tasks%rowtype;
+  vp public.video_progress%rowtype;
+  v_elapsed numeric;
+  v_capped int;
+  v_release json;
+begin
+  if v_uid is null then raise exception 'unauthenticated'; end if;
+  select * into t from public.tasks where id = p_task;
+  if not found or t.kind <> 'video' then raise exception 'unknown_task'; end if;
+  if p_duration is null or p_duration <= 0 or p_seconds is null or p_seconds < 0 then
+    raise exception 'bad_progress';
+  end if;
+
+  perform public.ensure_player(v_uid);
+
+  select * into vp from public.video_progress
+    where player_id = v_uid and task_id = p_task for update;
+
+  v_capped := least(p_seconds, p_duration + 5);
+
+  if not found then
+    insert into public.video_progress (player_id, task_id, seconds_watched, duration, started_at, updated_at)
+    values (v_uid, p_task, v_capped, p_duration, now(), now());
+  elsif v_capped > vp.seconds_watched then
+    v_elapsed := greatest(extract(epoch from (now() - vp.updated_at)), 0.001);
+    if (v_capped - vp.seconds_watched) > 2 * v_elapsed then
+      raise exception 'progress_too_fast';
+    end if;
+    update public.video_progress set seconds_watched = v_capped, duration = p_duration, updated_at = now()
+      where player_id = v_uid and task_id = p_task;
+  else
+    v_capped := vp.seconds_watched;
+    update public.video_progress set updated_at = now() where player_id = v_uid and task_id = p_task;
+  end if;
+
+  if v_capped >= 0.9 * p_duration and p_duration >= 10 then
+    v_release := public.release_task_reward(v_uid, p_task);
+  end if;
+
+  return json_build_object('seconds_watched', v_capped, 'reward', case when v_release is not null then (v_release->>'reward')::int else null end);
+end $$;
+
+-- Redirect and return (ticket B7 decision 3), client-callable via auth.uid(). task_start opens
+-- the window; task_return only releases once at least 5 s of wall-clock time have actually
+-- passed since it, reported as json (never a raised exception) so the "not yet, try again in
+-- N ms" and "already claimed" cases can carry their own data the same way open_kiosk_round's
+-- insufficient_coins case does - a raise here would undo the UPDATE in the same statement.
+create function public.start_task_visit(p_task text)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  v_uid uuid := auth.uid();
+  t public.tasks%rowtype;
+begin
+  if v_uid is null then raise exception 'unauthenticated'; end if;
+  select * into t from public.tasks where id = p_task;
+  if not found or t.kind <> 'redirect' then raise exception 'unknown_task'; end if;
+
+  perform public.ensure_player(v_uid);
+
+  insert into public.task_visits (player_id, task_id, started_at, returned_at)
+  values (v_uid, p_task, now(), null)
+  on conflict (player_id, task_id) do update set started_at = now(), returned_at = null;
+
+  return json_build_object('task', p_task, 'window_ms', 5000);
+end $$;
+
+create function public.return_task_visit(p_task text)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  v_uid uuid := auth.uid();
+  t public.tasks%rowtype;
+  v_visit public.task_visits%rowtype;
+  v_elapsed_ms numeric;
+  v_release json;
+begin
+  if v_uid is null then raise exception 'unauthenticated'; end if;
+  select * into t from public.tasks where id = p_task;
+  if not found or t.kind <> 'redirect' then raise exception 'unknown_task'; end if;
+
+  perform public.ensure_player(v_uid);
+
+  select * into v_visit from public.task_visits where player_id = v_uid and task_id = p_task for update;
+  if not found then
+    return json_build_object('error', 'not_yet', 'retry_ms', 5000);
+  end if;
+
+  if exists (select 1 from public.task_claims where player_id = v_uid and task_id = p_task) then
+    return json_build_object('error', 'already_claimed');
+  end if;
+
+  v_elapsed_ms := extract(epoch from (now() - v_visit.started_at)) * 1000;
+  if v_elapsed_ms < 5000 then
+    return json_build_object('error', 'not_yet', 'retry_ms', ceil(5000 - v_elapsed_ms)::int);
+  end if;
+
+  update public.task_visits set returned_at = now() where player_id = v_uid and task_id = p_task;
+
+  v_release := public.release_task_reward(v_uid, p_task);
+  if v_release is null then
+    return json_build_object('error', 'already_claimed');
+  end if;
+  return v_release;
 end $$;
 
 -- --------------------------------------------------------------------- leaderboard --
@@ -947,18 +1169,25 @@ end $$;
 
 -- No client writes, anywhere.
 revoke insert, update, delete, truncate, references, trigger
-  on public.players, public.rounds, public.tasks, public.task_claims, public.kiosks, public.coupons
+  on public.players, public.rounds, public.tasks, public.task_claims, public.kiosks, public.coupons,
+     public.video_progress, public.task_visits
   from anon, authenticated;
 
--- kiosks and coupons: not even readable by clients. Service role only.
-revoke select on public.kiosks, public.coupons from anon, authenticated;
+-- kiosks, coupons, video_progress and task_visits: not even readable by clients. Service role only.
+revoke select on public.kiosks, public.coupons, public.video_progress, public.task_visits from anon, authenticated;
 
 -- dev_otps and otp_codes: service role only.
 revoke all on public.dev_otps, public.otp_codes from public, anon, authenticated;
 
 -- Client-callable, identity from the JWT (set per transaction by the server).
-revoke execute on function public.get_me(), public.claim_task(text), public.free_refill(), public.get_tasks() from public, anon;
-grant execute on function public.get_me(), public.claim_task(text), public.free_refill(), public.get_tasks() to authenticated;
+revoke execute on function
+  public.get_me(), public.claim_task(text), public.free_refill(), public.get_tasks(),
+  public.report_video_progress(text, int, int), public.start_task_visit(text), public.return_task_visit(text)
+from public, anon;
+grant execute on function
+  public.get_me(), public.claim_task(text), public.free_refill(), public.get_tasks(),
+  public.report_video_progress(text, int, int), public.start_task_visit(text), public.return_task_visit(text)
+to authenticated;
 
 -- Any visitor may read the top 10; no other role besides the two client roles
 -- gets it.
@@ -978,5 +1207,6 @@ revoke execute on function
   public.settle_kiosk_round(uuid, numeric),
   public.request_otp_code(uuid, text),
   public.verify_otp_code(uuid, text, text),
-  public.revoke_player_sessions(uuid)
+  public.revoke_player_sessions(uuid),
+  public.release_task_reward(uuid, text)
 from public, anon, authenticated;

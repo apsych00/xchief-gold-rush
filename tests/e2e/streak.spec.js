@@ -8,6 +8,10 @@ const KIOSK_SECRET = 'dev-kiosk-secret-0001';
 const KIOSK_URL = `/?k=${KIOSK_SECRET}`;
 
 function gameWsUrl() {
+  // A VITE_GAME_WS in the environment overrides .env, the same way kiosk.spec.js's own
+  // gameWsUrl already does - this independent socket must point at the server the page under
+  // test does, not whatever port .env happens to say, when the game server runs elsewhere.
+  if (process.env.VITE_GAME_WS) return process.env.VITE_GAME_WS;
   const text = fs.readFileSync(new URL('../../.env', import.meta.url), 'utf8');
   const line = text.split(/\r?\n/).find((l) => l.startsWith('VITE_GAME_WS='));
   return line ? line.slice('VITE_GAME_WS='.length).trim() : null;

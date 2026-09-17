@@ -223,13 +223,21 @@ test('a second socket presenting the same device token gets a different player w
 });
 
 test('claim_task is blocked across two different players sharing one device', async () => {
+  // ticket B6+B7+B9 (db/schema.sql decision 5) restricted claim_task to kind='manual' tasks;
+  // 'telegram' is 'redirect' now (B7's own return-window mechanic, exercised in tasks.test.mjs),
+  // so this once-per-device invariant - which never moved - is exercised here against a manual
+  // fixture task instead.
+  await pool.query(
+    "insert into public.tasks (id, title, reward, kind) values ('test_manual_device', 'Test manual device task', 150, 'manual') on conflict (id) do update set kind = 'manual', reward = 150",
+  );
+
   const ws1 = connect();
   await whenOpen(ws1);
   const welcome1 = await authAnonymous(ws1);
 
-  send(ws1, { type: 'claim_task', task_id: 'telegram' });
+  send(ws1, { type: 'claim_task', task_id: 'test_manual_device' });
   const claimed = await nextFrame(ws1, (f) => f.type === 'me' || f.type === 'error');
-  assert.equal(claimed.type, 'me', 'the first player on this device claims telegram normally');
+  assert.equal(claimed.type, 'me', 'the first player on this device claims the task normally');
   ws1.close();
 
   const ws2 = connect();
@@ -238,7 +246,7 @@ test('claim_task is blocked across two different players sharing one device', as
   const welcome2 = await nextFrame(ws2, (f) => f.type === 'welcome');
   assert.notEqual(welcome2.me.id, welcome1.me.id);
 
-  send(ws2, { type: 'claim_task', task_id: 'telegram' });
+  send(ws2, { type: 'claim_task', task_id: 'test_manual_device' });
   const blocked = await nextFrame(ws2, (f) => f.type === 'me' || f.type === 'error');
   assert.equal(blocked.type, 'error');
   assert.equal(blocked.code, 'already_claimed', 'a different player on the same device is refused');
