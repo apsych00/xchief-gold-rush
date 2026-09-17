@@ -131,6 +131,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | X5 | tracker audit | S1 secret rotation procedure, S11 code retention | low | M2 |
 | X6 | U1 | `README.md`, `CONTRIBUTING.md`, `relay/README.md` still tell developers to set `VITE_RELAY_URL` / `VITE_FINNHUB_TOKEN` for the client, which no longer reads them | low | any idle worker |
 | X7 | U1 | `Leaderboard` renders the offline dummy list (`{name, s}`) through the server branch when the fetch is refused, so React keys are `undefined` (console warning, no visible effect) | low | with C4b |
+| X8 | U2, U3 | E2E specs write their screenshots into tracked `docs/reports/<ticket>/` folders, so every full-suite run (mine and every worker's) rewrites dozens of PNGs and every merge conflicts on them; move spec output to an ignored `test-results/screens/` and keep curated copies in the reports by hand | medium | before the next batch |
 
 ## Tickets
 
