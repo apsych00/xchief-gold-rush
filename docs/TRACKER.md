@@ -14,14 +14,14 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | L2 hardening | 🟩🟩🟩⬜⬜⬜⬜⬜⬜⬜ 6/18 | S18 safe mode 📋 (M1); S1, S3, S5, S6, S8, S10, S11, S12, S14, S15 are M2 scope creep | S2 rate limits merged; production numbers under review with the owner |
 | MKT Part B | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 6/16 | B6+B7+B9 🔨, B10+B11 🔍, B2+B3 📋, B8 📋, B12 ⏳, B13 ⏳ | B1, B4, B5, B14, B15 (build), B16 done |
 | OPS | 🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜ 2/4 | D3 run on the box (M2), T1 Telegram bot 📋 (M4) | deploy scripts built; first real run happens on the box |
-| FEED | 🟩🟩🟩🟩🟩🟩⬜⬜⬜⬜ 3/5 | S17 MetaApi ⛔ admin; B15 Docker bridge 🔍 | Finnhub live with PAXG fallbacks, 3-decimal publishing |
+| FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 
 **Demo milestone (M1):** 21 of 31 tickets done. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
 
 ### Queue, in the exact order it is picked up
 
 1. 🔍 B10+B11 tour flag and ad banners: my full E2E run, then merge.
-2. 🔍 B15 second pass: clean-volume cold boot on my side (in progress), then merge to close the Docker feed route.
+2. ✅ B15 merged (clean boot verified).
 3. 🔨 C9 QR claim flow (running) and 🔨 B6+B7+B9 rewards (running): verify and merge as they land.
 4. 📋 S18 safe mode: dispatch now that S2 is merged (constants revisited with the owner's venue numbers first).
 5. 📋 B2+B3 paged leaderboard and badges: dispatch now that B1 is merged.
@@ -95,7 +95,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | D1 | OPS | Monitoring: `/status`, `/ops`, `/logs`, alerts | Sonnet | ✅ done | merged `4839072`; `$` doubling trap documented | |
 | D2 | OPS | One-command deploy, auto-deploy on push, install, rollback | Sonnet | ✅ done | `deploy/*.sh`, `client.Dockerfile` (bundle built in Docker, verified: no dev socket address); box behaviour of install/cron/ufw untestable on Windows, to be rehearsed on the real box | rehearse on the box |
 | S17 | FEED | MT5 via MetaApi, plug-and-play | orchestrator | ⛔ blocked | code merged and reaches MetaApi; refused by token scope | M3: write the "credentials arrived" checklist; admin: account UUID, token with account read, quote interval 0 |
-| B15 | FEED | MT5 terminal + tick bridge in Docker | Sonnet (cbx) | 🔍 verifying | build committed on `nightmareinc/b15-mt5-docker` (74 unit, 11 Python tests); base image pull truncated in the sandbox; verification 2026-09-17 FAILED on a clean volume: the entrypoint raced the base image's Python install, bridge.py crashed, the container halted mid-install and restart-looped (10 restarts) with a poisoned volume; gates lint/unit/pytest green; second pass done by the worker: readiness = Wine `import encodings` + MetaTrader5 dist-info, supervised bridge loop, idle mode without credentials, 28 Python tests; clean-volume proof running on my side | merge when the clean boot passes |
+| B15 | FEED | MT5 terminal + tick bridge in Docker | Sonnet (cbx) | ✅ done | build, independent review, two hardening passes; my clean-volume cold boot reached healthz in 709 s with zero restarts and a warm restart came back; merged `86141c1` | first login with the broker's investor account (M3) |
 | F1 | FEED | Finnhub + PAXG continuous series, 3 decimals | | ✅ done | measured 9 moves / 5 s vs 1-2 on PAXG | |
 | S1 | L2 | Secret rotation procedure | | ⏳ queued | folded into C3a except the procedure | |
 | S2 | L2 | Per-socket AND per-IP rate limits (sockets per IP, connections per minute, anonymous signups, OTP per IP, frame flood, frame size, play cadence), 15-minute IP block | Sonnet (cbx) | ✅ done | limits.js; load 100 sockets over 10 IPs p95 settle 5061 ms; merged; production numbers under review with the owner (venue NAT) | S18 next |
