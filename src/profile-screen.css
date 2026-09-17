@@ -12,7 +12,7 @@
   border-radius: 50%;
   border: 1.5px solid rgba(255, 255, 255, 0.18);
   background: linear-gradient(180deg, #2b2f2c, #151816);
-  color: #fff;
+  color: var(--gold);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -51,10 +51,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.14),
     0 3px 0 #0a0b0a,
     0 0 14px rgba(233, 182, 42, 0.5);
-}
-.avatar-initials {
-  font: 800 12px/1 var(--en);
-  letter-spacing: 0.5px;
 }
 .avatar-flame {
   position: absolute;
@@ -102,7 +98,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font: 800 22px var(--en);
   color: #2a1c02;
   background: radial-gradient(circle at 36% 30%, #fff7c2 0%, var(--gold-1) 25%, var(--gold-2) 60%, var(--gold-3) 100%);
   box-shadow:
@@ -317,10 +312,6 @@
   padding: 0 10px;
   font-size: 14px;
   white-space: nowrap;
-}
-.pf-danger {
-  border-color: rgba(255, 92, 92, 0.6);
-  color: #ffb3b3;
 }
 .pf-foot {
   font: 500 10.5px/1.4 var(--fa);

@@ -24,6 +24,8 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 | Time | Ticket | What landed | Gates on the merged tree |
 |---|---|---|---|
+| 22:05 | U2 | one leaderboard header card (cup icon, title, tournament info), switcher toggles it, guest note is the own row, pinned own row fixed | 137 unit, 35 E2E |
+| 21:20 | U1 | wipe button gone (code kept), user-icon avatar, themed scrollbars, client keeps one socket to our server only (direct Finnhub/OKX/Binance sources removed from the client) | 137 unit, 33 E2E |
 | 19:50 | B13 | rewards hardening: nine attacks held, claim audit, device-bound claims | 137 unit, 287 pgTAP, 97 integration, 31 E2E |
 | 19:25 | OD1 | OTP budgets raised to venue-safe values, visible 'too many connections' line, wrong-code regression spec; proven: no verify without the right code, no reward without verify | 137 unit, 87 integration, 31 E2E |
 | 18:35 | feed | Finnhub through the gold price relay (`FEED_RELAY_WS`), `/status` shows the publishing source (closes G10) | 137 unit |
@@ -57,6 +59,18 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 Play it now: compose stack at http://localhost:8080 (kiosk `/?k=dev-kiosk-secret-0001`), operator pages `/ops` and `/logs`.
 
+## Operating state 2026-09-17 night (handover for the next context window)
+
+**The one client the owner watches:** http://localhost:5173 (Vite dev server on the main checkout; kiosk `/?k=dev-kiosk-secret-0001`). Its game server is `node server/index.js` on 8787 started from the main checkout with: `DATABASE_URL` = the compose database published on 127.0.0.1:55480 (password = `POSTGRES_PASSWORD` from `.env.box`, exported without printing), `PLAYER_TOKEN_SECRET=dev-secret`, `TRUST_PROXY=0`, `PUBLIC_URL=http://localhost:5173`, `FEED_RELAY_WS=ws://localhost:8788/ws`, `MT5_BRIDGE_WS=ws://localhost:8765`, `MAX_ANON_PLAYERS_PER_IP_PER_10MIN=200`, `MAX_CONNECTIONS_PER_IP_PER_MIN=300`. The relay is `node relay/server.js` with `PORT=8788` and the Finnhub key from `.env.box`. Compose: only `db` and `mt5` run (caddy, server, dozzle stopped); the untracked `docker-compose.override.yml` publishes caddy 8080:80, db 55480 and mt5 8765 on loopback. Restart order after a reboot: compose `db` + `mt5` (profile mt5), relay, game server, Vite. Never `docker compose down -v` on the project (G12): it wipes the MT5 profile; the first login is redone by driving https://127.0.0.1:3001 with Playwright (company search "xChief", pick xChief Ltd, login and password from the container env, server xChief-MT5, Finish, then `pkill -f "opt/mt5-bridge/bridge.p[y]"` so the bridge re-attaches).
+
+**Owner's edits on `dev`:** the owner tweaks UI in the main checkout while walking. Before every merge run `git add -A && git commit -m "Owner UI tweaks"` on `dev`; never overwrite those lines; resolve conflicts the owner's way and say so.
+
+**Workers (OpenCode Go, cheap roster), handles in `D:\tmp\tickets\orca-stage23.txt`, worktrees under `C:\Users\Kayhan Azadi\orca\workspaces\xchief-gold-rush\<name>`, each writes `docs/reports/<name>-report.md` in its worktree:** U1 client polish, U2 leaderboard header, U3 animated banners, U4 share, K1 open kiosk route, K5 email mask. Queued next, in this order because they share files: K4 Missions + YouTube (Tasks.jsx), then K3 Instagram via BoxAPI (Tasks.jsx), K2 kiosk intro with QR (after U1 and K1). Tickets in `docs/tickets/`. OpenCode rules: `kimi-k2.7-code` for server work, `deepseek-v4.1-flash` for client; prompt says explicit `./` paths, never open `.env*` (copies `ENV_PUBLIC.txt`, `ENV_BOX_EXAMPLE.txt`, `ENV_PRODUCTION.txt` are placed in every worktree), never kill foreign processes, own ports only, gates in the foreground, report to a file. When OpenCode is capped (5-hour window), run the same tickets as live Sonnet sessions on cb or cbx (`D:\tmp\tickets\run-<name>-cb-i.ps1` pattern).
+
+**Verification loop per delivery:** in the worktree, `db/run-tests.sh` copied with a free port (5547x) and a `goldrush-verifyN-keep` container, server on 877x, Vite on 536x, `BASE_URL`, `VITE_GAME_WS`, `PUBLIC_URL`, `TRUST_PROXY=0`; lint, unit, build, pgTAP, test:server, full E2E; then commit on the branch, merge into `dev`, resolve, rerun the gates on the merged tree, commit, `git push origin dev` and `git push apsych dev:dev` (both work; pushes to any `main` are blocked by the permission classifier and need the owner), remove the worktree (`orca worktree rm --worktree branch:<b> --force`), add the tracker row and the "Landed on dev today" line. Ports 5178, 5199 and 55479 are in a Windows reserved range; IIS holds port 80.
+
+**Waiting on the owner:** the `main` push and the `demo-1` tag (Demo tickets 33/33 merged; showcase against the compose build was stopped by the owner before the tag), venue numbers for the per-IP limits, credential rotation after the B1 worker read `.env`, `BOXAPI_TOKEN` (placeholder added to `.env.box`), `PASSWORD` for the MT5 VNC page, Telegram bot token and chat id.
+
 ## Recalibration 2026-09-17 evening (owner)
 
 Demo tickets are all merged (33/33). The showcase run against the compose build was stopped by the owner before the tag; the `demo-1` tag waits for the owner's word. New requirements, in priority order:
@@ -65,11 +79,18 @@ Demo tickets are all merged (33/33). The showcase run against the compose build 
 |---|---|---|---|
 | A1 | MT5 route is secure and looks like an ordinary xChief client; nothing leaks through the server | assumption; needs a written audit: bridge port never published, VNC loopback-only behind `PASSWORD`, investor password only, mt5 container env narrowed (G11), logs never carry credentials | 📋 carded as S19 |
 | A2 | The client has one socket, ours; the server ingests every feed and is the relay; ladder MT5, then Finnhub, then others | true on the server (priority 0, 1, 2, 3). False on the client until U1 lands: `src/priceFeed.js` still carries direct Finnhub, OKX and Binance sources from the Supabase era | fixed in U1 |
-| U1 | Remove the wipe button (code kept), user icon instead of the "Y" avatar, themed scrollbars everywhere, one socket only | change | 🔨 OpenCode |
-| U2 | Leaderboard: one header card (cup icon, title, tournament info), the switcher toggles it; the guest note readable and placed as the own row (below the list when it fits, pinned when it overflows) | change; the same own-row rule as B2 applied to a logged-out player | 🔨 OpenCode |
+| U1 | Remove the wipe button (code kept), user icon instead of the "Y" avatar, themed scrollbars everywhere, one socket only | change | ✅ merged (my gates on the merged tree: 137 unit, 295 pgTAP, 97 server, 33 E2E) |
+| U2 | Leaderboard: one header card (cup icon, title, tournament info), the switcher toggles it; the guest note readable and placed as the own row (below the list when it fits, pinned when it overflows) | change; the same own-row rule as B2 applied to a logged-out player | ✅ merged (rebased on dev first; my gates: 137 unit, 295 pgTAP, 97 server, 35 E2E); side fix: the pinned own row no longer renders over the topbar (B2 defect) |
 | U3 | Ad zone: the two animated xChief banners (`ads/banners/`), rotating when each finishes, zone height at their 1072:310 aspect | change | 🔨 OpenCode |
 | U4 | Share: modal with banner preview, copy link and social shortcuts; public `/s/<token>` page with CTAs to play | change | 🔨 OpenCode |
 | S19 | MT5 route security audit and hardening (A1) | | 📋 ready to ticket |
+| K1 | Open kiosk route `/kiosk`, self-provisioning with a locally persisted identity (accepted leak, decommission after the expo) | change | 🔨 OpenCode |
+| K2 | Kiosk intro: three exciting cards, first showing ends on a QR code for the web version; English only (owner 2026-09-17 late: "only 1 locale (eng)"); no coins or missions on the kiosk (owner confirmed the kiosk is already Play only) | change | 📋 ticketed, queued after U1 and K1 |
+| K3 | Instagram follow verified through the BoxAPI data API (handle first, then redirect to the Instagram app); `BOXAPI_TOKEN` placeholder for the owner | change | 📋 ticketed, queued after K4 |
+| K4 | Coins tab becomes Missions: YouTube missions with a non-seekable watch-progress player; redirect rewards release the moment the timer ends | change | 🔨 OpenCode |
+| U5 | English only: the Persian locale is wiped from every page; i18n plumbing stays with one language, the switcher returns in a later version (owner 2026-09-17 late: "a lot of dual locale pages right next to each other") | change | 📋 ticketed; dispatched after the in-flight U2-U4, K1, K5 land (they all touch i18n.js) |
+| D5 | Screenshots of every screen (separate PNGs + one high-quality sprite) for a design agent, git-ignored under `design/screens/` (owner 2026-09-17 late) | one-off | 🔨 OpenCode |
+| K5 | Nicer server-side email mask that shows more of a long address; masked on the server everywhere | change | 🔨 OpenCode |
 
 Working mode during the owner's walk: the main checkout runs a Vite dev server on http://localhost:5173 with a game server on 8787 against the compose database, so the owner can tweak the UI on `dev` directly. Workers stay in worktrees. Before every merge the orchestrator commits the owner's working-tree edits on `dev` as "Owner UI tweaks" so nothing is overwritten.
 
@@ -108,6 +129,8 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | X3 | tracker audit | S5/S15 Postgres least privilege, S6 nightly dump and restore | medium | M2 |
 | X4 | tracker audit | S3 kiosk secret out of the URL | medium | M2 (needs a booth procedure) |
 | X5 | tracker audit | S1 secret rotation procedure, S11 code retention | low | M2 |
+| X6 | U1 | `README.md`, `CONTRIBUTING.md`, `relay/README.md` still tell developers to set `VITE_RELAY_URL` / `VITE_FINNHUB_TOKEN` for the client, which no longer reads them | low | any idle worker |
+| X7 | U1 | `Leaderboard` renders the offline dummy list (`{name, s}`) through the server branch when the fetch is refused, so React keys are `undefined` (console warning, no visible effect) | low | with C4b |
 
 ## Tickets
 
