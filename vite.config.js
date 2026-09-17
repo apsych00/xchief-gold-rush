@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -28,12 +28,13 @@ function versionFile() {
   };
 }
 
-// ads/banners.json (ticket B10+B11) is deliberately outside public/: in production Caddy
-// mounts it straight from the repo (handle_path /ads*, Caddyfile) so it can be edited without a
-// rebuild, the same way ops/index.html is. This middleware makes the dev server answer the same
-// path the same way; the banner images themselves live under public/ads/ and Vite already
-// serves those.
+// ads/banners.json (ticket B10+B11) and the animated banners (ticket U3) are deliberately
+// outside public/: in production Caddy mounts the whole ads/ directory straight from the repo
+// (handle_path /ads*, Caddyfile) so a banner can be added or edited without a rebuild, the same
+// way ops/index.html is. This middleware makes the dev server answer the same paths the same
+// way; the banner images themselves live under public/ads/ and Vite already serves those.
 function adsBannersDev() {
+  const bannersDir = resolve(__dirname, 'ads', 'banners');
   return {
     name: 'xchief-ads-banners-dev',
     apply: 'serve',
@@ -42,6 +43,26 @@ function adsBannersDev() {
         try {
           res.setHeader('Content-Type', 'application/json');
           res.end(readFileSync(resolve(__dirname, 'ads', 'banners.json')));
+        } catch {
+          res.statusCode = 404;
+          res.end();
+        }
+      });
+      // The self-contained banner HTML under ads/banners/, embedded by src/ads.jsx as an iframe
+      // with a ?embed=1 (and, for the concepts file, ?concept=N) query the file itself reads.
+      // Traversal is refused by the prefix check; the query never reaches the filesystem.
+      server.middlewares.use('/ads/banners/', (req, res) => {
+        // connect strips the mount path, so req.url is the remainder ('/file.html?embed=1').
+        const rel = decodeURIComponent((req.url || '').split('?')[0]).replace(/^[/\\]+/, '');
+        const file = resolve(bannersDir, rel);
+        if (!file.startsWith(bannersDir + sep)) {
+          res.statusCode = 404;
+          res.end();
+          return;
+        }
+        try {
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          res.end(readFileSync(file));
         } catch {
           res.statusCode = 404;
           res.end();
