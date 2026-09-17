@@ -212,6 +212,68 @@ test('a second socket verifying an email already confirmed on another player is 
   ws2.close();
 });
 
+// Ticket OD1 part 3: the owner's "got in with rewards on a later email" question. verify_otp_code
+// (db/schema.sql) looks its row up by (player_id, email) together, so a code can only ever be
+// checked against the one player and email it was minted for - these tests prove there is no
+// path from a wrong guess, or a guess against an email this socket never requested a code for,
+// to either a verified email or a released reward.
+test('a wrong code never sets email_verified and never releases the email/signup reward', async () => {
+  const ws = connect();
+  await whenOpen(ws);
+  const welcome = await authAnonymous(ws);
+
+  const email = `otp-noreward-${Date.now()}@example.com`;
+  send(ws, { type: 'request_otp', email });
+  await nextFrame(ws, (f) => f.type === 'otp_sent');
+
+  send(ws, { type: 'verify_otp', email, code: '00000000' });
+  const err = await nextFrame(ws, (f) => f.type === 'error');
+  assert.equal(err.code, 'invalid_code');
+
+  const { rows: playerRows } = await pool.query('select email from public.players where id = $1', [welcome.me.id]);
+  assert.equal(playerRows[0].email, null, 'a wrong guess never sets the player email');
+
+  const { rows: claimRows } = await pool.query('select task_id from public.task_claims where player_id = $1', [
+    welcome.me.id,
+  ]);
+  assert.deepEqual(claimRows, [], 'a wrong guess never releases the email/signup reward');
+
+  // The socket itself is still exactly as usable as before the wrong guess (ticket OD1 decision
+  // 3: an invalid_code/too_many_attempts error must not close or reconnect the socket).
+  send(ws, { type: 'get_me' });
+  const me = await nextFrame(ws, (f) => f.type === 'me');
+  assert.equal(me.id, welcome.me.id);
+  ws.close();
+});
+
+test('the correct code for an email this socket never requested a code for cannot verify it (no cross-player guessing)', async () => {
+  const email = `otp-cross-${Date.now()}@example.com`;
+
+  const wsOwner = connect();
+  await whenOpen(wsOwner);
+  await authAnonymous(wsOwner);
+  send(wsOwner, { type: 'request_otp', email });
+  await nextFrame(wsOwner, (f) => f.type === 'otp_sent');
+  const realCode = await latestDevOtp(email);
+  assert.ok(realCode);
+
+  // A second, unrelated player never asked for a code for this email - verify_otp_code looks
+  // its row up by (player_id, email) together, so this player's lookup finds nothing live for
+  // this email regardless of what code is guessed.
+  const wsGuesser = connect();
+  await whenOpen(wsGuesser);
+  const guesser = await authAnonymous(wsGuesser);
+  send(wsGuesser, { type: 'verify_otp', email, code: realCode });
+  const err = await nextFrame(wsGuesser, (f) => f.type === 'error');
+  assert.equal(err.code, 'expired_code', 'the real code for someone else\'s unrequested email is not a live row for this player');
+
+  const { rows } = await pool.query('select email from public.players where id = $1', [guesser.me.id]);
+  assert.equal(rows[0].email, null, 'the guesser never got the email');
+
+  wsOwner.close();
+  wsGuesser.close();
+});
+
 test('a kiosk connection gets not_available for request_otp and verify_otp', async () => {
   const ws = connect();
   await whenOpen(ws);

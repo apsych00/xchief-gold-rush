@@ -119,6 +119,15 @@ let token = null;
 // across every retry until a `welcome` actually lands. Only ever set from a `k=` launch URL;
 // a web player never sees this.
 let kioskUnauthorized = false;
+// Ticket OD1: the WS upgrade path's own 429 (S2's per-IP connection window) refuses the TCP
+// handshake before any WebSocket frame exists (server/index.js's `upgrade` handler writes the
+// raw HTTP response itself), which is exactly the one failure mode the WebSocket spec hides
+// from JS - onclose fires with no readable status, same as any other failed handshake. The only
+// client-visible signature is a string of closes that never reached onopen; two in a row (this
+// is never the very first connect a page makes, since that always either opens or the app has
+// nothing else running yet to have tripped a per-IP window) is treated as that signature.
+let consecutiveFailedOpens = 0;
+let connectionRefused = false;
 
 const pending = []; // { kinds: Set<string>, resolve, reject, timer }
 
@@ -127,7 +136,7 @@ function notifyStatus() {
 }
 
 export function state() {
-  return { connected, quiet, lastTickAt, kioskUnauthorized };
+  return { connected, quiet, lastTickAt, kioskUnauthorized, connectionRefused };
 }
 
 function evaluateQuiet() {
@@ -326,9 +335,13 @@ function rejectAllPending(code) {
 
 function open() {
   if (!WS_URL) return;
+  let openedThisAttempt = false;
   ws = new WebSocket(WS_URL);
   ws.onopen = () => {
+    openedThisAttempt = true;
     backoffMs = MIN_BACKOFF_MS;
+    consecutiveFailedOpens = 0;
+    connectionRefused = false;
     send(authFrame());
   };
   ws.onmessage = (ev) => {
@@ -344,6 +357,10 @@ function open() {
   ws.onclose = () => {
     connected = false;
     quiet = false;
+    if (!openedThisAttempt) {
+      consecutiveFailedOpens += 1;
+      if (consecutiveFailedOpens >= 2) connectionRefused = true;
+    }
     notifyStatus();
     rejectAllPending('disconnected');
     scheduleReconnect();

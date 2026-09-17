@@ -71,7 +71,7 @@ const initialGame = {
   total: 0,
   me: null,
   legend: [],
-  feed: { mode: 'connecting', source: null, symbol: null, quiet: false },
+  feed: { mode: 'connecting', source: null, symbol: null, quiet: false, connectionRefused: false },
   // last settled round
   result: null, // { outcome:'win'|'lose'|'flat', stake, delta, mult, streak, badge, coupon? }
   toast: null, // { id, text } transient notice

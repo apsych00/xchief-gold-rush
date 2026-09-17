@@ -239,7 +239,8 @@ test('a settled round that changes the top 10 pushes a leaderboard frame to the 
 // above me") are created directly through the same tests.create_confirmed_player() SQL helper
 // the pgTAP suites use (loaded once, outside a transaction, by db/tests/00_helpers.sql - it
 // persists in this --keep database) rather than through a real OTP round-trip: this file's
-// server instance enforces the same per-IP OTP budget (5 per 10 minutes, server/limits.js) a
+// server instance enforces the same per-IP OTP budget (server/limits.js's
+// MAX_OTP_REQUESTS_PER_IP_PER_10MIN) a
 // real deployment would, and only the tests that actually assert what a specific authenticated
 // socket receives need a real verified player behind one.
 async function createScoredPlayer(email, record) {

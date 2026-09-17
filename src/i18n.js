@@ -57,6 +57,10 @@ const dict = {
       waiting: 'در انتظار قیمت بازار…',
       note: 'قیمت لحظه‌ای طلا ({symbol})',
       noteQuiet: 'بازار ثابته؛ حرکت ریز شبیه‌سازی‌شده روی آخرین قیمت',
+      // Ticket OD1: shown instead of the ordinary "connecting" note when the WS upgrade path's
+      // own 429 keeps refusing the reconnect (src/api/socket.js's connectionRefused signature) -
+      // a network sharing one IP, not this one visitor's own fault.
+      tooManyConnections: 'اتصال زیاده از این شبکه؛ یک دقیقه دیگه دوباره امتحان کن',
     },
     result: {
       winTitle: 'درست پیش‌بینی کردی!',
@@ -334,6 +338,7 @@ const dict = {
       waiting: 'Waiting for market price…',
       note: 'Live gold price ({symbol})',
       noteQuiet: 'Market is flat; micro-moves simulated on the last price',
+      tooManyConnections: 'Too many connections from this network, try again in a minute',
     },
     result: {
       winTitle: 'You called it!',
