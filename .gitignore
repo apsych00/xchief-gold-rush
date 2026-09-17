@@ -27,3 +27,6 @@ supabase/.temp
 
 # demo kiosk launch URLs contain secrets
 demo/kiosks.json
+
+# local compose port override (IIS holds :80 on the dev machine)
+docker-compose.override.yml
