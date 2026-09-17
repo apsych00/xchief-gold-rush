@@ -71,7 +71,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | C7 | L1.5 | Broke on the web: refill, tasks, verify email; never a dead end | Sonnet | done | the signup-bonus dead end fixed; broke E2E; merged `a54eeff` | |
 | C8 | L1.5 | Kiosk with no prize codes left: server refuses new rounds, full-screen modal asks the visitor to tell the booth staff, recovers when codes are loaded | Sonnet (cb) | done | 176 pgTAP, 36 integration, kiosk + streak E2E 8/8 on my run; `reports/c8/no-codes.png`; merged | |
 | C9 | L1.5 | WIN reveal: masked code with a glowing Reveal button and confetti; reveal is a server call that returns the code and starts the 30 s photograph window; an unrevealed coupon returns to the pool after the reveal window | | proposed | two decisions with the owner: coupon reserved at win and released if never revealed; reveal window 10-15 s then the existing 30 s | dispatch on approval |
-| C10 | L1.5 | Red-team fixes: `kiosk_reset` cancels the round it stands on (D1, high); empty `?k=` refused (D7); `leaderboard` frame kind check (D8); SQLSTATE never escapes as an error code (D9); kiosk secret guessing throttled (D10) | | ready | red team 2026-09-16: 14 held, 7 partial, 2 loopholes; report `docs/reports/redteam.md` | dispatch now |
+| C10 | L1.5 | Red-team fixes: `kiosk_reset` cancels the round it stands on (D1, high); empty `?k=` refused (D7); `leaderboard` frame kind check (D8); SQLSTATE never escapes as an error code (D9); kiosk secret guessing throttled (D10) | Sonnet (cb) | building | red team 2026-09-16: 14 held, 7 partial, 2 loopholes; report `docs/reports/redteam.md` | verify, merge |
 | D3 | OPS | Execute the runbook on the real box: install, DNS, deploy, rollback rehearsal, alerts, safe mode tried once | | queued | needs the admin's box and Cloudflare access | M2 |
 | T1 | OPS | Telegram bot: server events to a group (restart, feed silence/recovery, safe-mode change, IP block, coupon stock low, deploy done), one-line recommendation per event | | queued | extends `server/alerts.js` (webhook already exists); `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | M4 |
 | Q1 | L1.5 | Blind E2E over every scenario | gpt-5.6-luna (B14) | partly | five-win streak covered by B14; web flows covered by the player-promises and web-identity specs written with the tickets | blind pass for the rest after C4b |
@@ -83,7 +83,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | B15 | FEED | MT5 terminal + tick bridge in Docker | Sonnet | verifying | build committed on `nightmareinc/b15-mt5-docker` (74 unit, 11 Python tests); base image pull truncated in the sandbox; review committed; hardening finished by the cb worker, report `docs/reports/b15-harden.md` on `b15-review`, unverified | M3: verify, merge |
 | F1 | FEED | Finnhub + PAXG continuous series, 3 decimals | | done | measured 9 moves / 5 s vs 1-2 on PAXG | |
 | S1 | L2 | Secret rotation procedure | | queued | folded into C3a except the procedure | |
-| S2 | L2 | Per-socket AND per-IP rate limits (sockets per IP, connections per minute, anonymous signups, OTP per IP, frame flood, frame size, play cadence), 15-minute IP block | | ready | audit 2026-09-16: only the SQL 400 rounds/hour per identity exists; ticket `docs/tickets/s2-rate-limits.md`, amended with red-team D3 (superseded OTP codes invalidated) and D4 (HTTP body cap) | dispatch now |
+| S2 | L2 | Per-socket AND per-IP rate limits (sockets per IP, connections per minute, anonymous signups, OTP per IP, frame flood, frame size, play cadence), 15-minute IP block | Sonnet (cb) | building | audit 2026-09-16: only the SQL 400 rounds/hour per identity exists; ticket `docs/tickets/s2-rate-limits.md`, amended with red-team D3 (superseded OTP codes invalidated) and D4 (HTTP body cap) | verify, merge |
 | S3 | L2 | Kiosk secret out of the URL; scrub `k=` from Caddy logs | | queued | audit: not done, secret still in `?k=` | |
 | S4 | L2 | OTP on a known email logs into that player | | done | in C3a | |
 | S5 | L2 | Postgres least privilege: an `app` role | | queued | audit: the server still connects as `postgres`; the compat roles exist only for pgTAP | |
@@ -99,11 +99,11 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | S15 | L2 | Least privilege, extended | | queued | with S5 | |
 | S16 | L2 | Leaderboard integrity at prize time: one row per verified email | | done | `players.email` is unique and `leaderboard()` ranks verified emails only; the export becomes per-tournament with B1 | |
 | S18 | L2 | Safe mode: guarded and locked levels, automatic escalation on connection and signup spikes, operator command, Cloudflare Under Attack runbook | | ready | design in `docs/tickets/s18-safe-mode.md`; depends on S2; this is the "am I overwhelmed" answer on `/ops` | after S2 |
-| B1 | MKT | Tournaments as data (dates, prize image and title, broker bonus), adjustable without code | | ready | ticket `docs/tickets/b1-b4-tournaments.md` (with B4) | stage 3 |
+| B1 | MKT | Tournaments as data (dates, prize image and title, broker bonus), adjustable without code | Sonnet (cb) | building | ticket `docs/tickets/b1-b4-tournaments.md` (with B4) | verify, merge |
 | B2 | MKT | Leaderboard API: 20 per page, own rank and row in every response, live top 20 | | queued | closes gap G3 | after B1 |
 | B3 | MKT | Badge tiers and the legend endpoint | | queued | | after B1 |
-| B4 | MKT | Name and phone removed from lead capture | | ready | in the B1 ticket | stage 3 |
-| B5 | MKT | Per-device identity for anonymous players | | ready | ticket `docs/tickets/b5-device-identity.md` | stage 3 |
+| B4 | MKT | Name and phone removed from lead capture | Sonnet (cb) | building | in the B1 ticket | with B1 |
+| B5 | MKT | Per-device identity for anonymous players | Sonnet (cb) | building | ticket `docs/tickets/b5-device-identity.md` | verify, merge |
 | B6 | MKT | Reward: video watched (90 %) once per device | | queued | | after B5 |
 | B7 | MKT | Reward: redirect and return (Trustpilot, YouTube, Telegram), 5 s window | | queued | lenient by design until B13 | after B5 |
 | B8 | MKT | Reward: Instagram follow verified through the Instagram Graph API; adapter built against the documented endpoints, env-driven, stubbed until the app id, secret and token arrive | | queued | needs an Instagram app and token from the owner | after B6 |
