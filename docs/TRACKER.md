@@ -57,6 +57,22 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 Play it now: compose stack at http://localhost:8080 (kiosk `/?k=dev-kiosk-secret-0001`), operator pages `/ops` and `/logs`.
 
+## Recalibration 2026-09-17 evening (owner)
+
+Demo tickets are all merged (33/33). The showcase run against the compose build was stopped by the owner before the tag; the `demo-1` tag waits for the owner's word. New requirements, in priority order:
+
+| ID | What | Owner's assumption or change | Status |
+|---|---|---|---|
+| A1 | MT5 route is secure and looks like an ordinary xChief client; nothing leaks through the server | assumption; needs a written audit: bridge port never published, VNC loopback-only behind `PASSWORD`, investor password only, mt5 container env narrowed (G11), logs never carry credentials | 📋 carded as S19 |
+| A2 | The client has one socket, ours; the server ingests every feed and is the relay; ladder MT5, then Finnhub, then others | true on the server (priority 0, 1, 2, 3). False on the client until U1 lands: `src/priceFeed.js` still carries direct Finnhub, OKX and Binance sources from the Supabase era | fixed in U1 |
+| U1 | Remove the wipe button (code kept), user icon instead of the "Y" avatar, themed scrollbars everywhere, one socket only | change | 🔨 OpenCode |
+| U2 | Leaderboard: one header card (cup icon, title, tournament info), the switcher toggles it; the guest note readable and placed as the own row (below the list when it fits, pinned when it overflows) | change; the same own-row rule as B2 applied to a logged-out player | 🔨 OpenCode |
+| U3 | Ad zone: the two animated xChief banners (`ads/banners/`), rotating when each finishes, zone height at their 1072:310 aspect | change | 🔨 OpenCode |
+| U4 | Share: modal with banner preview, copy link and social shortcuts; public `/s/<token>` page with CTAs to play | change | 🔨 OpenCode |
+| S19 | MT5 route security audit and hardening (A1) | | 📋 ready to ticket |
+
+Working mode during the owner's walk: the main checkout runs a Vite dev server on http://localhost:5173 with a game server on 8787 against the compose database, so the owner can tweak the UI on `dev` directly. Workers stay in worktrees. Before every merge the orchestrator commits the owner's working-tree edits on `dev` as "Owner UI tweaks" so nothing is overwritten.
+
 ## Plan 2026-09-17: Demo, then the box, then the expansions
 
 Four milestones, in order. Nothing outside the current milestone is picked up unless it blocks it. Anything discovered on the way goes into "Scope creep" below with a priority, and we move on.
