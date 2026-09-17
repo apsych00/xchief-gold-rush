@@ -40,13 +40,20 @@ export const LIMITS = {
   // POST /api/claim/* (ticket C9 decision 4): 5 per 10 minutes per IP, the same shape as the
   // OTP-per-IP window above - a claim page has no session of its own to rate-limit by socket.
   MAX_CLAIM_REQUESTS_PER_IP_PER_10MIN: envInt('MAX_CLAIM_REQUESTS_PER_IP_PER_10MIN', 5),
+  // Ticket B13: a player whose own row has never carried a device_id - a client from before
+  // device identity existed, or one that has lost its stored device token - can only release
+  // rewards a few times per IP per hour. A fresh browser's own first claim does not count: the
+  // server mints and binds a device to that socket during the very same auth (server/index.js's
+  // ws.hasDevice). This is a soft front-line rate limit; the per-player unique index on
+  // task_claims and the per-device partial index are the hard backstop.
+  MAX_REWARD_CLAIMS_PER_IP_PER_HOUR_NO_DEVICE: envInt('MAX_REWARD_CLAIMS_PER_IP_PER_HOUR_NO_DEVICE', 3),
 
   MAX_FRAMES_PER_SOCKET_PER_MIN: envInt('MAX_FRAMES_PER_SOCKET_PER_MIN', 200),
   MAX_FRAME_BYTES: envInt('MAX_FRAME_BYTES', 4 * 1024),
   MAX_HTTP_BODY_BYTES: envInt('MAX_HTTP_BODY_BYTES', 4 * 1024),
 
   PLAY_MIN_INTERVAL_MS: envInt('PLAY_MIN_INTERVAL_MS', 4000),
-  QUERY_MIN_INTERVAL_MS: envInt('QUERY_MIN_INTERVAL_MS', 1000), // leaderboard / tasks / get_me
+  QUERY_MIN_INTERVAL_MS: envInt('QUERY_MIN_INTERVAL_MS', 1000), // leaderboard / tasks / get_me / task_progress / task_start / task_return
 
   BLOCK_TRIP_COUNT: envInt('BLOCK_TRIP_COUNT', 5),
   BLOCK_TRIP_WINDOW_MS: envInt('BLOCK_TRIP_WINDOW_MS', 10 * MINUTE),
@@ -172,6 +179,10 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
   const otpIpWindow = new SlidingWindow(10 * MINUTE);
   const otpEmailWindow = new SlidingWindow(10 * MINUTE);
   const claimIpWindow = new SlidingWindow(10 * MINUTE);
+  // Ticket B13: reward claims (task, refill, video, redirect, email/signup) from players
+  // that have no device token - old clients, or players created before device identity
+  // existed. One sliding window per IP; players with a device_id are exempt.
+  const rewardClaimIpWindow = new SlidingWindow(60 * MINUTE);
   const frameWindow = new SlidingWindow(MINUTE); // keyed by a per-socket id, not by IP
   const playInterval = new MinInterval(LIMITS.PLAY_MIN_INTERVAL_MS); // keyed by socket id
   const queryInterval = new MinInterval(LIMITS.QUERY_MIN_INTERVAL_MS); // keyed by `${socketId}:${type}`
@@ -326,6 +337,28 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
     return { allowed: true };
   }
 
+  /**
+   * Ticket B13: players without a device token (old clients) share a tight per-IP hourly
+   * budget for reward releases. Does not record a hit - callers record only when a reward
+   * is actually granted, so an `already_claimed` attempt does not consume the budget.
+   */
+  function checkRewardClaimIp(ip, hasDevice) {
+    if (hasDevice) return { allowed: true };
+    const t = now();
+    const count = rewardClaimIpWindow.count(ip, t);
+    if (count >= LIMITS.MAX_REWARD_CLAIMS_PER_IP_PER_HOUR_NO_DEVICE) {
+      recordRefusal(ip, 'too many reward claims from no-device players');
+      return { allowed: false, retryMs: rewardClaimIpWindow.retryMs(ip, t) };
+    }
+    return { allowed: true };
+  }
+
+  /** Record one successful reward grant against the no-device IP budget (ticket B13). */
+  function recordRewardClaim(ip, hasDevice) {
+    if (hasDevice) return;
+    rewardClaimIpWindow.record(ip, now());
+  }
+
   /** `play` at most once every PLAY_MIN_INTERVAL_MS per socket (ticket S2 decision 3). The SQL
    * 400-rounds-per-hour rule (open_round) stays as the backstop; this is the per-round-cadence
    * front line. */
@@ -334,8 +367,9 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
     return wait === null ? { allowed: true } : { allowed: false, retryMs: wait };
   }
 
-  /** `leaderboard` / `tasks` / `get_me` at most once a second each, per socket (ticket S2
-   * decision 3) - `type` keeps the three budgets independent of each other. */
+  /** `leaderboard` / `tasks` / `get_me` and, since ticket B13, `task_progress` / `task_start` /
+   * `task_return` at most once a second each, per socket (ticket S2 decision 3) - `type` keeps
+   * each budget independent of the others. */
   function checkQueryRate(socketId, type) {
     const wait = queryInterval.check(`${socketId}:${type}`, now());
     return wait === null ? { allowed: true } : { allowed: false, retryMs: wait };
@@ -353,7 +387,9 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
   function forgetSocket(socketId) {
     frameWindow.hits.delete(socketId);
     playInterval.forget(socketId);
-    for (const type of ['leaderboard', 'tasks', 'get_me']) queryInterval.forget(`${socketId}:${type}`);
+    for (const type of ['leaderboard', 'tasks', 'get_me', 'task_progress', 'task_start', 'task_return']) {
+      queryInterval.forget(`${socketId}:${type}`);
+    }
   }
 
   function blockedIpsCount() {
@@ -372,6 +408,7 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
     otpIpWindow.sweep(t);
     otpEmailWindow.sweep(t);
     claimIpWindow.sweep(t);
+    rewardClaimIpWindow.sweep(t);
     frameWindow.sweep(t);
     playInterval.sweep(t);
     queryInterval.sweep(t);
@@ -398,6 +435,8 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
     checkOtpIp,
     checkOtpEmail,
     checkClaimIp,
+    checkRewardClaimIp,
+    recordRewardClaim,
     checkFrameRate,
     checkPlayRate,
     checkQueryRate,
@@ -443,5 +482,12 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
     _sweep: sweep,
     _tripWindow: tripWindow,
     _blocklist: blocklist,
+
+    // Ticket B13: integration tests run against one shared server process; reward claim
+    // windows are per-IP and would otherwise leak across test files. Test files call this
+    // in before() to start each file with a clean no-device reward budget.
+    _resetRewardClaimWindow() {
+      rewardClaimIpWindow.hits.clear();
+    },
   };
 }

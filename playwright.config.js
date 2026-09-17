@@ -47,6 +47,13 @@ export default defineConfig({
         MAX_CONNECTIONS_PER_IP_PER_MIN: '1000',
         MAX_SOCKETS_PER_IP: '1000',
         MAX_OTP_REQUESTS_PER_IP_PER_10MIN: '1000',
+        // Ticket B13: a fresh Playwright browser context has no stored device token on its one
+        // `auth` frame - the server mints and returns one, but the client only ever presents it
+        // back on the *next* connection - so every reward claim in this suite is a "no-device"
+        // claim, and every spec shares this one loopback IP. Without this override the shared
+        // 3-per-IP-per-hour budget (server/limits.js) starves whichever reward-claiming test
+        // runs 4th or later, exactly like the four budgets above it.
+        MAX_REWARD_CLAIMS_PER_IP_PER_HOUR_NO_DEVICE: '1000',
       },
     },
     {

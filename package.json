@@ -37,6 +37,7 @@
     "kiosk:list": "node scripts/list-kiosks.mjs",
     "coupons:export": "node scripts/export-coupons.mjs",
     "coupons:load": "node scripts/load-coupons.mjs",
+    "rewards:export": "node scripts/export-rewards.mjs",
     "otp:peek": "node scripts/peek-otp.mjs",
     "safe-mode": "node scripts/safe-mode.mjs",
     "alert-test": "node scripts/alert-test.mjs",
