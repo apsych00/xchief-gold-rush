@@ -13,7 +13,7 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | L1.5 client experience | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 17/19 | C11 tours ⏳, C4b animation ⏳, Q1 rest 🟡 | booth and web flows built and verified end to end; red team: every loophole fixed (C10) |
 | L2 hardening | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 7/18 | S1, S3, S5, S6, S8, S10, S11, S12, S14, S15 are M2 scope creep | S2 rate limits and S18 safe mode merged; production numbers under review with the owner |
 | MKT Part B | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 13/16 | B8 📋, B12 ⏳, B13 ⏳ | B1, B4, B5, B14, B15 (build), B16 done |
-| OPS | 🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜ 2/4 | D3 run on the box (M2), T1 Telegram bot 📋 (M4) | deploy scripts built; first real run happens on the box |
+| OPS | 🟩🟩🟩🟩🟩🟩⬜⬜⬜⬜ 3/5 | D3 run on the box, D4 schema apply (M2) | deploy scripts built; first real run happens on the box |
 | FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 
 **Demo milestone (M1):** 30 of 31 tickets done. Left: B8 Instagram, C11 tours, B13 hardening, then the showcase gate. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
@@ -24,6 +24,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 | Time | Ticket | What landed | Gates on the merged tree |
 |---|---|---|---|
+| 16:30 | T1 | Telegram alerts with an event catalogue and a recommendation per event; first OpenCode Go delivery | 127 unit, 277 pgTAP, 82 integration |
 | 16:05 | B6+B7+B9 | rewards released by the server: video progress, redirect-and-return, email and signup on verify; client renders the server task list | 277 pgTAP, 82 integration, 25 E2E |
 | 15:20 | B2+B3 | paged leaderboard with the own row pinned, badge tiers and legend | 261 pgTAP, 78 integration, 22 E2E |
 | 14:45 | C9 | prize by QR: reserved coupon + one-time claim link, kiosk QR screen with fa+en text and 20 s countdown, /claim page with email and gift card, expired links release the coupon | 114 unit, 236 pgTAP, 74 integration, 21 E2E |
@@ -45,9 +46,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 3. ✅ C9, B2+B3, B6+B7+B9 merged.
 4. ✅ S18 safe mode merged.
 5. ✅ B2+B3 merged.
-6. 📋 B8 Instagram: after B6+B7+B9 merges.
-7. ⏳ C11 tours with real content: after B10 merges (ticket to write).
-8. ⏳ B13 hardening pass on rewards: after B5 to B9.
+6. 🔨 B8 Instagram, 🔨 C11 tours, 🔨 B13 rewards hardening: all on OpenCode Go now.
 9. ⏳ B12 YouTube list curation (content), C4b leaderboard animation (after B2).
 10. Demo gate: showcase run on the compose build, all E2E green, then M2 deployment on the box.
 
@@ -109,7 +108,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | C10 | L1.5 | Red-team fixes: `kiosk_reset` cancels the round it stands on (D1, high); empty `?k=` refused (D7); `leaderboard` frame kind check (D8); SQLSTATE never escapes as an error code (D9); kiosk secret guessing throttled (D10) | Sonnet (cbx) | ✅ done | red-team reruns A7/A8/A16 HELD; 211 pgTAP, 58 integration, 17 E2E on my merged run; merged | |
 | D3 | OPS | Execute the runbook on the real box: install, DNS, deploy, rollback rehearsal, alerts, safe mode tried once | | ⏳ queued | needs the admin's box and Cloudflare access | M2 |
 | D4 | OPS | Schema apply on deploy: make `db/schema.sql` re-runnable against a live database (or add migrations) and call it from `deploy/deploy.sh`; smoke-test that `/status` answers after a redeploy | | ⏳ queued | gap G7; without it every schema ticket breaks the next redeploy | M2, before D3 |
-| T1 | OPS | Telegram bot: server events to a group (restart, feed silence/recovery, safe-mode change, IP block, coupon stock low, deploy done), one-line recommendation per event | | 📋 ready | ticket `docs/tickets/t1-telegram-alerts.md`; extends `server/alerts.js` | M4, after S18 |
+| T1 | OPS | Telegram bot: server events to a group (restart, feed silence/recovery, safe-mode change, IP block, coupon stock low, deploy done), one-line recommendation per event | OpenCode kimi-k2.7-code | ✅ done | Telegram transport, event catalogue with recommendations, coupon low/exhausted from the sweep, deploy scripts post done/failed, `alert-test` script and bot docs; 127 unit, 82 integration on my merged run; merged | needs the bot token and chat id from the owner |
 | Q1 | L1.5 | Blind E2E over every scenario | gpt-5.6-luna (B14) | 🟡 partly | five-win streak covered by B14; web flows covered by the player-promises and web-identity specs written with the tickets | blind pass for the rest after C4b |
 | B14 | L1.5 | Blind five-win streak tests, kiosk and web | gpt-5.6-luna | ✅ done | coupon row, session_over, exhausted pool, WIN modal E2E; merged `e4efdd0` | |
 | B16 | L1.5 | E2E regression after the profile merge | Sonnet + orchestrator | ✅ done | kiosk crashed on the avatar's missing action; 13/13 E2E; merged `92bd000` | |
@@ -142,14 +141,14 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | B5 | MKT | Per-device identity for anonymous players | Sonnet (cbx) | ✅ done | 189 pgTAP, 40 integration on my run; `clientIp` now owned by S2's limits.js; merged | |
 | B6 | MKT | Reward: video watched (90 %) once per device, released by the server from reported progress | Sonnet (cbx) | ✅ done | `video_progress` with the 90 % threshold and fast-forward guard; released by the server; merged | |
 | B7 | MKT | Reward: redirect and return (Trustpilot, YouTube, Telegram), 5 s window | Sonnet (cbx) | ✅ done | `task_visits`, 5 s window, once per device or email; merged | B13 hardens |
-| B8 | MKT | Reward: Instagram, bound to an OAuth-verified Instagram account once per account, device and email (Instagram exposes no follow check to third parties); env-driven, fake for tests, live the day the app id and secret arrive | | 📋 ready | ticket `docs/tickets/b8-instagram.md`; needs an Instagram app from the owner | after B6 |
+| B8 | MKT | Reward: Instagram, bound to an OAuth-verified Instagram account once per account, device and email (Instagram exposes no follow check to third parties); env-driven, fake for tests, live the day the app id and secret arrive | OpenCode kimi-k2.7-code | 🔨 building | ticket `docs/tickets/b8-instagram.md`; needs an Instagram app from the owner | after B6 |
 | B9 | MKT | Reward: email verified, released by the server on OTP success | Sonnet (cbx) | ✅ done | email and first-time signup rewards released on OTP verify; closes G1; merged | |
 | B10 | MKT | Tour-seen flag per device (web) and per boot (kiosk) | Sonnet (cbx) | ✅ done | tour placeholder (web, localStorage) and kiosk intro (once per boot); shared `dismissFirstVisit` E2E helper; 19 E2E on my merged run; merged | C11 real tour content |
 | B11 | MKT | Ad banner list served to the client | Sonnet (cbx) | ✅ done | `ads/banners.json` + `public/ads/`, `<AdZone/>` bottom 40 %% of the leaderboard, Caddy `handle_path /ads*`; merged | marketing drops real banners into `ads/` |
 | B12 | MKT | Curate the YouTube list (under one minute each) | | ⏳ queued | content task | |
-| B13 | MKT | Hardening pass on rewards and device identity | | ⏳ queued | after B5-B9 | last in M1 |
+| B13 | MKT | Hardening pass on rewards and device identity: nine attacks scripted, fixes decided, audit view and export | OpenCode kimi-k2.7-code | 🔨 building | ticket `docs/tickets/b13-rewards-hardening.md` | verify, merge; last in M1 |
 | A1-A8 | MKT | Screens and copy: ad zone, paged leaderboard, tournaments, profile, tours, rewards rework | us (owner's call 2026-09-17: nothing landed on `apsych/main`) | ⏳ queued | A1 in B11, A2 in B2, A3 in B1+B3, A4 exists (profile screen pulled earlier), A7 in B6-B9; A5+A6 real tour content is the only standalone piece: C11 | in Demo |
-| C11 | L1.5 | First-visit tour (web) and kiosk intro with real content on the B10 mount points | | ⏳ queued | after B10; three short cards each, copy in fa and en | after B10 |
+| C11 | L1.5 | First-visit tour (web) and kiosk intro with real content on the B10 mount points | OpenCode deepseek-v4.1-flash | 🔨 building | ticket `docs/tickets/c11-tours.md` | verify, merge |
 
 ## Open defects (owner-reported, fix later, target the search when picked up)
 
