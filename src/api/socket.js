@@ -110,6 +110,11 @@ let quiet = false;
 let lastTickAt = null;
 let isKiosk = false;
 let token = null;
+// D7 (docs/reports/redteam.md): a kiosk whose secret the server rejected (revoked, empty,
+// too short) - reconnect will keep retrying the same bad secret forever, so this stays true
+// across every retry until a `welcome` actually lands. Only ever set from a `k=` launch URL;
+// a web player never sees this.
+let kioskUnauthorized = false;
 
 const pending = []; // { kinds: Set<string>, resolve, reject, timer }
 
@@ -118,7 +123,7 @@ function notifyStatus() {
 }
 
 export function state() {
-  return { connected, quiet, lastTickAt };
+  return { connected, quiet, lastTickAt, kioskUnauthorized };
 }
 
 function evaluateQuiet() {
@@ -189,6 +194,7 @@ function settlePending(frame) {
 
 function handleWelcome(frame) {
   connected = true;
+  kioskUnauthorized = false;
   isKiosk = Boolean(frame.kiosk);
   if (!isKiosk && frame.token) {
     token = frame.token;
@@ -263,6 +269,17 @@ function handleMessage(frame) {
     case 'ping':
       // ws-level pongs answer the server's heartbeat automatically; nothing to send back.
       break;
+    case 'error':
+      // D7: the server fails a rejected kiosk secret closed with kiosk_unauthorized, then closes
+      // the socket (4401) - onclose schedules a reconnect that will just fail the same way, so
+      // this flag (not the ordinary `reconnecting` status, which never lands without a prior
+      // `welcome`) is what tells the kiosk shell to show its own error state.
+      if (frame.code === 'kiosk_unauthorized' && getKioskSecret() !== null) {
+        kioskUnauthorized = true;
+        notifyStatus();
+      }
+      settlePending(frame);
+      break;
     default:
       settlePending(frame);
       break;
@@ -270,8 +287,10 @@ function handleMessage(frame) {
 }
 
 function authFrame() {
+  // D7 (docs/reports/redteam.md): presence, not truthiness - an empty `?k=` still authenticates
+  // as a kiosk (and fails closed there) rather than silently falling through to a web player.
   const kioskSecret = getKioskSecret();
-  if (kioskSecret) return { type: 'auth', kiosk: kioskSecret };
+  if (kioskSecret !== null) return { type: 'auth', kiosk: kioskSecret };
   const frame = { type: 'auth' };
   const storedToken = readToken();
   if (storedToken) frame.token = storedToken;

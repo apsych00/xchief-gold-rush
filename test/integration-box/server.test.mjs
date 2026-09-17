@@ -131,6 +131,16 @@ function whenOpen(ws) {
   });
 }
 
+function whenClosed(ws, timeoutMs = 2000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('timed out waiting for close')), timeoutMs);
+    ws.once('close', (code, reason) => {
+      clearTimeout(timer);
+      resolve({ code, reason: reason.toString() });
+    });
+  });
+}
+
 /** Resolve with the next frame matching predicate (buffered or still to arrive); reject on timeout. */
 function nextFrame(ws, predicate, timeoutMs = 2000) {
   const bufferedIdx = ws.inbox.findIndex(predicate);
@@ -432,13 +442,57 @@ test('kiosk auth plays and settles with a streak field', async () => {
   ws.close();
 });
 
-test('a fake kiosk secret is kiosk_unauthorized', async () => {
+test('a fake kiosk secret is kiosk_unauthorized and the socket is closed 4401', async () => {
   const ws = connect();
   await whenOpen(ws);
   send(ws, { type: 'auth', kiosk: 'this-is-not-a-real-kiosk-secret' });
   const frame = await nextFrame(ws, (f) => f.type === 'error');
   assert.equal(frame.code, 'kiosk_unauthorized');
+  const closed = await whenClosed(ws);
+  assert.equal(closed.code, 4401);
+});
+
+// --- D7 (docs/reports/redteam.md): an empty ?k= must fail closed as a kiosk, never be
+// silently welcomed as a fresh web player -------------------------------------------------
+
+test('D7: auth with kiosk:"" is refused kiosk_unauthorized (presence, not truthiness) and closes 4401', async () => {
+  const ws = connect();
+  await whenOpen(ws);
+  send(ws, { type: 'auth', kiosk: '' });
+  const frame = await nextFrame(ws, (f) => f.type === 'error' || f.type === 'welcome');
+  assert.equal(frame.type, 'error', 'an empty kiosk secret must never be welcomed as a web player');
+  assert.equal(frame.code, 'kiosk_unauthorized');
+  const closed = await whenClosed(ws);
+  assert.equal(closed.code, 4401);
+});
+
+// --- D8 (docs/reports/redteam.md): leaderboard has no kind check ---------------------------
+
+test('D8: a kiosk socket asking for leaderboard gets not_available, not a leaderboard frame', async () => {
+  const ws = connect();
+  await whenOpen(ws);
+  send(ws, { type: 'auth', kiosk: DEV_KIOSK_SECRET });
+  await nextFrame(ws, (f) => f.type === 'welcome');
+
+  send(ws, { type: 'leaderboard' });
+  const frame = await nextFrame(ws, (f) => f.type === 'leaderboard' || f.type === 'error');
+  assert.equal(frame.type, 'error');
+  assert.equal(frame.code, 'not_available');
   ws.close();
+});
+
+// --- D9 (docs/reports/redteam.md): a raw Postgres SQLSTATE must never escape as an error code --
+
+test('D9: a frame that makes Postgres raise an unmapped error yields internal, never a raw SQLSTATE', async () => {
+  const ws = connect();
+  await whenOpen(ws);
+  // A null byte is invalid in a Postgres text value: extensions.crypt() inside verify_kiosk
+  // raises SQLSTATE 22021 (invalid_byte_sequence_for_encoding), which mapError (server/ledger.js)
+  // does not recognize - exactly the red team's A7 reproduction.
+  send(ws, { type: 'auth', kiosk: `bad-secret- -0000000000` });
+  const frame = await nextFrame(ws, (f) => f.type === 'error');
+  assert.equal(frame.code, 'internal', 'the raw SQLSTATE must never reach the client');
+  assert.notEqual(frame.code, '22021');
 });
 
 // --- kiosk session (ticket C1) ------------------------------------------------------------
@@ -500,6 +554,57 @@ test('kiosk_reset (Claim/Done) returns the session to idle with coins and streak
     { coins: 1000, streak: 0, state: 'idle' },
     'kiosk_reset clears the session back to attract mode',
   );
+  ws.close();
+});
+
+// --- D1 (docs/reports/redteam.md): kiosk_reset must cancel the round it is standing on -----
+
+test('D1: kiosk_reset mid-round voids it - no late round_settled arrives, and the fresh pot survives untouched', async () => {
+  const secret = 'kiosk-d1-reset-mid-round-secret';
+  const kioskId = await createTestKiosk('d1-reset-mid-round', secret);
+  await pool.query(
+    "update public.kiosks set session_coins = 200, streak = 0, session_state = 'playing', last_round_at = now() where id = $1",
+    [kioskId],
+  );
+
+  const ws = connect();
+  await whenOpen(ws);
+  send(ws, { type: 'auth', kiosk: secret });
+  await nextFrame(ws, (f) => f.type === 'welcome');
+  await nextFrame(ws, (f) => f.type === 'kiosk_session');
+
+  currentPrice = 3000;
+  await sleep(250);
+  send(ws, { type: 'play', dir: 'up', lever: 1 });
+  const opened = await nextFrame(ws, (f) => f.type === 'round_opened');
+
+  await sleep(500); // well inside the 5 s round
+  send(ws, { type: 'kiosk_reset' });
+  const reset = await nextFrame(ws, (f) => f.type === 'kiosk_session');
+  assert.deepEqual(
+    { coins: reset.coins, streak: reset.streak, state: reset.state },
+    { coins: 1000, streak: 0, state: 'idle' },
+    'kiosk_reset reports the fresh attract-mode session immediately',
+  );
+
+  currentPrice = 3100; // would have been a win, had the round survived
+
+  // Nothing round_settled-shaped for the voided round should ever arrive; give the 5 s timer
+  // well past its normal firing point to prove it, not just to the settle window's edge.
+  await assert.rejects(
+    nextFrame(ws, (f) => f.type === 'round_settled', 6000),
+    'a late verdict for the voided round must never reach the socket',
+  );
+
+  const { rows } = await pool.query(
+    'select r.status, r.outcome, k.session_coins, k.session_state from public.kiosks k ' +
+      'join public.rounds r on r.kiosk_id = k.id where r.id = $1',
+    [opened.round_id],
+  );
+  assert.equal(rows[0].status, 'settled', 'the reset voided the round immediately');
+  assert.equal(rows[0].outcome, 'void');
+  assert.equal(rows[0].session_coins, 1000, 'the pot stays the fresh 1000 the reset set - no late re-basing');
+  assert.equal(rows[0].session_state, 'idle', 'the screen was never dragged back out of attract mode');
   ws.close();
 });
 

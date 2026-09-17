@@ -13,9 +13,9 @@ The only document a test author receives. It states what the system promises - n
 - Every settled round increments `rounds`. A voided round changes nothing.
 - Free refill: `+300` coins, once per player, only when `coins < 100`.
 - Task reward is granted once per task per player; tasks with `repeat_ms` may be claimed again after that interval. The `signup` task requires a confirmed email.
-- Rate limit: at most 60 rounds per player per rolling hour - the check counts rounds already opened in the last hour, so the 60th open succeeds and the 61st is refused.
+- Rate limit: at most 400 rounds per player per rolling hour - the check counts rounds already opened in the last hour, so the 400th open succeeds and the 401st is refused.
 - Rounding: `round()` is half-away-from-zero (Postgres `round(numeric)`), so 142.5 -> 143; identical to `Math.round` for positive values.
-- Leaderboard: top 10 by `record` descending, ties broken by earliest update; only players with a confirmed email appear; exposes exactly `display_name`, `record`, `rank`.
+- Leaderboard: top 10 by `record` descending, ties broken by earliest update; only players with a confirmed email appear; exposes exactly `display` (the masked email), `record`, `rank`.
 
 ## Access rules (Postgres roles `anon` and `authenticated`)
 
@@ -38,7 +38,7 @@ The only document a test author receives. It states what the system promises - n
 | `get_me()` | the caller's `players` row, created if absent | `unauthenticated` |
 | `claim_task(p_task text)` | json `{coins, reward}` | `unauthenticated`, `unknown_task`, `email_required`, `already_claimed` |
 | `free_refill()` | json `{coins, reward: 300}` | `unauthenticated`, `refill_unavailable` |
-| `leaderboard()` | rows `(display_name, record, rank)` | - |
+| `leaderboard()` | rows `(display, record, rank)` | - |
 
 Concurrency promises: two concurrent claims of the last available coupon yield one code and one `null`; a coupon is never claimed twice; an open round older than 30 s is voided automatically when the same player or kiosk opens a new one.
 

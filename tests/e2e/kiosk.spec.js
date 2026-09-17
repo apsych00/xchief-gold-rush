@@ -22,6 +22,8 @@ const KIOSK_URL = `/?k=${KIOSK_SECRET}`;
 
 function readEnv() {
   const out = {};
+  // The environment wins over .env so a run on another port resets the kiosk the browser uses.
+  if (process.env.VITE_GAME_WS) return process.env.VITE_GAME_WS.trim();
   const text = fs.readFileSync(new URL('../../.env', import.meta.url), 'utf8');
   for (const line of text.split(/\r?\n/)) {
     const i = line.indexOf('=');
@@ -111,6 +113,21 @@ async function playRound(page, dir = 'up') {
 function forbiddenUi(page) {
   return page.locator('.lead, .signup, .lb, .tasks, .nav, input[type="email"]');
 }
+
+// D7 (docs/reports/redteam.md): a launch URL that lost its secret (`/?k=`) must render the
+// kiosk's own error state, never the web app - independent of the shared-session serial suite
+// below since this connection is never authenticated as any kiosk at all.
+test('D7: /?k= (empty secret) shows the not-configured state, never the web app', async ({ page }) => {
+  await page.goto('/?k=');
+  await expect
+    .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
+      message: 'window.__xchief.mode must be "server" - the client is not wired to the game socket',
+      timeout: 10000,
+    })
+    .toBe('server');
+  await expect(page.getByText('Kiosk not configured. Tell the booth staff.')).toBeVisible({ timeout: 10000 });
+  await expect(forbiddenUi(page)).toHaveCount(0);
+});
 
 test.describe.serial('kiosk visitor flow', () => {
   test.setTimeout(180000);

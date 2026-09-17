@@ -53,6 +53,7 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
   const [screen, setScreen] = useState('attract');
   const [coupon, setCoupon] = useState(null);
   const [reconnecting, setReconnecting] = useState(false);
+  const [kioskUnauthorized, setKioskUnauthorized] = useState(false);
   const [abandonSecondsLeft, setAbandonSecondsLeft] = useState(null); // null = overlay hidden
   const [modalSecondsLeft, setModalSecondsLeft] = useState(null); // WON/BROKE countdown
 
@@ -128,6 +129,7 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
       onStatus((s) => {
         if (s.connected) hasConnectedRef.current = true;
         setReconnecting(hasConnectedRef.current && !s.connected);
+        setKioskUnauthorized(Boolean(s.kioskUnauthorized));
       }),
     [],
   );
@@ -194,6 +196,7 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
     screen, // 'attract' | 'playing' | 'won' | 'broke' | 'no_codes'
     coupon,
     reconnecting,
+    kioskUnauthorized,
     abandonSecondsLeft, // null while hidden
     modalSecondsLeft,
     /** Tap-to-play on ATTRACT: purely local - the session itself only starts on the first `play`. */

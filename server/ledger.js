@@ -23,7 +23,12 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-const KNOWN_ERROR_CODES = [
+// Every error code a client may legitimately see, per docs/box-spec.md ("error codes are the
+// ones in docs/test-contract.md") plus feed_stale (docs/box-spec.md 1.1, thrown directly by
+// server/rounds.js, not raised in Postgres). handleFrame and handleAuth (server/index.js) only
+// ever forward a code from this list; anything else - a raw Postgres SQLSTATE included - becomes
+// `internal` (D9, docs/reports/redteam.md).
+export const KNOWN_ERROR_CODES = [
   'insufficient_coins',
   'rate_limited',
   'round_in_flight',
@@ -43,6 +48,7 @@ const KNOWN_ERROR_CODES = [
   'invalid_code',
   'too_many_attempts',
   'expired_code',
+  'feed_stale',
 ];
 
 function mapError(err) {

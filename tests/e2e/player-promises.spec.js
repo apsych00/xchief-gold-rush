@@ -15,11 +15,13 @@ import pg from 'pg';
 
 function readEnv() {
   const out = {};
+  // The environment wins over .env so a run on another port resets the kiosk the browser uses.
   const text = fs.readFileSync(new URL('../../.env', import.meta.url), 'utf8');
   for (const line of text.split(/\r?\n/)) {
     const i = line.indexOf('=');
     if (i > 0 && !line.trim().startsWith('#')) out[line.slice(0, i).trim()] = line.slice(i + 1).trim();
   }
+  if (process.env.VITE_GAME_WS) out.VITE_GAME_WS = process.env.VITE_GAME_WS.trim();
   return out;
 }
 const ENV = readEnv();
@@ -289,8 +291,15 @@ test.describe('player-visible promises', () => {
     await expect(refillBtn).toBeVisible();
     await refillBtn.click();
 
+    // The click sends free_refill over the socket; the server's `me` lands a moment later, so
+    // poll the server state rather than reading it once right after the click.
+    await expect
+      .poll(async () => (await getMe(page)).free_refill_used, {
+        timeout: 10000,
+        message: 'the server must record the refill as used',
+      })
+      .toBe(true);
     const after = await getMe(page);
-    expect(after.free_refill_used, 'the server must record the refill as used').toBe(true);
     expect(after.coins, 'the refill must actually raise the balance').toBeGreaterThan(50);
     await expect
       .poll(() => screenCoins(page), {
