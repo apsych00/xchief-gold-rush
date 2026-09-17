@@ -70,6 +70,19 @@ $$;
 
 -- ------------------------------------------------------------------------------- tables --
 
+-- Physical or browser devices (docs/tickets/b5-device-identity.md, ticket B5). One row per
+-- opaque device token a web client holds in localStorage - not tied to any one player, since
+-- signing out keeps the device token and the next anonymous player picks it back up.
+-- last_seen_at and first_ip are updated on every auth (server/index.js); ua only on first
+-- sight, since a device's user agent does not change visit to visit the way its IP might.
+create table public.devices (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  first_ip inet,
+  ua text
+);
+
 -- One row per auth user (anonymous or email). Created lazily by ensure_player().
 create table public.players (
   id uuid primary key references auth.users (id) on delete cascade,
@@ -82,6 +95,11 @@ create table public.players (
   wins int not null default 0,
   rounds int not null default 0,
   free_refill_used boolean not null default false,
+  -- Set once, at creation, from the device token the socket presented (ticket B5): never
+  -- overwritten on a later auth, so a player's device stays whichever one first created them.
+  -- Null for a player whose first auth carried no device token (an old client, or storage
+  -- unavailable) - such a player is its own device of one (db/tests/80_device_identity.sql).
+  device_id uuid references public.devices (id),
   -- Session policy (docs/layers.md C3a): the player token carries this value, and verifyToken
   -- (server/index.js) requires an exact match. revoke_player_sessions() below bumps it, which
   -- is the only way it ever changes - every token issued before the bump stops verifying.
@@ -150,7 +168,11 @@ create table public.task_claims (
   player_id uuid not null references public.players (id) on delete cascade,
   task_id text not null references public.tasks (id),
   claimed_at timestamptz not null default now(),
-  reward int not null
+  reward int not null,
+  -- The claiming player's own device_id at claim time (ticket B5), null when they have none.
+  -- Denormalized off players.device_id so the once-per-device check and its unique index below
+  -- do not need to join players for every claim attempt.
+  device_id uuid references public.devices (id)
 );
 
 -- The $100 codes. Claimed atomically, once each.
@@ -200,9 +222,23 @@ create unique index uniq_open_round_per_kiosk on public.rounds (kiosk_id)
   where status = 'open' and kiosk_id is not null;
 create index rounds_player_created on public.rounds (player_id, created_at desc);
 create index task_claims_player_task on public.task_claims (player_id, task_id, claimed_at desc);
+-- Once per device per task (ticket B5, docs/tickets/b5-device-identity.md decision 4): the
+-- atomic backstop claim_task relies on (catching unique_violation) so two concurrent claims
+-- from the same device can never both succeed. Partial on device_id is not null so a player
+-- with no device token (an old client) is never cross-blocked - see that decision's own note.
+create unique index uniq_task_claim_per_device on public.task_claims (task_id, device_id)
+  where device_id is not null;
+-- Once per device (ticket B5 decision 4) for free_refill, which has no task_claims row to key
+-- a partial index off - free_refill_used lives directly on players. Mirrors
+-- uniq_task_claim_per_device's role for claim_task: free_refill catches unique_violation on the
+-- same update that sets the flag, so two concurrent free_refill calls from two different
+-- players sharing a device can never both succeed.
+create unique index uniq_free_refill_per_device on public.players (device_id)
+  where free_refill_used and device_id is not null;
 create index coupons_available on public.coupons (created_at) where status = 'available';
 create index dev_otps_email_created on public.dev_otps (email, created_at desc);
 create index otp_codes_email_created on public.otp_codes (email, created_at desc);
+create index devices_last_seen on public.devices (last_seen_at); -- /status devices24h (D1)
 
 -- ----------------------------------------------------------------- RLS + policies --
 --
@@ -219,6 +255,7 @@ alter table public.kiosks enable row level security;
 alter table public.coupons enable row level security;
 alter table public.dev_otps enable row level security;
 alter table public.otp_codes enable row level security;
+alter table public.devices enable row level security;
 
 create policy players_select_own on public.players
   for select to authenticated using (id = auth.uid());
@@ -232,8 +269,10 @@ create policy task_claims_select_own on public.task_claims
 create policy tasks_select_all on public.tasks
   for select to anon, authenticated using (true);
 
--- kiosks, coupons, dev_otps and otp_codes deliberately have NO client policy:
--- service-role tables. The public top-10 leaderboard is exposed through the
+-- kiosks, coupons, dev_otps, otp_codes and devices deliberately have NO client policy:
+-- service-role tables (devices per ticket B5 decision 5 - "nothing identifies a device to
+-- other players"; a player's own device_id rides on get_me() instead). The public top-10
+-- leaderboard is exposed through the
 -- SECURITY DEFINER function public.leaderboard() below, not a view: Supabase's
 -- linter flags SECURITY DEFINER views, and a function keeps the same access
 -- model (anonymous visitors can read the top 10, nothing else about players).
@@ -294,8 +333,12 @@ $$;
 
 -- --------------------------------------------------------------------------- players --
 
--- Create the players row on first contact; copy the email in once it is confirmed.
-create function public.ensure_player(p_player uuid)
+-- Create the players row on first contact; copy the email in once it is confirmed. p_device
+-- (ticket B5) is only ever applied on the INSERT branch: a player's device_id is set once, at
+-- creation, from the device token their first socket presented - a later call for the same
+-- player (get_me, claim_task, free_refill all call this defensively) never overwrites it, even
+-- if it passes no device or a different one.
+create function public.ensure_player(p_player uuid, p_device uuid default null)
 returns void language plpgsql security definer set search_path = public as $$
 declare
   v_email text;
@@ -306,11 +349,12 @@ begin
   if not found then
     raise exception 'unknown_user';
   end if;
-  insert into public.players (id, email, display_name)
+  insert into public.players (id, email, display_name, device_id)
   values (
     p_player,
     case when v_confirmed is not null then v_email end,
-    coalesce(nullif(split_part(coalesce(v_email, ''), '@', 1), ''), 'Player')
+    coalesce(nullif(split_part(coalesce(v_email, ''), '@', 1), ''), 'Player'),
+    p_device
   )
   on conflict (id) do update set
     email = coalesce(excluded.email, public.players.email),
@@ -322,11 +366,13 @@ end $$;
 -- email_verified (players.email is only ever set once confirmed - see ensure_player and
 -- verify_otp_code) and display, this player's own masked email for the header ("playing as
 -- k****i@gmail.com") and for matching its own row on the leaderboard.
+-- device_id (ticket B5 decision 5) is this player's own only - get_me() never takes another
+-- player's id as an argument, so there is no path for a client to read anyone else's.
 create function public.get_me()
 returns table (
   id uuid, display_name text, email text, coins int, record int, streak int, best_streak int,
   wins int, rounds int, free_refill_used boolean, token_version int, created_at timestamptz,
-  updated_at timestamptz, email_verified boolean, display text
+  updated_at timestamptz, email_verified boolean, display text, device_id uuid
 ) language plpgsql security definer set search_path = public as $$
 begin
   if auth.uid() is null then
@@ -337,7 +383,8 @@ begin
     select p.id, p.display_name, p.email, p.coins, p.record, p.streak, p.best_streak, p.wins,
            p.rounds, p.free_refill_used, p.token_version, p.created_at, p.updated_at,
            (p.email is not null) as email_verified,
-           public.mask_email(p.email) as display
+           public.mask_email(p.email) as display,
+           p.device_id
     from public.players p
     where p.id = auth.uid();
 end $$;
@@ -656,6 +703,22 @@ end $$;
 
 -- --------------------------------------------------------------------------- tasks --
 
+-- Once per device OR per verified email (ticket B5, docs/tickets/b5-device-identity.md
+-- decision 4), on top of the pre-existing once-per-player check: uniq_task_claim_per_device
+-- (db/schema.sql, indexes section) is the atomic backstop for the device_id side, caught below
+-- exactly like open_round catches round_in_flight; the email side has no such index (two
+-- confirmed players can never really share an email - auth.users.email is unique - so it is
+-- a plain existence check, defence in depth rather than a race anyone can hit in practice).
+--
+-- A player with no device token (v_device_id null) is excluded from the unique index's own
+-- predicate, so they can never cross-block or be cross-blocked by device - "one device per
+-- player" for old clients, per that decision.
+--
+-- Caveat carried into the report rather than solved here: this is a hard per-device ceiling
+-- with no time dimension, so a *repeating* task (video, story) can only ever be claimed once
+-- on a given device, by whichever player claims it first - not once per repeat_ms window as
+-- the per-player check alone would allow. The ticket's decision does not carve out an
+-- exception for repeat_ms tasks and this file does not redesign the decision to add one.
 create function public.claim_task(p_task text)
 returns json language plpgsql security definer set search_path = public as $$
 declare
@@ -664,6 +727,8 @@ declare
   v_last timestamptz;
   v_confirmed timestamptz;
   v_coins int;
+  v_device_id uuid;
+  v_email text;
 begin
   if v_uid is null then raise exception 'unauthenticated'; end if;
   select * into t from public.tasks where id = p_task;
@@ -678,13 +743,29 @@ begin
     if v_confirmed is null then raise exception 'email_required'; end if;
   end if;
 
+  select device_id, email into v_device_id, v_email from public.players where id = v_uid;
+
   select max(claimed_at) into v_last from public.task_claims
     where player_id = v_uid and task_id = p_task;
   if v_last is not null and (t.repeat_ms is null or v_last > now() - make_interval(secs => t.repeat_ms / 1000.0)) then
     raise exception 'already_claimed';
   end if;
 
-  insert into public.task_claims (player_id, task_id, reward) values (v_uid, p_task, t.reward);
+  if v_email is not null and exists (
+    select 1 from public.task_claims tc
+    join public.players p2 on p2.id = tc.player_id
+    where tc.task_id = p_task and p2.email = v_email and tc.player_id <> v_uid
+  ) then
+    raise exception 'already_claimed';
+  end if;
+
+  begin
+    insert into public.task_claims (player_id, task_id, reward, device_id)
+    values (v_uid, p_task, t.reward, v_device_id);
+  exception when unique_violation then
+    raise exception 'already_claimed';
+  end;
+
   update public.players set
     coins = coins + t.reward,
     record = greatest(record, coins + t.reward),
@@ -695,6 +776,12 @@ begin
   return json_build_object('coins', v_coins, 'reward', t.reward);
 end $$;
 
+-- Once per device OR per verified email (ticket B5 decision 4), same rule claim_task enforces:
+-- the device side is atomic via uniq_free_refill_per_device (index section above) and a caught
+-- unique_violation, exactly like claim_task's own device backstop; the email side is a plain
+-- existence check, defence in depth rather than a race anyone can hit in practice, since
+-- auth.users.email is unique so two confirmed players cannot really share one (same reasoning
+-- as claim_task's email check - see that function's comment).
 create function public.free_refill()
 returns json language plpgsql security definer set search_path = public as $$
 declare
@@ -709,13 +796,26 @@ begin
   -- "you don't need it yet" (docs/layers.md C5: a second free_refill is `already_refilled`).
   if p.free_refill_used then raise exception 'already_refilled'; end if;
   if p.coins >= 100 then raise exception 'refill_unavailable'; end if;
-  update public.players set
-    coins = coins + 300,
-    record = greatest(record, coins + 300),
-    free_refill_used = true,
-    updated_at = now()
-  where id = v_uid
-  returning coins into v_coins;
+
+  if p.email is not null and exists (
+    select 1 from public.players p2
+    where p2.email = p.email and p2.id <> v_uid and p2.free_refill_used
+  ) then
+    raise exception 'already_refilled';
+  end if;
+
+  begin
+    update public.players set
+      coins = coins + 300,
+      record = greatest(record, coins + 300),
+      free_refill_used = true,
+      updated_at = now()
+    where id = v_uid
+    returning coins into v_coins;
+  exception when unique_violation then
+    raise exception 'already_refilled';
+  end;
+
   return json_build_object('coins', v_coins, 'reward', 300);
 end $$;
 
@@ -867,7 +967,7 @@ grant execute on function public.leaderboard() to anon, authenticated;
 
 -- Service-role only: a client holding the anon key must not be able to call these.
 revoke execute on function
-  public.ensure_player(uuid),
+  public.ensure_player(uuid, uuid),
   public.open_round(uuid, text, int, numeric, text),
   public.settle_round(uuid, numeric),
   public.void_round(uuid),

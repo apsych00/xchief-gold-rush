@@ -195,6 +195,73 @@ test('hello follows welcome with the current price', async () => {
   ws.close();
 });
 
+// --- device identity (ticket B5) ----------------------------------------------------------
+
+test('welcome issues a device token, and me.device_id matches the id it carries', async () => {
+  const ws = connect();
+  await whenOpen(ws);
+  const welcome = await authAnonymous(ws);
+  assert.ok(welcome.device, 'welcome carries a device token');
+  const [deviceId] = welcome.device.split('.');
+  assert.equal(welcome.me.device_id, deviceId, "the new player's own device_id is the token's id");
+  ws.close();
+});
+
+test('a second socket presenting the same device token gets a different player with the same device_id', async () => {
+  const ws1 = connect();
+  await whenOpen(ws1);
+  const welcome1 = await authAnonymous(ws1);
+  ws1.close();
+
+  const ws2 = connect();
+  await whenOpen(ws2);
+  send(ws2, { type: 'auth', device: welcome1.device }); // no player token: a brand-new player
+  const welcome2 = await nextFrame(ws2, (f) => f.type === 'welcome');
+  assert.notEqual(welcome2.me.id, welcome1.me.id, 'a fresh player, not a resumed one');
+  assert.equal(welcome2.me.device_id, welcome1.me.device_id, 'both players share the device the token names');
+  ws2.close();
+});
+
+test('claim_task is blocked across two different players sharing one device', async () => {
+  const ws1 = connect();
+  await whenOpen(ws1);
+  const welcome1 = await authAnonymous(ws1);
+
+  send(ws1, { type: 'claim_task', task_id: 'telegram' });
+  const claimed = await nextFrame(ws1, (f) => f.type === 'me' || f.type === 'error');
+  assert.equal(claimed.type, 'me', 'the first player on this device claims telegram normally');
+  ws1.close();
+
+  const ws2 = connect();
+  await whenOpen(ws2);
+  send(ws2, { type: 'auth', device: welcome1.device });
+  const welcome2 = await nextFrame(ws2, (f) => f.type === 'welcome');
+  assert.notEqual(welcome2.me.id, welcome1.me.id);
+
+  send(ws2, { type: 'claim_task', task_id: 'telegram' });
+  const blocked = await nextFrame(ws2, (f) => f.type === 'me' || f.type === 'error');
+  assert.equal(blocked.type, 'error');
+  assert.equal(blocked.code, 'already_claimed', 'a different player on the same device is refused');
+  ws2.close();
+});
+
+test('sign out (a fresh auth with the device token but no player token) keeps the device', async () => {
+  const ws1 = connect();
+  await whenOpen(ws1);
+  const welcome1 = await authAnonymous(ws1);
+  ws1.close();
+
+  // The client's own signOut() only ever drops the player token (src/api/session.js); the
+  // device token in localStorage survives, so the next auth frame carries it alone.
+  const ws2 = connect();
+  await whenOpen(ws2);
+  send(ws2, { type: 'auth', device: welcome1.device });
+  const welcome2 = await nextFrame(ws2, (f) => f.type === 'welcome');
+  assert.equal(welcome2.device, welcome1.device, 'the same device token comes back, not a fresh one');
+  assert.equal(welcome2.me.device_id, welcome1.me.device_id);
+  ws2.close();
+});
+
 // --- rounds --------------------------------------------------------------------------------
 
 test('play opens fast and settles on time with economy-correct coins', async () => {

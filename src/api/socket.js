@@ -10,6 +10,10 @@
  */
 
 const TOKEN_KEY = 'xchief.player_token';
+// Device identity (ticket B5, docs/tickets/b5-device-identity.md decision 2): its own key,
+// separate from the player token, and never cleared by signOut - a device outlives every
+// player that has ever played from it.
+const DEVICE_TOKEN_KEY = 'xchief.device_token';
 const MIN_BACKOFF_MS = 500;
 const MAX_BACKOFF_MS = 10000;
 const QUIET_AFTER_MS = 3000; // no price/hello frame this long -> the feed is quiet
@@ -45,6 +49,22 @@ function storeToken(token) {
     localStorage.setItem(TOKEN_KEY, token);
   } catch {
     /* storage unavailable: the socket still works, just re-issues a fresh player next visit */
+  }
+}
+
+function readDeviceToken() {
+  try {
+    return localStorage.getItem(DEVICE_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeDeviceToken(deviceToken) {
+  try {
+    localStorage.setItem(DEVICE_TOKEN_KEY, deviceToken);
+  } catch {
+    /* storage unavailable: the server just issues a fresh device next visit, same as the token */
   }
 }
 
@@ -174,6 +194,11 @@ function handleWelcome(frame) {
     token = frame.token;
     storeToken(token);
   }
+  // Device identity (ticket B5): the server never sends this on a kiosk welcome - kiosks are
+  // out of scope for device identity entirely - so isKiosk alone decides whether to store it.
+  if (!isKiosk && frame.device) {
+    storeDeviceToken(frame.device);
+  }
   notifyStatus();
 }
 
@@ -245,8 +270,12 @@ function handleMessage(frame) {
 function authFrame() {
   const kioskSecret = getKioskSecret();
   if (kioskSecret) return { type: 'auth', kiosk: kioskSecret };
-  const stored = readToken();
-  return stored ? { type: 'auth', token: stored } : { type: 'auth' };
+  const frame = { type: 'auth' };
+  const storedToken = readToken();
+  if (storedToken) frame.token = storedToken;
+  const storedDevice = readDeviceToken();
+  if (storedDevice) frame.device = storedDevice;
+  return frame;
 }
 
 function scheduleReconnect() {

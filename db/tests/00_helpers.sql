@@ -15,15 +15,17 @@
 create extension if not exists pgtap;
 create schema if not exists tests;
 
--- Inserts a confirmed-email auth user + a matching, email-populated players row.
-create or replace function tests.create_confirmed_player(p_email text, p_display text default null)
+-- Inserts a confirmed-email auth user + a matching, email-populated players row. p_device
+-- (ticket B5) is passed straight through to ensure_player's p_device, applied on the insert;
+-- default null keeps every pre-B5 call site unchanged.
+create or replace function tests.create_confirmed_player(p_email text, p_display text default null, p_device uuid default null)
 returns uuid language plpgsql as $$
 declare
   v_id uuid := gen_random_uuid();
 begin
   insert into auth.users (id, email, email_confirmed_at)
   values (v_id, p_email, now());
-  perform public.ensure_player(v_id);
+  perform public.ensure_player(v_id, p_device);
   if p_display is not null then
     update public.players set display_name = p_display where id = v_id;
   end if;
@@ -42,14 +44,25 @@ begin
 end $$;
 
 -- Inserts a bare auth user with no email at all - the real anonymous-player shape - plus a
--- matching players row, returns the id.
-create or replace function tests.create_anonymous_player()
+-- matching players row, returns the id. p_device (ticket B5): see create_confirmed_player.
+create or replace function tests.create_anonymous_player(p_device uuid default null)
 returns uuid language plpgsql as $$
 declare
   v_id uuid := gen_random_uuid();
 begin
   insert into auth.users (id) values (v_id);
-  perform public.ensure_player(v_id);
+  perform public.ensure_player(v_id, p_device);
+  return v_id;
+end $$;
+
+-- Inserts a device row (ticket B5), returns its id. No columns beyond the defaults are needed
+-- by any test so far - a test that cares about last_seen_at/first_ip/ua sets them directly.
+create or replace function tests.create_device()
+returns uuid language plpgsql as $$
+declare
+  v_id uuid;
+begin
+  insert into public.devices default values returning id into v_id;
   return v_id;
 end $$;
 
