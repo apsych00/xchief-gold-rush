@@ -14,7 +14,7 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | L2 hardening | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 7/18 | S1, S3, S5, S6, S8, S10, S11, S12, S14, S15 are M2 scope creep | S2 rate limits and S18 safe mode merged; production numbers under review with the owner |
 | MKT Part B | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 14/16 | B13 🔨, B12 ⏳ (content) | B1, B4, B5, B14, B15 (build), B16 done |
 | OPS | 🟩🟩🟩🟩🟩🟩⬜⬜⬜⬜ 3/5 | D3 run on the box, D4 schema apply (M2) | deploy scripts built; first real run happens on the box |
-| FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin | Finnhub live with PAXG fallbacks, 3-decimal publishing |
+| FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin (may be moot: the Docker bridge is live with the demo account) | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 
 **Demo milestone (M1):** 32 of 33 tickets done. Left: B13 rewards hardening (OpenCode), then the showcase gate. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
 
@@ -117,7 +117,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | D1 | OPS | Monitoring: `/status`, `/ops`, `/logs`, alerts | Sonnet | ✅ done | merged `4839072`; `$` doubling trap documented | |
 | D2 | OPS | One-command deploy, auto-deploy on push, install, rollback | Sonnet | ✅ done | `deploy/*.sh`, `client.Dockerfile` (bundle built in Docker, verified: no dev socket address); box behaviour of install/cron/ufw untestable on Windows, to be rehearsed on the real box | rehearse on the box |
 | S17 | FEED | MT5 via MetaApi, plug-and-play | orchestrator | ⛔ blocked | code merged and reaches MetaApi; refused by token scope | M3: write the "credentials arrived" checklist; admin: account UUID, token with account read, quote interval 0 |
-| B15 | FEED | MT5 terminal + tick bridge in Docker | Sonnet (cbx) | ✅ done | build, independent review, two hardening passes; my clean-volume cold boot reached healthz in 709 s with zero restarts and a warm restart came back; merged `86141c1` | first login with the broker's investor account (M3) |
+| B15 | FEED | MT5 terminal + tick bridge in Docker, LIVE on the local stack since 2026-09-17 17:58 with the broker demo account (xChief-MT5, symbol `XAUUSD.d`) | Sonnet (cbx) | ✅ done | build, independent review, two hardening passes; my clean-volume cold boot reached healthz in 709 s with zero restarts and a warm restart came back; merged `86141c1` | first login with the broker's investor account (M3) |
 | F1 | FEED | Finnhub + PAXG continuous series, 3 decimals | | ✅ done | measured 9 moves / 5 s vs 1-2 on PAXG | |
 | S1 | L2 | Secret rotation procedure | | ⏳ queued | folded into C3a except the procedure | |
 | S2 | L2 | Per-socket AND per-IP rate limits (sockets per IP, connections per minute, anonymous signups, OTP per IP, frame flood, frame size, play cadence), 15-minute IP block | Sonnet (cbx) | ✅ done | limits.js; load 100 sockets over 10 IPs p95 settle 5061 ms; merged; production numbers under review with the owner (venue NAT) | S18 next |
@@ -170,6 +170,10 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | G5 | `npm run format:check` red on ~20 pre-existing files | cosmetic |
 | G6 | `get_tasks()` marks `claimed` per player only, so a task blocked by another player on the same device still looks open until the claim is refused | B6-B9 reworks get_tasks; fold in |
 | G7 | Schema changes never reach an existing database volume: `db/schema.sql` is applied only when the Postgres container initialises an empty volume, so a redeploy on the box after any schema ticket leaves the old tables in place (seen locally 2026-09-17: `public.settings does not exist` after the S18/C9 merges) | M2 blocker: D2's deploy step needs an idempotent apply (`create ... if not exists` plus `create or replace function`) or a migrations folder; card as D4 |
+| G8 | First login on a fresh volume: the terminal starts with no account and the `/login /password /server` switches only work after MT5 has fetched the broker's server list once (the "select a company" dialog). Done today by driving the VNC page with Playwright; the docs still describe a manual VNC session | write the automated first-login into `mt5/` (a script that searches the company, picks the server, fills login and password from the container env) and update `docs/mt5-feed.md`; M3 |
+| G9 | The bridge's stdout is block-buffered under Wine, so its log lines only appear when the process dies; `PYTHONUNBUFFERED=1` (or `-u`) in `mt5/entrypoint.sh` | small; M3 |
+| G10 | `/status` does not say which feed source is publishing (only per-source connected/age); the operator cannot tell MT5 from Finnhub at a glance. Expose `feed.active` | small; with T1's ops work or D4 |
+| G11 | The mt5 container receives the whole box env through `env_file` (database password, Elastic key, token secrets) although it needs five variables | narrow to an `environment:` list; M2 |
 
 ## Defects found and fixed (for the record)
 
