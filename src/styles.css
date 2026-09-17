@@ -1231,6 +1231,66 @@ button:focus:not(:focus-visible) {
   color: #fff;
 }
 
+.lb-tournament {
+  flex: none;
+  margin: 0 0 10px;
+}
+.lb-tournament-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+}
+.lb-tournament-prize {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex: none;
+  background: rgba(255, 255, 255, 0.06);
+}
+.lb-tournament-info {
+  min-width: 0;
+  flex: 1;
+}
+.lb-tournament-title {
+  font: 800 14px var(--fa);
+  color: #fff;
+}
+.lb-tournament-dates {
+  font: 600 11px var(--en);
+  color: rgba(255, 255, 255, 0.55);
+  margin-top: 2px;
+}
+.lb-tournament-prize-title {
+  font: 700 12px var(--fa);
+  color: var(--gold);
+  margin-top: 2px;
+}
+.lb-tournament-none {
+  padding: 12px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  font: 600 12px var(--fa);
+  color: rgba(255, 255, 255, 0.55);
+  text-align: center;
+}
+.lb-tournament-switcher {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-top: 8px;
+  padding-bottom: 2px;
+}
+.lb-tournament-switcher .lang-btn {
+  flex: none;
+  min-width: unset;
+}
+
 /* ---------- tasks ---------- */
 
 .tasks {

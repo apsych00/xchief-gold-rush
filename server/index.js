@@ -31,7 +31,6 @@ const LEADERBOARD_DEBOUNCE_MS = 1000; // docs/layers.md C4: "debounced to at mos
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-const PHONE_RE = /^\+?[0-9 ()-]{7,20}$/;
 
 const str = (v, max) =>
   String(v ?? '')
@@ -136,6 +135,11 @@ function sendJson(res, status, body) {
  * box's server owns /api/lead - same JSON, same optional webhook"). Success answers 204 (no
  * Vercel function response body to shape here); validation errors keep the original JSON
  * error contract so the client's error handling does not need to know which host answered.
+ *
+ * Email only (ticket B4, docs/tasks-marketing-lead.md ground rules: "Only the email identifies
+ * a web player"): name and phone are never accepted or stored, for either lead type. `type`
+ * still distinguishes the in-game email capture from the xChief signup intent for whoever reads
+ * the webhook, even though both now carry the same fields.
  */
 async function handleLead(req, res) {
   if (req.method !== 'POST') {
@@ -162,21 +166,6 @@ async function handleLead(req, res) {
     ua: str(req.headers['user-agent'], 200),
     at: new Date().toISOString(),
   };
-
-  if (type === 'signup') {
-    const name = str(body.name, 80);
-    const phone = str(body.phone, 24);
-    if (name.length < 2) {
-      sendJson(res, 400, { ok: false, error: 'invalid_name' });
-      return;
-    }
-    if (!PHONE_RE.test(phone)) {
-      sendJson(res, 400, { ok: false, error: 'invalid_phone' });
-      return;
-    }
-    lead.name = name;
-    lead.phone = phone;
-  }
 
   console.log('[lead]', JSON.stringify(lead));
 
@@ -242,19 +231,55 @@ export function createApp({
   let leaderboardRunPending = false;
   let leaderboardLastJson = null;
 
+  /**
+   * The `leaderboard`-shaped payload for one tournament (ticket B1): `rows` (that tournament's
+   * top 10), `tournament` (its own header - title, dates, prize - or null when none resolved),
+   * and `tournaments` (every tournament with a `status` computed against the current time, for
+   * the client's past/upcoming switcher). `tournamentId` null means whichever tournament is
+   * currently running; an explicit id is the `tournament` request frame reading back a past or
+   * upcoming tournament's own board.
+   */
+  async function buildLeaderboardPayload(tournamentId) {
+    const [rows, tournamentRow, tournamentRows] = await Promise.all([
+      ledger.leaderboard(tournamentId),
+      tournamentId ? ledger.getTournament(tournamentId) : ledger.currentTournament(),
+      ledger.listTournaments(),
+    ]);
+    const now = Date.now();
+    const tournaments = tournamentRows.map((t) => ({
+      id: t.id,
+      title: t.title,
+      starts_at: t.starts_at,
+      ends_at: t.ends_at,
+      status: now < new Date(t.starts_at).getTime() ? 'upcoming' : now >= new Date(t.ends_at).getTime() ? 'past' : 'live',
+    }));
+    const tournament = tournamentRow
+      ? {
+          id: tournamentRow.id,
+          title: tournamentRow.title,
+          starts_at: tournamentRow.starts_at,
+          ends_at: tournamentRow.ends_at,
+          prize_title: tournamentRow.prize_title,
+          prize_image: tournamentRow.prize_image,
+          broker_bonus: tournamentRow.broker_bonus,
+        }
+      : null;
+    return { rows, tournament, tournaments };
+  }
+
   async function runLeaderboardRefresh() {
     leaderboardLastRunAt = Date.now();
-    let rows;
+    let payload;
     try {
-      rows = await ledger.leaderboard();
+      payload = await buildLeaderboardPayload(null);
     } catch (err) {
       console.error('[leaderboard] refresh failed', err);
       return;
     }
-    const json = JSON.stringify(rows);
+    const json = JSON.stringify(payload);
     if (json === leaderboardLastJson) return;
     leaderboardLastJson = json;
-    const frame = JSON.stringify({ type: 'leaderboard', rows });
+    const frame = JSON.stringify({ type: 'leaderboard', ...payload });
     for (const ws of playerSockets.values()) {
       if (ws.readyState === ws.OPEN) ws.send(frame);
     }
@@ -491,7 +516,15 @@ export function createApp({
           break;
         }
         case 'leaderboard': {
-          send(ws, { type: 'leaderboard', rows: await ledger.leaderboard() });
+          send(ws, { type: 'leaderboard', ...(await buildLeaderboardPayload(null)) });
+          break;
+        }
+        case 'tournament': {
+          // Reads back a specific tournament's own board - past or upcoming - as the same
+          // `leaderboard`-shaped frame (ticket B1). An id naming no tournament resolves to a
+          // null header and empty rows, not an error.
+          const tournamentId = str(frame.id, 50) || null;
+          send(ws, { type: 'leaderboard', ...(await buildLeaderboardPayload(tournamentId)) });
           break;
         }
         case 'request_otp': {

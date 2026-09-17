@@ -1,11 +1,12 @@
 /**
  * Lead storage and the "ask at the right moment" rules.
  *
- * Two leads are collected:
+ * Two leads are collected, both email only (ticket B4, docs/tasks-marketing-lead.md ground
+ * rules: "Only the email identifies a web player"):
  *   - email    : one field, asked after the first win, then on entering the
  *                leaderboard top 10, else available as a task
- *   - signup   : name + email + phone for an xChief account, asked when the
- *                player goes broke or reaches Trader, else the featured task
+ *   - signup   : email for an xChief account, asked when the player goes broke or reaches
+ *                Trader, else the featured task
  *
  * Coins are paid for the in-game form, which we can verify, not for the
  * external registration, which we cannot (no webhook from xChief yet).
@@ -64,13 +65,11 @@ export function submitSignup(payload) {
   ship({ type: 'signup', ...payload });
 }
 
-/** Build the xChief registration URL with the lead's details prefilled. */
-export function registerUrl(base, { email, name, phone } = {}) {
+/** Build the xChief registration URL with the lead's email prefilled. */
+export function registerUrl(base, { email } = {}) {
   try {
     const u = new URL(base);
     if (email) u.searchParams.set('email', email);
-    if (name) u.searchParams.set('name', name);
-    if (phone) u.searchParams.set('phone', phone);
     u.searchParams.set('utm_source', 'gold-rush');
     u.searchParams.set('utm_medium', 'game');
     return u.toString();

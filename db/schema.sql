@@ -90,6 +90,23 @@ create table public.players (
   updated_at timestamptz not null default now()
 );
 
+-- The campaign runs as a series of tournaments, not one long contest (docs/tasks-marketing-lead.md
+-- A3, ticket B1): each has its own window, prize and broker bonus, adjusted only by SQL
+-- (docs/box-deploy.md "Daily habits") - never a code change or a restart. No two tournaments'
+-- windows may overlap, enforced here rather than trusted to whoever runs the next insert.
+create table public.tournaments (
+  id text primary key,
+  title text not null,
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  prize_title text not null,
+  prize_image text not null,
+  broker_bonus text,
+  created_at timestamptz not null default now(),
+  check (ends_at > starts_at),
+  exclude using gist (tstzrange(starts_at, ends_at) with &&)
+);
+
 -- Physical booth devices. The raw secret is never stored, only its bcrypt hash.
 --
 -- A kiosk runs one visitor session at a time (ticket C1, docs/layers.md): session_coins is
@@ -130,8 +147,25 @@ create table public.rounds (
   status text not null default 'open' check (status in ('open', 'settled')),
   created_at timestamptz not null default now(),
   source text, -- which feed price the round was opened on; recorded for audit only
+  -- The tournament running at this round's end_at, set by settle_round from now() (ticket B1);
+  -- null when no tournament is running, so the round counts for nothing. Kiosk rounds never get
+  -- one - a kiosk has no email and is never ranked, so settle_kiosk_round does not set it.
+  tournament_id text references public.tournaments (id),
   check (player_id is not null or kiosk_id is not null)
 );
+
+-- A player's peak balance reached inside one tournament (ticket B1) - separate from
+-- players.record, which stays the all-time peak across every tournament and none. Upserted by
+-- settle_round whenever a settled round's resulting coins exceed the stored record.
+create table public.tournament_scores (
+  tournament_id text not null references public.tournaments (id),
+  player_id uuid not null references public.players (id) on delete cascade,
+  record int not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (tournament_id, player_id)
+);
+
+create index tournament_scores_board on public.tournament_scores (tournament_id, record desc, updated_at asc);
 
 -- Task definitions (docs/layers.md C5): id, title and reward are the server's own, never
 -- duplicated as numbers in src/ - get_tasks() below is what the client's tasks screen renders
@@ -219,6 +253,8 @@ alter table public.kiosks enable row level security;
 alter table public.coupons enable row level security;
 alter table public.dev_otps enable row level security;
 alter table public.otp_codes enable row level security;
+alter table public.tournaments enable row level security;
+alter table public.tournament_scores enable row level security;
 
 create policy players_select_own on public.players
   for select to authenticated using (id = auth.uid());
@@ -232,11 +268,12 @@ create policy task_claims_select_own on public.task_claims
 create policy tasks_select_all on public.tasks
   for select to anon, authenticated using (true);
 
--- kiosks, coupons, dev_otps and otp_codes deliberately have NO client policy:
--- service-role tables. The public top-10 leaderboard is exposed through the
--- SECURITY DEFINER function public.leaderboard() below, not a view: Supabase's
--- linter flags SECURITY DEFINER views, and a function keeps the same access
--- model (anonymous visitors can read the top 10, nothing else about players).
+-- kiosks, coupons, dev_otps, otp_codes, tournaments and tournament_scores deliberately have NO
+-- client policy: service-role tables. The public top-10 leaderboard and the tournament header
+-- are exposed through the SECURITY DEFINER functions public.leaderboard() and
+-- public.current_tournament() below, not a view: Supabase's linter flags SECURITY DEFINER
+-- views, and a function keeps the same access model (anonymous visitors can read the top 10 and
+-- the tournament dates/prize, nothing else about players or other tournaments' internals).
 
 -- ---------------------------------------------------------------------------- functions --
 --
@@ -260,6 +297,17 @@ $$;
 create function public.stake_for(p_lever int)
 returns int language sql immutable as $$
   select 100 * p_lever;
+$$;
+
+-- ---------------------------------------------------------------------------- tournaments --
+
+-- The tournament whose window contains this instant, or no row when none is running (ticket
+-- B1). tstzrange defaults to '[)' - inclusive start, exclusive end - so a tournament ending
+-- exactly when the next one starts hands off cleanly with no gap and no double-count.
+create function public.current_tournament()
+returns public.tournaments
+language sql stable as $$
+  select * from public.tournaments where tstzrange(starts_at, ends_at) @> now() limit 1;
 $$;
 
 -- ---------------------------------------------------------------------------- masking --
@@ -398,6 +446,14 @@ begin
 end $$;
 
 -- round_settled carries best_streak; return it instead of a second read.
+--
+-- Tournaments (ticket B1): the round belongs to whichever tournament is running at its own
+-- end_at (now(), read once at the top so the whole call sees one instant), never the one
+-- running when it was opened - null when no tournament is running, and the round then counts
+-- for nothing on any tournament board. tournament_scores holds the player's peak balance
+-- reached inside that one tournament, separately from players.record's all-time peak; the
+-- ON CONFLICT's WHERE clause is what makes the upsert a no-op except when this settle actually
+-- raised the record, so a plain loss inside a tournament never rewrites updated_at.
 create function public.settle_round(p_round uuid, p_end_price numeric)
 returns json language plpgsql security definer set search_path = public as $$
 declare
@@ -408,7 +464,9 @@ declare
   v_delta int := 0;
   v_coins int;
   v_streak int;
+  v_tournament_id text;
 begin
+  select id into v_tournament_id from public.current_tournament();
   if p_end_price is null or p_end_price <= 0 then raise exception 'bad_price'; end if;
   select * into r from public.rounds where id = p_round for update;
   if not found or r.status <> 'open' or r.player_id is null then raise exception 'round_not_open'; end if;
@@ -429,7 +487,15 @@ begin
   else
     update public.players set rounds = rounds + 1, updated_at = now() where id = p.id;
   end if;
-  update public.rounds set end_price = p_end_price, end_at = now(), outcome = v_outcome, delta = v_delta, mult = v_mult, status = 'settled' where id = p_round;
+  update public.rounds set end_price = p_end_price, end_at = now(), outcome = v_outcome, delta = v_delta, mult = v_mult,
+    status = 'settled', tournament_id = v_tournament_id where id = p_round;
+  if v_tournament_id is not null then
+    insert into public.tournament_scores (tournament_id, player_id, record, updated_at)
+    values (v_tournament_id, p.id, v_coins, now())
+    on conflict (tournament_id, player_id) do update
+      set record = excluded.record, updated_at = excluded.updated_at
+      where excluded.record > public.tournament_scores.record;
+  end if;
   return json_build_object('outcome', v_outcome, 'delta', v_delta, 'mult', v_mult, 'coins', v_coins, 'streak', v_streak,
     'record', greatest(p.record, v_coins), 'best_streak', greatest(p.best_streak, v_streak), 'start_price', r.start_price, 'end_price', p_end_price);
 end $$;
@@ -748,18 +814,27 @@ end $$;
 
 -- --------------------------------------------------------------------- leaderboard --
 
--- Public leaderboard: top 10 by peak balance, email-confirmed players only,
--- safe columns only. Runs with the function owner's rights on purpose, so it
--- can read players past RLS while exposing nothing but a masked email and record
+-- Public leaderboard: top 10 of one tournament's tournament_scores, email-confirmed players
+-- only, safe columns only (ticket B1: the campaign is a series of tournaments, not one long
+-- contest). p_tournament defaults to whichever tournament public.current_tournament() reports;
+-- passing an explicit id (the `tournament` request frame, server/index.js) is how a closed
+-- tournament's final board is read back. Either way, no tournament resolved (no id given and
+-- none running, or an id that names no tournament) means the coalesce below is null, the
+-- tournament_id equality can never match, and the result is simply empty rows - never an error.
+-- Runs with the function owner's rights on purpose, so it can read players and
+-- tournament_scores past RLS while exposing nothing but a masked email and record
 -- (docs/layers.md C4: "never a raw address" - display_name is not returned any more since it
 -- would defeat the point of masking).
-create function public.leaderboard()
+create function public.leaderboard(p_tournament text default null)
 returns table (display text, record int, rank bigint)
 language sql security definer stable set search_path = public as $$
-  select public.mask_email(email) as display, record, rank() over (order by record desc, updated_at asc) as rank
-  from public.players
-  where email is not null
-  order by record desc, updated_at asc
+  select public.mask_email(p.email) as display, ts.record,
+    rank() over (order by ts.record desc, ts.updated_at asc) as rank
+  from public.tournament_scores ts
+  join public.players p on p.id = ts.player_id
+  where ts.tournament_id = coalesce(p_tournament, (select id from public.current_tournament()))
+    and p.email is not null
+  order by ts.record desc, ts.updated_at asc
   limit 10;
 $$;
 
@@ -847,11 +922,14 @@ end $$;
 
 -- No client writes, anywhere.
 revoke insert, update, delete, truncate, references, trigger
-  on public.players, public.rounds, public.tasks, public.task_claims, public.kiosks, public.coupons
+  on public.players, public.rounds, public.tasks, public.task_claims, public.kiosks, public.coupons,
+     public.tournaments, public.tournament_scores
   from anon, authenticated;
 
--- kiosks and coupons: not even readable by clients. Service role only.
-revoke select on public.kiosks, public.coupons from anon, authenticated;
+-- kiosks, coupons, tournaments and tournament_scores: not even readable by clients. Service
+-- role only - the tournament header and the board reach the client through the SECURITY
+-- DEFINER functions below, never a direct table read.
+revoke select on public.kiosks, public.coupons, public.tournaments, public.tournament_scores from anon, authenticated;
 
 -- dev_otps and otp_codes: service role only.
 revoke all on public.dev_otps, public.otp_codes from public, anon, authenticated;
@@ -860,10 +938,12 @@ revoke all on public.dev_otps, public.otp_codes from public, anon, authenticated
 revoke execute on function public.get_me(), public.claim_task(text), public.free_refill(), public.get_tasks() from public, anon;
 grant execute on function public.get_me(), public.claim_task(text), public.free_refill(), public.get_tasks() to authenticated;
 
--- Any visitor may read the top 10; no other role besides the two client roles
--- gets it.
-revoke execute on function public.leaderboard() from public;
-grant execute on function public.leaderboard() to anon, authenticated;
+-- Any visitor may read the top 10 (of the current tournament, or an explicit one) and the
+-- tournament header; no other role besides the two client roles gets it.
+revoke execute on function public.leaderboard(text) from public;
+grant execute on function public.leaderboard(text) to anon, authenticated;
+revoke execute on function public.current_tournament() from public;
+grant execute on function public.current_tournament() to anon, authenticated;
 
 -- Service-role only: a client holding the anon key must not be able to call these.
 revoke execute on function

@@ -17,5 +17,9 @@ export const freeRefill = () => socket.freeRefill();
 /** Task definitions plus this player's own claimed state, computed server-side. */
 export const getTasks = () => socket.getTasks();
 
-/** The public top-10, ranked by peak balance. */
+/** The current tournament's top-10, ranked by peak balance, plus its header and the switcher
+ * list (ticket B1). */
 export const getLeaderboard = () => socket.getLeaderboard();
+
+/** A specific tournament's own board (past or upcoming), same shape as getLeaderboard(). */
+export const getTournament = (id) => socket.getTournament(id);

@@ -1,9 +1,10 @@
 /**
  * Vercel serverless endpoint that receives leads from the app.
  *
- * Two lead types:
+ * Two lead types, both email only (ticket B4, docs/tasks-marketing-lead.md ground rules:
+ * "Only the email identifies a web player"):
  *   type: "email"   – one-field email capture
- *   type: "signup"  – in-game xChief signup form (name, email, phone)
+ *   type: "signup"  – in-game xChief signup form
  *
  * Every lead is written to the function log (Vercel → project → Logs, filter
  * "[lead]"). If LEAD_WEBHOOK_URL is set, the lead is also POSTed there as
@@ -12,7 +13,6 @@
  */
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-const PHONE_RE = /^\+?[0-9 ()-]{7,20}$/;
 
 function readBody(req) {
   if (req.body && typeof req.body === 'object') return req.body;
@@ -55,15 +55,6 @@ export default async function handler(req, res) {
     country: str(req.headers['x-vercel-ip-country'], 8),
     at: new Date().toISOString(),
   };
-
-  if (type === 'signup') {
-    const name = str(body.name, 80);
-    const phone = str(body.phone, 24);
-    if (name.length < 2) return res.status(400).json({ ok: false, error: 'invalid_name' });
-    if (!PHONE_RE.test(phone)) return res.status(400).json({ ok: false, error: 'invalid_phone' });
-    lead.name = name;
-    lead.phone = phone;
-  }
 
   console.log('[lead]', JSON.stringify(lead));
 
