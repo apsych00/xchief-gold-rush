@@ -17,6 +17,16 @@ export const freeRefill = () => socket.freeRefill();
 /** Task definitions plus this player's own claimed state, computed server-side. */
 export const getTasks = () => socket.getTasks();
 
+/** Video watch progress (ticket B6): reports {seconds, duration}; the server releases the
+ * reward itself once 90% is crossed. */
+export const reportTaskProgress = (task, seconds, duration) => socket.reportTaskProgress(task, seconds, duration);
+
+/** Redirect and return (ticket B7): opens the 5 s window before the destination is opened. */
+export const startTaskVisit = (task) => socket.startTaskVisit(task);
+
+/** Redirect and return (ticket B7): reports the tab regaining focus. */
+export const returnTaskVisit = (task) => socket.returnTaskVisit(task);
+
 /** One page of one tournament's board, ranked by peak balance, plus its header, the switcher
  * list, the pager and this player's own row (tickets B1, B2). `opts.tournament` (past or
  * upcoming id) and `opts.page` both default to the current tournament's first page. */

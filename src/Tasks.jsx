@@ -1,27 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  PROMO_VIDEO_SECONDS,
-  PROMO_VIDEO_URL,
-  SHARE_URL,
-  STAFF_PIN,
-  TASKS,
-  TASK_WAIT_MS,
-  VERIFY_MODE,
-} from './config.js';
-import { enabled as apiEnabled } from './api/client.js';
+import { PROMO_VIDEO_SECONDS, PROMO_VIDEO_URL, STAFF_PIN, TASK_ICONS, VERIFY_MODE } from './config.js';
 import { num, useLang } from './i18n.js';
-import LeadCapture from './LeadCapture.jsx';
-import { readLead, readSignup } from './leads.js';
 import Logo from './Logo.jsx';
-import SignupForm from './SignupForm.jsx';
-
-function fmtCountdown(ms, lang) {
-  const s = Math.max(0, Math.ceil(ms / 1000));
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  const txt = m > 0 ? `${m}:${String(r).padStart(2, '0')}` : `${r}s`;
-  return lang === 'fa' ? txt.replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]) : txt;
-}
 
 function PinModal({ onOk, onCancel }) {
   const { t } = useLang();
@@ -69,23 +49,61 @@ function PinModal({ onOk, onCancel }) {
   );
 }
 
-function VideoModal({ onDone, onCancel }) {
+/**
+ * The video reward (ticket B6): reports {seconds, duration} to the server at most every 5 s
+ * while it plays and once on ended (or, with no PROMO_VIDEO_URL configured, from the same
+ * fallback countdown this modal always had) - the server decides when 90% has been crossed and
+ * releases the reward itself; this component never grants anything on its own.
+ */
+function VideoModal({ onProgress, onDone, onCancel }) {
   const { t } = useLang();
   const [left, setLeft] = useState(PROMO_VIDEO_SECONDS);
+  const lastSentAt = useRef(0);
+
+  const report = (seconds, duration, force) => {
+    const now = Date.now();
+    if (!force && now - lastSentAt.current < 5000) return;
+    lastSentAt.current = now;
+    onProgress(Math.round(seconds), Math.round(duration));
+  };
+
   useEffect(() => {
     if (PROMO_VIDEO_URL) return undefined;
     const id = setInterval(() => setLeft((s) => s - 1), 1000);
     return () => clearInterval(id);
   }, []);
   useEffect(() => {
-    if (!PROMO_VIDEO_URL && left <= 0) onDone();
+    if (PROMO_VIDEO_URL) return;
+    if (left <= 0) {
+      report(PROMO_VIDEO_SECONDS, PROMO_VIDEO_SECONDS, true);
+      onDone();
+    } else {
+      report(PROMO_VIDEO_SECONDS - left, PROMO_VIDEO_SECONDS, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [left, onDone]);
+
   const pct = PROMO_VIDEO_URL ? 0 : ((PROMO_VIDEO_SECONDS - left) / PROMO_VIDEO_SECONDS) * 100;
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
       <div className="modal modal-video">
         {PROMO_VIDEO_URL ? (
-          <video className="promo-video" src={PROMO_VIDEO_URL} autoPlay playsInline onEnded={onDone} />
+          <video
+            className="promo-video"
+            src={PROMO_VIDEO_URL}
+            autoPlay
+            playsInline
+            onTimeUpdate={(e) => {
+              const v = e.currentTarget;
+              if (v.duration) report(v.currentTime, v.duration, false);
+            }}
+            onEnded={(e) => {
+              const v = e.currentTarget;
+              const duration = v.duration || v.currentTime;
+              report(duration, duration, true);
+              onDone();
+            }}
+          />
         ) : (
           <div className="promo-fallback">
             <Logo height={44} />
@@ -109,17 +127,35 @@ function VideoModal({ onDone, onCancel }) {
   );
 }
 
-export default function Tasks({ profile, tasksRows = [], onClaim, onRefreshTasks, onToast }) {
+/**
+ * The rewards screen (docs/layers.md C5; ticket B6+B7+B9). Renders entirely from tasksRows -
+ * public.get_tasks()'s own id/title/reward/claimed/kind/url - never a client-side task table:
+ * decision 1 removed src/config.js's old TASKS constant along with the last client-computed
+ * reward numbers. What "start" does depends only on `kind`:
+ *   - 'video': opens the video modal above; progress reports go to the server as they happen.
+ *   - 'redirect': opens the destination after telling the server the visit started, then reports
+ *     the return when this tab regains focus.
+ *   - 'email' / 'signup': both are released by verify_otp_code once an email is verified
+ *     (decision 4), not by anything claimed here - "start" opens the OTP screen instead.
+ *   - 'instagram': B8's own ticket, not built yet - shown with no action.
+ *   - 'manual' (kept for future use; none seeded): the old instant-claim / PIN-gated path.
+ */
+export default function Tasks({
+  tasksRows = [],
+  onClaim,
+  onRefreshTasks,
+  onReportVideoProgress,
+  onStartTaskVisit,
+  onReturnTaskVisit,
+  onOpenIdentity,
+  onToast,
+}) {
   const { t, lang } = useLang();
   const [now, setNow] = useState(Date.now());
-  const [waiting, setWaiting] = useState({}); // task id -> unlock timestamp
+  const [waiting, setWaiting] = useState({}); // task id -> window-close timestamp
   const [pinFor, setPinFor] = useState(null);
-  const [videoOpen, setVideoOpen] = useState(false);
-  const [emailOpen, setEmailOpen] = useState(false);
-  const [signupOpen, setSignupOpen] = useState(false);
-  const leadSaved = !!readLead();
-  const signupSaved = !!readSignup();
-  const online = apiEnabled; // false only in the no-backend preview mode (VITE_GAME_WS unset)
+  const [videoTask, setVideoTask] = useState(null);
+  const pendingReturns = useRef(new Set());
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 250);
@@ -130,98 +166,80 @@ export default function Tasks({ profile, tasksRows = [], onClaim, onRefreshTasks
   // (public.get_tasks(), docs/layers.md C5); refetch periodically while this screen is open so
   // that happens without the player having to leave and come back.
   useEffect(() => {
-    if (!apiEnabled || !onRefreshTasks) return undefined;
+    if (!onRefreshTasks) return undefined;
     const id = setInterval(onRefreshTasks, 5000);
     return () => clearInterval(id);
   }, [onRefreshTasks]);
 
-  // Reward and claimed state (docs/layers.md C5): computed server-side by public.get_tasks()
-  // and delivered on the `tasks` frame (tasksRows, refreshed by useGame's goTasks/refreshTasks)
-  // - never assembled here from localStorage or a hardcoded reward table. The offline preview
-  // mode (no server to ask) is the one exception, kept on the old localStorage-timestamp path.
-  const rowFor = (id) => tasksRows.find((r) => r.id === id);
-  const rewardOf = (task) => (online ? (rowFor(task.id)?.reward ?? task.reward) : task.reward);
-  const isClaimed = (id) => (online ? !!rowFor(id)?.claimed : !!profile.taskClaims[id]);
-
-  // Email and signup tasks auto-claim once the matching lead exists
-  // (they may have been captured from a prompt elsewhere in the game).
+  // Redirect and return (ticket B7 decision 3): once a visit is open, the tab regaining focus is
+  // the "return" signal. Lenient by design - a wrong-early return just gets `not_yet` back and
+  // stays pending for the next focus, since the client has no better way to know the server's
+  // exact clock than to ask again.
   useEffect(() => {
-    if (leadSaved && !isClaimed('email')) onClaim('email');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leadSaved, tasksRows, profile.taskClaims.email, onClaim]);
-  useEffect(() => {
-    if (signupSaved && !isClaimed('signup')) onClaim('signup');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signupSaved, tasksRows, profile.taskClaims.signup, onClaim]);
-
-  const statusOf = (task) => {
-    if (online) {
-      // The `tasks` frame's `claimed` is a plain boolean (docs/layers.md C5), not a claimed-
-      // until timestamp, so a repeatable task on cooldown shows the same "claimed" state as a
-      // one-time task rather than a precise countdown - it clears itself the next time this
-      // screen refetches (goTasks, or the periodic refresh below).
-      if (rowFor(task.id)?.claimed) return { kind: 'claimed' };
-    } else {
-      const last = profile.taskClaims[task.id];
-      if (last) {
-        if (!task.repeatMs) return { kind: 'claimed' };
-        const left = task.repeatMs - (now - last);
-        if (left > 0) return { kind: 'cooldown', left };
+    const onFocus = () => {
+      for (const taskId of pendingReturns.current) {
+        onReturnTaskVisit(taskId)
+          .then(() => {
+            pendingReturns.current.delete(taskId);
+            setWaiting((w) => {
+              const n = { ...w };
+              delete n[taskId];
+              return n;
+            });
+          })
+          .catch((err) => {
+            if (err?.code === 'not_yet') return; // still inside the window: try again next focus
+            pendingReturns.current.delete(taskId);
+            setWaiting((w) => {
+              const n = { ...w };
+              delete n[taskId];
+              return n;
+            });
+            onToast?.(err?.code || 'error');
+          });
       }
-    }
-    const unlockAt = waiting[task.id];
-    if (unlockAt) {
-      if (now < unlockAt) return { kind: 'waiting', left: unlockAt - now };
-      return { kind: 'ready' };
-    }
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [onReturnTaskVisit, onToast]);
+
+  const statusOf = (row) => {
+    if (row.claimed) return { kind: 'claimed' };
+    const until = waiting[row.id];
+    if (until) return { kind: 'waiting', left: Math.max(0, until - now) };
     return { kind: 'available' };
   };
 
-  const begin = (task) => {
-    if (task.kind === 'video') {
-      setVideoOpen(true);
-      return;
-    }
-    if (task.kind === 'email') {
-      setEmailOpen(true);
-      return;
-    }
-    if (task.kind === 'signup') {
-      setSignupOpen(true);
-      return;
-    }
-    if (task.kind === 'share') {
-      const text = t('tasks.shareText', { record: num(profile.record, lang), url: SHARE_URL });
-      if (navigator.share) {
-        navigator.share({ text }).catch(() => {});
-      } else {
-        navigator.clipboard
-          ?.writeText(text)
-          .then(() => onToast(t('tasks.copied')))
-          .catch(() => {});
-      }
-    } else if (task.url) {
-      window.open(task.url, '_blank', 'noopener');
-    }
-    setWaiting((w) => ({ ...w, [task.id]: Date.now() + TASK_WAIT_MS }));
+  const beginRedirect = (row) => {
+    onStartTaskVisit(row.id)
+      .then((res) => {
+        pendingReturns.current.add(row.id);
+        setWaiting((w) => ({ ...w, [row.id]: Date.now() + (res?.window_ms ?? 5000) }));
+        window.open(row.url, '_blank', 'noopener');
+      })
+      .catch((err) => onToast?.(err?.code || 'error'));
   };
 
-  const finish = (task) => {
+  const begin = (row) => {
+    if (row.kind === 'video') {
+      setVideoTask(row);
+      return;
+    }
+    if (row.kind === 'redirect') {
+      beginRedirect(row);
+      return;
+    }
+    if (row.kind === 'email' || row.kind === 'signup') {
+      onOpenIdentity?.();
+      return;
+    }
+    // 'manual' (none seeded, kept for future use): the same instant-claim / PIN-gated path this
+    // screen always had for a task with no server-tracked progress of its own.
     if (VERIFY_MODE === 'pin') {
-      setPinFor(task.id);
+      setPinFor(row.id);
       return;
     }
-    grant(task.id);
-  };
-
-  const grant = (id) => {
-    onClaim(id);
-    setWaiting((w) => {
-      const n = { ...w };
-      delete n[id];
-      return n;
-    });
-    setPinFor(null);
+    onClaim(row.id);
   };
 
   return (
@@ -231,62 +249,33 @@ export default function Tasks({ profile, tasksRows = [], onClaim, onRefreshTasks
         <div className="screen-sub">{t('tasks.sub')}</div>
       </div>
       <div className="task-list">
-        {TASKS.map((task) => {
-          const st = statusOf(task);
-          const item = `tasks.items.${task.id}`;
+        {tasksRows.map((row) => {
+          const st = statusOf(row);
+          const item = `tasks.items.${row.id}`;
           const done = st.kind === 'claimed';
+          const actionable = row.kind !== 'instagram'; // B8's own ticket, not built yet
           return (
-            <div key={task.id} className={`task ${task.featured ? 'task-featured' : ''} ${done ? 'task-done' : ''}`}>
+            <div key={row.id} className={`task ${row.id === 'signup' ? 'task-featured' : ''} ${done ? 'task-done' : ''}`}>
               <div className="task-icon" aria-hidden="true">
-                {task.icon}
+                {TASK_ICONS[row.id] || '•'}
               </div>
               <div className="task-body">
                 <div className="task-title">{t(`${item}.title`)}</div>
                 <div className="task-desc">{t(`${item}.desc`)}</div>
-                {task.kind === 'email' && emailOpen && !leadSaved && (
-                  <LeadCapture source="task" balance={profile.coins} variant="inline" />
-                )}
-                {task.kind === 'signup' && signupOpen && !signupSaved && (
-                  <SignupForm
-                    source="task"
-                    balance={profile.coins}
-                    reward={num(rewardOf(task), lang)}
-                    variant="inline"
-                    onCancel={() => setSignupOpen(false)}
-                  />
-                )}
               </div>
               <div className="task-side">
                 <div className="task-reward" dir="ltr">
-                  {t('tasks.reward', { n: num(rewardOf(task), lang) })}
+                  {t('tasks.reward', { n: num(row.reward, lang) })}
                 </div>
                 {st.kind === 'claimed' && <div className="task-state">{t('tasks.claimed')}</div>}
-                {st.kind === 'cooldown' && (
-                  <div className="task-state">{t('tasks.again', { t: fmtCountdown(st.left, lang) })}</div>
-                )}
                 {st.kind === 'waiting' && (
                   <button type="button" className="task-btn" disabled>
                     {t('tasks.waiting', { s: num(Math.ceil(st.left / 1000), lang) })}
                   </button>
                 )}
-                {st.kind === 'ready' && (
-                  <button type="button" className="task-btn task-btn-ready" onClick={() => finish(task)}>
-                    {VERIFY_MODE === 'pin' ? t('tasks.verify') : t('tasks.done')}
-                  </button>
-                )}
-                {st.kind === 'available' && task.kind !== 'email' && task.kind !== 'signup' && (
-                  <button type="button" className="task-btn" onClick={() => begin(task)}>
-                    {task.kind === 'link' ? t('tasks.open') : t('tasks.start')}
-                  </button>
-                )}
-                {st.kind === 'available' && task.kind === 'email' && !emailOpen && (
-                  <button type="button" className="task-btn" onClick={() => begin(task)}>
-                    {t('tasks.start')}
-                  </button>
-                )}
-                {st.kind === 'available' && task.kind === 'signup' && !signupOpen && (
-                  <button type="button" className="task-btn task-btn-ready" onClick={() => begin(task)}>
-                    {t('tasks.start')}
+                {st.kind === 'available' && actionable && (
+                  <button type="button" className="task-btn" onClick={() => begin(row)}>
+                    {row.kind === 'redirect' ? t('tasks.open') : t('tasks.start')}
                   </button>
                 )}
               </div>
@@ -294,14 +283,20 @@ export default function Tasks({ profile, tasksRows = [], onClaim, onRefreshTasks
           );
         })}
       </div>
-      {pinFor && <PinModal onOk={() => grant(pinFor)} onCancel={() => setPinFor(null)} />}
-      {videoOpen && (
-        <VideoModal
-          onDone={() => {
-            setVideoOpen(false);
-            grant('video');
+      {pinFor && (
+        <PinModal
+          onOk={() => {
+            onClaim(pinFor);
+            setPinFor(null);
           }}
-          onCancel={() => setVideoOpen(false)}
+          onCancel={() => setPinFor(null)}
+        />
+      )}
+      {videoTask && (
+        <VideoModal
+          onProgress={(seconds, duration) => onReportVideoProgress(videoTask.id, seconds, duration)}
+          onDone={() => setVideoTask(null)}
+          onCancel={() => setVideoTask(null)}
         />
       )}
     </section>

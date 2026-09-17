@@ -4,19 +4,29 @@
 -- here, never duplicated as numbers in src/. Titles are plain English; the client's own i18n
 -- (src/i18n.js, keyed by id) still owns the localized copy shown on screen. 'signup' is the
 -- email verification itself, so it needs a confirmed email.
-insert into public.tasks (id, title, reward, repeat_ms, requires_email) values
-  ('signup',            'Create an xChief account',        1000, null,        true),
-  ('video',             'xChief video',                    100,  300000,      false),
-  ('email',             'Save your email',                 200,  null,        false),
-  ('instagram',         'Follow Instagram',                300,  null,        false),
-  ('telegram',          'Join Telegram',                   300,  null,        false),
-  ('youtube',           'Subscribe on YouTube',             300,  null,        false),
-  ('story',             'Share your record',                300,  86400000,    false),
-  ('review_trustpilot', 'Review on Trustpilot',            500,  null,        false),
-  ('review_google',     'Review on Google',                500,  null,        false),
-  ('review_fpa',        'Review on Forex Peace Army',      500,  null,        false)
+--
+-- kind and url (ticket B6+B7+B9, decision 1) drive the release path: video's progress is
+-- reported and released at 90% (B6); telegram/youtube/review_* are redirect-and-return (B7),
+-- their URLs moved here from src/config.js's old LINKS object rather than left as a client env
+-- var, so a marketer changing a destination edits one seeded row, not a deploy; email and signup
+-- are released by verify_otp_code on the socket that verified (B9); instagram is left as its own
+-- kind for B8 to fill in later. 'story' (share-your-record) fits none of B6/B7's mechanics - it
+-- has no external destination to return from - so it stays 'manual', unclaimable until a later
+-- ticket gives it one.
+insert into public.tasks (id, title, reward, repeat_ms, requires_email, kind, url) values
+  ('signup',            'Create an xChief account',        1000, null,        true,  'signup',   null),
+  ('video',             'xChief video',                    100,  300000,      false, 'video',    null),
+  ('email',             'Save your email',                 200,  null,        false, 'email',    null),
+  ('instagram',         'Follow Instagram',                300,  null,        false, 'instagram', null),
+  ('telegram',          'Join Telegram',                   300,  null,        false, 'redirect', 'https://t.me/xchief'),
+  ('youtube',           'Subscribe on YouTube',             300,  null,        false, 'redirect', 'https://www.youtube.com/@xchief'),
+  ('story',             'Share your record',                300,  86400000,    false, 'manual',   null),
+  ('review_trustpilot', 'Review on Trustpilot',            500,  null,        false, 'redirect', 'https://www.trustpilot.com/review/xchief.com'),
+  ('review_google',     'Review on Google',                500,  null,        false, 'redirect', 'https://www.google.com/search?q=xchief+reviews'),
+  ('review_fpa',        'Review on Forex Peace Army',      500,  null,        false, 'redirect', 'https://www.forexpeacearmy.com/forex-reviews/xchief')
 on conflict (id) do update set
-  title = excluded.title, reward = excluded.reward, repeat_ms = excluded.repeat_ms, requires_email = excluded.requires_email;
+  title = excluded.title, reward = excluded.reward, repeat_ms = excluded.repeat_ms, requires_email = excluded.requires_email,
+  kind = excluded.kind, url = excluded.url;
 
 -- The campaign's tournament windows (ticket B1, docs/tasks-marketing-lead.md A3). Dates given
 -- in Asia/Dubai (UTC+4, no DST) and stored as timestamptz; adjusting these in production is a

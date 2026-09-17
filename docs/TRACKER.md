@@ -12,11 +12,11 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | L1 game on the box | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 7/7 | 0 | complete, load-tested (100 sockets, p95 settle 5024 ms), rehearsed through compose + Caddy |
 | L1.5 client experience | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 17/19 | C11 tours ⏳, C4b animation ⏳, Q1 rest 🟡 | booth and web flows built and verified end to end; red team: every loophole fixed (C10) |
 | L2 hardening | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 7/18 | S1, S3, S5, S6, S8, S10, S11, S12, S14, S15 are M2 scope creep | S2 rate limits and S18 safe mode merged; production numbers under review with the owner |
-| MKT Part B | 🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜ 8/16 | B6+B7+B9 🔨, B2+B3 🔨, B8 📋, B12 ⏳, B13 ⏳ | B1, B4, B5, B14, B15 (build), B16 done |
+| MKT Part B | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 13/16 | B8 📋, B12 ⏳, B13 ⏳ | B1, B4, B5, B14, B15 (build), B16 done |
 | OPS | 🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜ 2/4 | D3 run on the box (M2), T1 Telegram bot 📋 (M4) | deploy scripts built; first real run happens on the box |
 | FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 
-**Demo milestone (M1):** 27 of 31 tickets done. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
+**Demo milestone (M1):** 30 of 31 tickets done. Left: B8 Instagram, C11 tours, B13 hardening, then the showcase gate. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
 
 ### Landed on dev today (newest first)
 
@@ -24,6 +24,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 | Time | Ticket | What landed | Gates on the merged tree |
 |---|---|---|---|
+| 16:05 | B6+B7+B9 | rewards released by the server: video progress, redirect-and-return, email and signup on verify; client renders the server task list | 277 pgTAP, 82 integration, 25 E2E |
 | 15:20 | B2+B3 | paged leaderboard with the own row pinned, badge tiers and legend | 261 pgTAP, 78 integration, 22 E2E |
 | 14:45 | C9 | prize by QR: reserved coupon + one-time claim link, kiosk QR screen with fa+en text and 20 s countdown, /claim page with email and gift card, expired links release the coupon | 114 unit, 236 pgTAP, 74 integration, 21 E2E |
 | 14:20 | B10+B11 | tour flag and placeholder tour/intro, ad banner zone on the leaderboard, shared first-visit E2E helper | 114 unit, 211 pgTAP, 68 integration, 19 E2E |
@@ -41,7 +42,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 1. ✅ B10+B11 merged.
 2. ✅ B15 merged (clean boot verified).
-3. ✅ C9 merged. 🔍 B6+B7+B9 and 🔍 B2+B3: worker reports green, my verification next.
+3. ✅ C9, B2+B3, B6+B7+B9 merged.
 4. ✅ S18 safe mode merged.
 5. ✅ B2+B3 merged.
 6. 📋 B8 Instagram: after B6+B7+B9 merges.
@@ -139,10 +140,10 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | B3 | MKT | Badge tiers and the legend endpoint | Sonnet (cbx) | ✅ done | `badge_tiers` table, `tier_for_rank`, `badge_legend()`, six placeholder SVGs; merged | real badge art from marketing |
 | B4 | MKT | Name and phone removed from lead capture | Sonnet (cbx) | ✅ done | email only in forms, storage and /api/lead; merged | |
 | B5 | MKT | Per-device identity for anonymous players | Sonnet (cbx) | ✅ done | 189 pgTAP, 40 integration on my run; `clientIp` now owned by S2's limits.js; merged | |
-| B6 | MKT | Reward: video watched (90 %) once per device, released by the server from reported progress | | 📋 ready | ticket `docs/tickets/b6-b7-b9-rewards.md` | after B5 |
-| B7 | MKT | Reward: redirect and return (Trustpilot, YouTube, Telegram), 5 s window | | 📋 ready | in the B6 ticket; lenient until B13 | after B5 |
+| B6 | MKT | Reward: video watched (90 %) once per device, released by the server from reported progress | Sonnet (cbx) | ✅ done | `video_progress` with the 90 % threshold and fast-forward guard; released by the server; merged | |
+| B7 | MKT | Reward: redirect and return (Trustpilot, YouTube, Telegram), 5 s window | Sonnet (cbx) | ✅ done | `task_visits`, 5 s window, once per device or email; merged | B13 hardens |
 | B8 | MKT | Reward: Instagram, bound to an OAuth-verified Instagram account once per account, device and email (Instagram exposes no follow check to third parties); env-driven, fake for tests, live the day the app id and secret arrive | | 📋 ready | ticket `docs/tickets/b8-instagram.md`; needs an Instagram app from the owner | after B6 |
-| B9 | MKT | Reward: email verified, released by the server on OTP success | | 📋 ready | in the B6 ticket; closes G1 | after B5 |
+| B9 | MKT | Reward: email verified, released by the server on OTP success | Sonnet (cbx) | ✅ done | email and first-time signup rewards released on OTP verify; closes G1; merged | |
 | B10 | MKT | Tour-seen flag per device (web) and per boot (kiosk) | Sonnet (cbx) | ✅ done | tour placeholder (web, localStorage) and kiosk intro (once per boot); shared `dismissFirstVisit` E2E helper; 19 E2E on my merged run; merged | C11 real tour content |
 | B11 | MKT | Ad banner list served to the client | Sonnet (cbx) | ✅ done | `ads/banners.json` + `public/ads/`, `<AdZone/>` bottom 40 %% of the leaderboard, Caddy `handle_path /ads*`; merged | marketing drops real banners into `ads/` |
 | B12 | MKT | Curate the YouTube list (under one minute each) | | ⏳ queued | content task | |
@@ -160,7 +161,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 
 | ID | Gap | Covered by |
 |---|---|---|
-| G1 | The Trader-level signup prompt on the play screen calls `claim_task('signup')` for unverified players and fails with `email_required`; same dead end C7 fixed in the broke overlay | small fix; do with B9 |
+| G1 | The Trader-level signup prompt on the play screen calls `claim_task('signup')` for unverified players and fails with `email_required`; same dead end C7 fixed in the broke overlay | closed by B9 (the CTA opens the OTP screen; the reward is released on verify) |
 | G2 | `round_settled` carries no `stake`; the win pane's stake text is still the client's own number for the lever it sent | add `stake` to the frame; with C4b |
 | G3 | Leaderboard own-row match compares masked emails, so colliding masks highlight two rows | closed by B2 (own row by player id) |
 | G4 | Nothing tests the production bundle; the Connecting trap slipped past every E2E because they run on the Vite dev server | a compose smoke test in the deploy gate; with D2 |

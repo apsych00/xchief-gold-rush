@@ -864,6 +864,47 @@ export function createApp({
           send(ws, { type: 'me', ...me, reward: refilled.reward });
           break;
         }
+        case 'task_progress': {
+          // Video watch progress (ticket B6+B7+B9 decision 2): reported at most every 5 s while
+          // the video plays and once on ended. report_video_progress releases the reward itself
+          // once 90% is crossed - this reply is the usual `me`, with `reward`/`task` only when
+          // that happened on this call.
+          if (kind !== 'player') {
+            send(ws, { type: 'error', code: 'not_available' });
+            break;
+          }
+          const taskId = str(frame.task, 40);
+          const progress = await ledger.reportVideoProgress(id, taskId, Number(frame.seconds), Number(frame.duration));
+          const me = await ledger.getMe(id);
+          send(ws, { type: 'me', ...me, ...(progress.reward != null ? { reward: progress.reward, task: taskId } : {}) });
+          break;
+        }
+        case 'task_start': {
+          // Redirect and return (ticket B6+B7+B9 decision 3): sent before the client opens the
+          // destination URL. The server records the visit and answers the window it granted.
+          if (kind !== 'player') {
+            send(ws, { type: 'error', code: 'not_available' });
+            break;
+          }
+          const taskId = str(frame.task, 40);
+          const started = await ledger.startTaskVisit(id, taskId);
+          send(ws, { type: 'task_started', ...started });
+          break;
+        }
+        case 'task_return': {
+          // Sent when the tab regains focus. Released only once the 5 s window has actually
+          // passed; `not_yet`/`already_claimed` arrive as the usual error frame (with `retry_ms`
+          // on `not_yet`, from the catch block below).
+          if (kind !== 'player') {
+            send(ws, { type: 'error', code: 'not_available' });
+            break;
+          }
+          const taskId = str(frame.task, 40);
+          const released = await ledger.returnTaskVisit(id, taskId);
+          const me = await ledger.getMe(id);
+          send(ws, { type: 'me', ...me, reward: released.reward, task: taskId });
+          break;
+        }
         case 'tasks': {
           if (kind !== 'player') {
             send(ws, { type: 'error', code: 'not_available' });
@@ -972,7 +1013,21 @@ export function createApp({
             // (and confirmed) before this code could have proved ownership of it.
             send(ws, { type: 'me', ...me, token: signToken(loggedIn, loggedInVersion ?? 1) });
           } else {
-            send(ws, { type: 'me', ...(await ledger.getMe(id)) });
+            // Email verified (ticket B6+B7+B9 decision 4): release the `email` task itself, and
+            // the `signup` task if this is the first time this device has verified - both go
+            // through release_task_reward, which is a no-op (not an error) once already granted
+            // on this device or verified email, so calling it unconditionally here is safe.
+            const emailReward = await ledger.releaseTaskReward(id, 'email').catch((err) => {
+              console.error('[otp] email task release failed', err);
+              return null;
+            });
+            const signupReward = await ledger.releaseTaskReward(id, 'signup').catch((err) => {
+              console.error('[otp] signup task release failed', err);
+              return null;
+            });
+            const reward = (emailReward?.reward || 0) + (signupReward?.reward || 0);
+            const me = await ledger.getMe(id);
+            send(ws, { type: 'me', ...me, ...(reward ? { reward } : {}) });
           }
           break;
         }
@@ -985,7 +1040,7 @@ export function createApp({
       // the original is logged here, tagged with the frame type that triggered it.
       const code = ledger.KNOWN_ERROR_CODES.includes(err.code) ? err.code : 'internal';
       if (code === 'internal') console.error(`[frame:${frame.type}] error`, err);
-      send(ws, { type: 'error', code });
+      send(ws, { type: 'error', code, ...(err.retryMs != null ? { retry_ms: err.retryMs } : {}) });
       if (kind === 'kiosk' && err.code === 'insufficient_coins') {
         // open_kiosk_round marked the session broke when it refused the stake; the kiosk's
         // screen is driven by kiosk_session frames, so tell it (docs/layers.md C2).

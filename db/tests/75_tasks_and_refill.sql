@@ -1,9 +1,17 @@
 -- Invariant (docs/layers.md C5): claim_task and free_refill both return the exact reward the
 -- ledger granted, both reject a second claim/refill with their own named error, and get_tasks()
--- reports id/title/reward/claimed for the calling player - never assembled by the client.
+-- reports id/title/reward/claimed/kind/url for the calling player - never assembled by the
+-- client.
+--
+-- claim_task is restricted to kind='manual' tasks (ticket B6+B7+B9 decision 5; every other kind
+-- is released by the server itself, exercised in db/tests/85_task_rewards.sql) - none of which
+-- are seeded, so this suite inserts its own for the duration of this transaction, rolled back at
+-- the end like every fixture here.
 begin;
 
-select plan(13);
+select plan(15);
+
+insert into public.tasks (id, title, reward, kind) values ('test_manual', 'Test manual task', 200, 'manual');
 
 -- claim_task: a one-time task grants its reward once, then refuses a repeat -----------------
 
@@ -17,8 +25,8 @@ select is(
   'sanity: a fresh confirmed player starts at 1000 coins'
 );
 
-select (public.claim_task('email')) as claim_1 \gset
-select is((:'claim_1'::json->>'reward')::int, 200, 'claim_task returns the reward it just granted (email = 200)');
+select (public.claim_task('test_manual')) as claim_1 \gset
+select is((:'claim_1'::json->>'reward')::int, 200, 'claim_task returns the reward it just granted (test_manual = 200)');
 select is((:'claim_1'::json->>'coins')::int, 1200, 'claim_task returns the new balance: 1000 + 200');
 select is(
   (select coins from public.players where id = :'claimer_id'),
@@ -27,7 +35,7 @@ select is(
 );
 
 select throws_like(
-  $$ select public.claim_task('email') $$,
+  $$ select public.claim_task('test_manual') $$,
   '%already_claimed%',
   'a second claim of the same one-time task is rejected'
 );
@@ -37,15 +45,21 @@ select is(
   'the rejected repeat claim grants nothing on top of the first'
 );
 
+select throws_like(
+  $$ select public.claim_task('email') $$,
+  '%not_claimable%',
+  'claim_task refuses a non-manual task kind, even one the caller has never claimed'
+);
+
 -- get_tasks(): reward and claimed both computed here, matching claim_task exactly ----------
 
 select is(
-  (select reward from public.get_tasks() where id = 'email'),
+  (select reward from public.get_tasks() where id = 'test_manual'),
   200,
   'get_tasks reports the same reward claim_task just paid'
 );
 select is(
-  (select claimed from public.get_tasks() where id = 'email'),
+  (select claimed from public.get_tasks() where id = 'test_manual'),
   true,
   'get_tasks marks the claimed task as claimed for this player'
 );
@@ -53,6 +67,11 @@ select is(
   (select claimed from public.get_tasks() where id = 'instagram'),
   false,
   'get_tasks marks an unclaimed task as not claimed'
+);
+select is(
+  (select kind from public.get_tasks() where id = 'video'),
+  'video',
+  'get_tasks reports each task''s kind'
 );
 
 reset role;

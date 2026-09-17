@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { comboMult, ECON, TASKS } from './config.js';
+import { comboMult, ECON } from './config.js';
 import { startPriceFeed } from './priceFeed.js';
 import { loadProfile, resetProfile as wipeProfile, saveProfile } from './profile.js';
 import { enabled as apiEnabled } from './api/client.js';
@@ -76,8 +76,9 @@ const initialGame = {
   result: null, // { outcome:'win'|'lose'|'flat', stake, delta, mult, streak, badge, coupon? }
   toast: null, // { id, text } transient notice
   // Task definitions plus this player's own claimed state, computed server-side by
-  // public.get_tasks() (docs/layers.md C5). Empty until the first fetch; kiosk and offline
-  // (apiEnabled false) modes never populate it and fall back to src/config.js's own TASKS list.
+  // public.get_tasks() (docs/layers.md C5; ticket B6+B7+B9 decision 1). Empty until the first
+  // fetch; kiosk and offline (apiEnabled false) modes never populate it - there is no local
+  // fallback any more, the client keeps no task table of its own.
   tasksRows: [],
 };
 
@@ -484,42 +485,78 @@ export function useGame() {
 
   const reset = { phase: 'idle', dir: null, start: null, end: null, history: [], result: null };
 
+  // Once per device or per verified email, computed server-side (docs/layers.md C5; ticket
+  // B6+B7+B9 decision 5): the client keeps no task table of its own, so there is no offline
+  // fallback here any more - a task can only ever be claimed with a live server.
   const claimTask = useCallback(
     (taskId) => {
-      if (apiEnabled && !IS_KIOSK) {
-        api
-          .claimTask(taskId)
-          .then((res) => {
-            // server/index.js's claim_task reply is `{type:'me', ...me, reward, task}`: the
-            // full player row (applied the same way get_me's own reply is) plus the exact
-            // reward the ledger just granted (docs/layers.md C5) - never guessed from a coin
-            // delta or a client-side reward table.
-            applyMe(res);
+      if (!apiEnabled || IS_KIOSK) return false;
+      api
+        .claimTask(taskId)
+        .then((res) => {
+          // server/index.js's claim_task reply is `{type:'me', ...me, reward, task}`: the
+          // full player row (applied the same way get_me's own reply is) plus the exact
+          // reward the ledger just granted (docs/layers.md C5) - never guessed from a coin
+          // delta or a client-side reward table.
+          applyMe(res);
+          setState((s) => ({
+            ...s,
+            tasksRows: s.tasksRows.map((r) => (r.id === res.task ? { ...r, claimed: true } : r)),
+          }));
+          toast(`+${res.reward}`);
+        })
+        .catch((err) => toast(err?.code || 'error'));
+      return true;
+    },
+    [applyMe, toast],
+  );
+
+  // Video watch progress (ticket B6): reported by the player's own <video> element (or the
+  // no-asset countdown fallback), at most every 5 s and once on ended. The server releases the
+  // reward itself once 90% is crossed - this call never claims anything on its own, it only
+  // reports what was observed; `reward` on the reply is present only on the call that crossed
+  // the threshold.
+  const reportVideoProgress = useCallback(
+    (taskId, seconds, duration) => {
+      if (!apiEnabled || IS_KIOSK) return;
+      api
+        .reportTaskProgress(taskId, seconds, duration)
+        .then((res) => {
+          applyMe(res);
+          if (res.reward != null) {
             setState((s) => ({
               ...s,
-              tasksRows: s.tasksRows.map((r) => (r.id === res.task ? { ...r, claimed: true } : r)),
+              tasksRows: s.tasksRows.map((r) => (r.id === taskId ? { ...r, claimed: true } : r)),
             }));
             toast(`+${res.reward}`);
-          })
-          .catch((err) => toast(err?.code || 'error'));
-        return true;
-      }
-      const task = TASKS.find((t) => t.id === taskId);
-      if (!task) return false;
-      const p = profileRef.current;
-      const last = p.taskClaims[taskId];
-      if (last && (!task.repeatMs || Date.now() - last < task.repeatMs)) return false;
-      const coins = p.coins + task.reward;
-      const next = {
-        ...p,
-        coins,
-        record: Math.max(p.record, coins),
-        taskClaims: { ...p.taskClaims, [taskId]: Date.now() },
-      };
-      profileRef.current = next;
-      setProfile(next);
-      toast(`+${task.reward}`);
-      return true;
+          }
+        })
+        .catch((err) => console.error('[api] task_progress failed', err));
+    },
+    [applyMe, toast],
+  );
+
+  // Redirect and return (ticket B7): opens the server's 5 s window before the destination URL
+  // is opened, so the return side has something to measure against.
+  const startTaskVisit = useCallback((taskId) => {
+    if (!apiEnabled || IS_KIOSK) return Promise.resolve({ window_ms: 5000 });
+    return api.startTaskVisit(taskId);
+  }, []);
+
+  // Redirect and return (ticket B7): reported when the tab regains focus. Rejects with
+  // `not_yet` (carrying `.retryMs`) before the window has passed, or `already_claimed`.
+  const returnTaskVisit = useCallback(
+    (taskId) => {
+      if (!apiEnabled || IS_KIOSK) return Promise.reject(Object.assign(new Error('not_available'), { code: 'not_available' }));
+      return api.returnTaskVisit(taskId).then((res) => {
+        applyMe(res);
+        setState((s) => ({
+          ...s,
+          tasksRows: s.tasksRows.map((r) => (r.id === taskId ? { ...r, claimed: true } : r)),
+        }));
+        toast(`+${res.reward}`);
+        return res;
+      });
     },
     [applyMe, toast],
   );
@@ -685,6 +722,9 @@ export function useGame() {
       patch({ lev });
     },
     claimTask,
+    reportVideoProgress,
+    startTaskVisit,
+    returnTaskVisit,
     toast,
     requestOtp,
     verifyOtp,

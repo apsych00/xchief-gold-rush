@@ -187,7 +187,13 @@ function settlePending(frame) {
   if (idx === -1) return false;
   const [entry] = pending.splice(idx, 1);
   clearTimeout(entry.timer);
-  if (isError) entry.reject(Object.assign(new Error(frame.code || 'error'), { code: frame.code || 'error' }));
+  if (isError)
+    entry.reject(
+      Object.assign(new Error(frame.code || 'error'), {
+        code: frame.code || 'error',
+        ...(frame.retry_ms != null ? { retryMs: frame.retry_ms } : {}),
+      }),
+    );
   else entry.resolve(frame);
   return true;
 }
@@ -418,6 +424,23 @@ export function getTasks() {
  * upcoming tournament's own board by passing its id. */
 export function getLeaderboard({ tournament = null, page = 1 } = {}) {
   return request(['leaderboard'], { type: 'leaderboard', tournament, page }).then(payloadOf);
+}
+
+/** Video watch progress (ticket B6+B7+B9): resolves with the usual `me`, carrying `reward` only
+ * on the call that crosses 90% - the server released it itself, never this claim. */
+export function reportTaskProgress(task, seconds, duration) {
+  return request(['me'], { type: 'task_progress', task, seconds, duration }).then(payloadOf);
+}
+
+/** Redirect and return, opening step: resolves with `{task, window_ms}`. */
+export function startTaskVisit(task) {
+  return request(['task_started'], { type: 'task_start', task }).then(payloadOf);
+}
+
+/** Redirect and return, return step: resolves with the usual `me` plus `reward`; rejects with
+ * `not_yet` (carrying `.retry_ms`) or `already_claimed`. */
+export function returnTaskVisit(task) {
+  return request(['me'], { type: 'task_return', task }).then(payloadOf);
 }
 
 export function requestOtp(email) {

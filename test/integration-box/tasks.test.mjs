@@ -125,24 +125,120 @@ test('the tasks frame reports id/title/reward/claimed, computed server-side', as
 // --- claim_task ------------------------------------------------------------------------------
 
 test('claim_task grants the reward, reports it on the me reply, and rejects a repeat with already_claimed', async () => {
+  // ticket B6+B7+B9 (db/schema.sql decision 5) restricted claim_task to kind='manual' tasks;
+  // 'email' is released by verify_otp_code now (otp.test.mjs), not by a client claim_task call.
+  // This suite exercises the still-live claim_task path against a manual fixture task instead.
+  await pool.query(
+    "insert into public.tasks (id, title, reward, kind) values ('test_manual_reward', 'Test manual reward task', 175, 'manual') on conflict (id) do update set kind = 'manual', reward = 175",
+  );
+
   const ws = connect();
   await whenOpen(ws);
   const welcome = await authAnonymous(ws);
   const before = welcome.me.coins;
 
-  send(ws, { type: 'claim_task', task_id: 'email' });
+  send(ws, { type: 'claim_task', task_id: 'test_manual_reward' });
   const first = await nextFrame(ws, (f) => f.type === 'me');
-  assert.equal(first.task, 'email', 'the me reply names which task was just claimed');
+  assert.equal(first.task, 'test_manual_reward', 'the me reply names which task was just claimed');
   assert.equal(typeof first.reward, 'number', 'the me reply carries the reward the ledger granted');
   assert.ok(first.reward > 0, 'the reward is a real, positive amount');
   assert.equal(first.coins, before + first.reward, 'the balance on the reply already reflects the reward');
 
-  send(ws, { type: 'claim_task', task_id: 'email' });
+  send(ws, { type: 'claim_task', task_id: 'test_manual_reward' });
   const err = await nextFrame(ws, (f) => f.type === 'error');
   assert.equal(err.code, 'already_claimed', 'a second claim of the same one-time task is rejected');
 
   const { rows } = await pool.query('select coins from public.players where id = $1', [welcome.me.id]);
   assert.equal(rows[0].coins, first.coins, 'the rejected repeat granted nothing on top of the first claim');
+
+  ws.close();
+});
+
+test('claim_task refuses a non-manual task kind with not_claimable', async () => {
+  const ws = connect();
+  await whenOpen(ws);
+  await authAnonymous(ws);
+
+  send(ws, { type: 'claim_task', task_id: 'video' });
+  const err = await nextFrame(ws, (f) => f.type === 'error');
+  assert.equal(err.code, 'not_claimable', 'a video-kind task cannot be claimed by the client directly');
+
+  ws.close();
+});
+
+// --- task_progress (ticket B6+B7+B9 decision 2, video watch) ----------------------------------
+
+test('task_progress reports watch progress and the me reply carries reward only once 90% is crossed', async () => {
+  const ws = connect();
+  await whenOpen(ws);
+  const welcome = await authAnonymous(ws);
+
+  send(ws, { type: 'task_progress', task: 'video', seconds: 5, duration: 60 });
+  const below = await nextFrame(ws, (f) => f.type === 'me');
+  assert.equal(below.reward, undefined, 'no reward field on the me reply below 90%');
+
+  // Crossing 90% releases the reward through report_video_progress itself (db/schema.sql), not
+  // through a claim_task call - the too-fast check pgTAP already covers (db/tests/85), so this
+  // integration test only needs the frame shape, not the anti-fraud arithmetic.
+  await pool.query(
+    "update public.video_progress set updated_at = now() - interval '60 seconds' where task_id = 'video' and player_id = $1",
+    [welcome.me.id],
+  );
+  send(ws, { type: 'task_progress', task: 'video', seconds: 55, duration: 60 });
+  const above = await nextFrame(ws, (f) => f.type === 'me');
+  assert.equal(above.task, 'video', 'the me reply names the task once a reward was released');
+  assert.equal(typeof above.reward, 'number', 'the me reply carries the reward report_video_progress released');
+  assert.ok(above.reward > 0, 'the reward is a real, positive amount');
+
+  ws.close();
+});
+
+test('claim_task("video") is still refused with not_claimable even after progress was reported', async () => {
+  const ws = connect();
+  await whenOpen(ws);
+  await authAnonymous(ws);
+
+  send(ws, { type: 'task_progress', task: 'video', seconds: 5, duration: 60 });
+  await nextFrame(ws, (f) => f.type === 'me');
+
+  send(ws, { type: 'claim_task', task_id: 'video' });
+  const err = await nextFrame(ws, (f) => f.type === 'error');
+  assert.equal(err.code, 'not_claimable', 'video stays a server-released task, never client-claimable');
+
+  ws.close();
+});
+
+// --- task_start / task_return (ticket B6+B7+B9 decision 3, redirect and return) ---------------
+
+test('task_start answers task_started with the window, task_return refuses before it and rewards after', async () => {
+  const ws = connect();
+  await whenOpen(ws);
+  const welcome = await authAnonymous(ws);
+
+  send(ws, { type: 'task_start', task: 'telegram' });
+  const started = await nextFrame(ws, (f) => f.type === 'task_started');
+  assert.equal(started.task, 'telegram', 'task_started names the task it opened a window for');
+  assert.equal(started.window_ms, 5000, 'task_started reports the 5 s window');
+
+  send(ws, { type: 'task_return', task: 'telegram' });
+  const early = await nextFrame(ws, (f) => f.type === 'error');
+  assert.equal(early.code, 'not_yet', 'returning before the window has passed is refused');
+  assert.equal(typeof early.retry_ms, 'number', 'not_yet carries retry_ms so the client knows when to try again');
+
+  await pool.query(
+    "update public.task_visits set started_at = now() - interval '6 seconds' where player_id = $1 and task_id = 'telegram'",
+    [welcome.me.id],
+  );
+
+  send(ws, { type: 'task_return', task: 'telegram' });
+  const rewarded = await nextFrame(ws, (f) => f.type === 'me');
+  assert.equal(rewarded.task, 'telegram', 'the me reply names which task was rewarded');
+  assert.equal(typeof rewarded.reward, 'number', 'past the window, the me reply carries the reward that was released');
+  assert.ok(rewarded.reward > 0, 'the reward is a real, positive amount');
+
+  send(ws, { type: 'task_return', task: 'telegram' });
+  const again = await nextFrame(ws, (f) => f.type === 'error');
+  assert.equal(again.code, 'already_claimed', 'returning again after the reward already landed is refused');
 
   ws.close();
 });
@@ -188,6 +284,19 @@ test('a kiosk gets not_available for claim_task, free_refill and tasks - never t
   send(ws, { type: 'free_refill' });
   const refillErr = await nextFrame(ws, (f) => f.type === 'error');
   assert.equal(refillErr.code, 'not_available', 'a kiosk cannot free_refill');
+
+  // ticket B6+B7+B9 decision 5: the three new frames go through handleFrame the same way.
+  send(ws, { type: 'task_progress', task: 'video', seconds: 1, duration: 60 });
+  const progressErr = await nextFrame(ws, (f) => f.type === 'error');
+  assert.equal(progressErr.code, 'not_available', 'a kiosk cannot report task_progress');
+
+  send(ws, { type: 'task_start', task: 'telegram' });
+  const startErr = await nextFrame(ws, (f) => f.type === 'error');
+  assert.equal(startErr.code, 'not_available', 'a kiosk cannot task_start');
+
+  send(ws, { type: 'task_return', task: 'telegram' });
+  const returnErr = await nextFrame(ws, (f) => f.type === 'error');
+  assert.equal(returnErr.code, 'not_available', 'a kiosk cannot task_return');
 
   ws.close();
 });

@@ -1,7 +1,20 @@
--- Invariant (ticket B5, docs/tickets/b5-device-identity.md decision 4): claim_task and
--- free_refill are once per device OR per verified email, on top of the pre-existing
--- once-per-player check - across two different players. A player with no device token
--- (device_id null) is never cross-blocked by device: "one device per player" for old clients.
+-- Invariant (ticket B5, docs/tickets/b5-device-identity.md decision 4): claim_task/
+-- release_task_reward and free_refill are once per device OR per verified email, on top of the
+-- pre-existing once-per-player check - across two different players. A player with no device
+-- token (device_id null) is never cross-blocked by device: "one device per player" for old
+-- clients.
+--
+-- ticket B6+B7+B9 (db/schema.sql decision 5) restricted claim_task itself to kind='manual' -
+-- none of the seeded tasks these device-identity assertions were written against still qualify,
+-- since every one of them now has a server-released kind of its own. The once-per-device-or-
+-- email rule they exist to prove did not move, though: it lives in release_task_reward, the
+-- shared path claim_task, report_video_progress and return_task_visit all fall through to - so
+-- this file exercises that function directly instead, the same way it always exercised
+-- claim_task as `postgres` for its device/email fixture setup (no role switching needed:
+-- release_task_reward takes the player id as its own argument, exactly like ensure_player,
+-- never auth.uid()). It returns null rather than raising once a reward is already claimed - see
+-- its own comment in db/schema.sql - so a blocked call is asserted against `is(..., null, ...)`
+-- rather than throws_like.
 --
 -- The shared-email case below forces a collision that the running app can never actually
 -- produce (auth.users.email is unique, so two confirmed players cannot really share one - see
@@ -13,26 +26,22 @@ begin;
 
 select plan(13);
 
--- claim_task: blocked across two players sharing one device ------------------------------------
+-- release_task_reward: blocked across two players sharing one device ---------------------------
 
 select tests.create_device() as device_shared \gset
 select tests.create_anonymous_player(:'device_shared'::uuid) as claim_dev_p1 \gset
 select tests.create_anonymous_player(:'device_shared'::uuid) as claim_dev_p2 \gset
 
-set local role authenticated;
-select set_config('app.player_id', :'claim_dev_p1', true);
-select (public.claim_task('instagram')) as claim_dev_p1_result \gset
+select (public.release_task_reward(:'claim_dev_p1'::uuid, 'instagram')) as claim_dev_p1_result \gset
 select is(
   (:'claim_dev_p1_result'::json->>'reward')::int, 300,
   'the first player on a shared device claims instagram normally'
 );
-reset role;
 
-set local role authenticated;
-select set_config('app.player_id', :'claim_dev_p2', true);
-select throws_like(
-  $$ select public.claim_task('instagram') $$,
-  '%already_claimed%',
+-- json has no equality operator, so pgTAP's is() (IS DISTINCT FROM under the hood) cannot
+-- compare it against null directly - ok() with an explicit `is null` check instead.
+select ok(
+  public.release_task_reward(:'claim_dev_p2'::uuid, 'instagram') is null,
   'a second, different player on the same device is blocked from the same task'
 );
 select is(
@@ -40,84 +49,60 @@ select is(
   1000,
   'the blocked second player was granted nothing'
 );
-reset role;
 
--- claim_task: allowed across two different devices, no email -----------------------------------
+-- release_task_reward: allowed across two different devices, no email --------------------------
 
 select tests.create_device() as device_a \gset
 select tests.create_device() as device_b \gset
 select tests.create_anonymous_player(:'device_a'::uuid) as claim_devab_p1 \gset
 select tests.create_anonymous_player(:'device_b'::uuid) as claim_devab_p2 \gset
 
-set local role authenticated;
-select set_config('app.player_id', :'claim_devab_p1', true);
 select is(
-  ((public.claim_task('telegram'))->>'reward')::int, 300,
+  ((public.release_task_reward(:'claim_devab_p1'::uuid, 'telegram'))->>'reward')::int, 300,
   'a player on device A claims telegram'
 );
-reset role;
-
-set local role authenticated;
-select set_config('app.player_id', :'claim_devab_p2', true);
 select is(
-  ((public.claim_task('telegram'))->>'reward')::int, 300,
+  ((public.release_task_reward(:'claim_devab_p2'::uuid, 'telegram'))->>'reward')::int, 300,
   'a different player on device B claims the same task independently'
 );
-reset role;
 
--- claim_task: blocked across two devices sharing one verified email ----------------------------
+-- release_task_reward: blocked across two devices sharing one verified email -------------------
 
 select tests.create_device() as device_c \gset
 select tests.create_device() as device_d \gset
 select tests.create_confirmed_player('device-email-shared@example.com', null, :'device_c'::uuid) as claim_email_p1 \gset
 select tests.create_confirmed_player('device-email-other@example.com', null, :'device_d'::uuid) as claim_email_p2 \gset
--- Force the collision claim_task's email check exists for (see the comment above): drop the
--- constraint that makes it impossible in practice, retarget auth.users.email, then let
--- ensure_player's own normal sync (claim_task calls it first) copy that email onto players -
--- updating players.email directly would not survive claim_task's own ensure_player call, which
--- re-syncs from auth.users on every invocation.
+-- Force the collision the email check exists for (see the comment above): drop the constraint
+-- that makes it impossible in practice, retarget auth.users.email, then let ensure_player's own
+-- normal sync (release_task_reward calls it first) copy that email onto players - updating
+-- players.email directly would not survive that call, which re-syncs from auth.users every time.
 alter table auth.users drop constraint users_email_key;
 update auth.users set email = 'device-email-shared@example.com' where id = :'claim_email_p2';
 
-set local role authenticated;
-select set_config('app.player_id', :'claim_email_p1', true);
 select is(
-  ((public.claim_task('youtube'))->>'reward')::int, 300,
+  ((public.release_task_reward(:'claim_email_p1'::uuid, 'youtube'))->>'reward')::int, 300,
   'the first player claims youtube on their own device and email'
 );
-reset role;
-
-set local role authenticated;
-select set_config('app.player_id', :'claim_email_p2', true);
-select throws_like(
-  $$ select public.claim_task('youtube') $$,
-  '%already_claimed%',
+select ok(
+  public.release_task_reward(:'claim_email_p2'::uuid, 'youtube') is null,
   'a different player on a different device, but the same verified email, is blocked'
 );
-reset role;
 
--- claim_task: allowed across two devices and two different verified emails ---------------------
+-- release_task_reward: allowed across two devices and two different verified emails ------------
 
 select tests.create_device() as device_e \gset
 select tests.create_device() as device_f \gset
 select tests.create_confirmed_player('device-email-e@example.com', null, :'device_e'::uuid) as claim_diff_p1 \gset
 select tests.create_confirmed_player('device-email-f@example.com', null, :'device_f'::uuid) as claim_diff_p2 \gset
 
-set local role authenticated;
-select set_config('app.player_id', :'claim_diff_p1', true);
 select is(
-  ((public.claim_task('review_google'))->>'reward')::int, 500,
+  ((public.release_task_reward(:'claim_diff_p1'::uuid, 'review_google'))->>'reward')::int, 500,
   'a player on device E, own email, claims review_google'
 );
-reset role;
-
-set local role authenticated;
-select set_config('app.player_id', :'claim_diff_p2', true);
 select is(
-  ((public.claim_task('review_google'))->>'reward')::int, 500,
+  ((public.release_task_reward(:'claim_diff_p2'::uuid, 'review_google'))->>'reward')::int, 500,
   'a different player on device F, a different email, claims the same task independently'
 );
-reset role;
 
 -- free_refill: blocked across two players sharing one device -----------------------------------
 

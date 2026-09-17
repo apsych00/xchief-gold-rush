@@ -60,9 +60,18 @@ export const KNOWN_ERROR_CODES = [
   // handler each only ever forward the code they can produce.
   'claim_invalid',
   'claim_link_expired',
+  'not_claimable',
+  'bad_progress',
+  'progress_too_fast',
+  'not_yet',
 ];
 
 function mapError(err) {
+  // returnTaskVisit throws its own Error with .code/.retryMs already set (not a Postgres
+  // exception message to pattern-match) - withPlayer's catch runs every thrown error through
+  // this function, so remapping it here by message would silently drop .retryMs. An error that
+  // already carries a known .code is passed through untouched.
+  if (err && KNOWN_ERROR_CODES.includes(err.code)) return err;
   const msg = (err && err.message) || '';
   for (const code of KNOWN_ERROR_CODES) {
     if (msg.includes(code)) {
@@ -227,6 +236,60 @@ export async function getTasks(playerId) {
   return withPlayer(playerId, async (client) => {
     const { rows } = await client.query('select * from public.get_tasks()');
     return rows;
+  });
+}
+
+/**
+ * Server-released reward (ticket B6+B7+B9): grants task `taskId` to `playerId` once per device
+ * or verified email, called directly with the identity as an argument like ensure_player - never
+ * through withPlayer/auth.uid(), since the caller (report_video_progress internally, or
+ * server/index.js after a video/redirect/verify_otp event) already knows who it is granting to.
+ * Resolves to null, not an error, when the reward was already claimed - see the SQL function's
+ * own comment.
+ */
+export async function releaseTaskReward(playerId, taskId) {
+  return call('release_task_reward', playerId, taskId);
+}
+
+/** Video watch progress (ticket B6 decision 2): upserts, and releases the reward itself once
+ * 90% is crossed - never through claim_task, which refuses this task's kind. */
+export async function reportVideoProgress(playerId, taskId, seconds, duration) {
+  return withPlayer(playerId, async (client) => {
+    const { rows } = await client.query('select public.report_video_progress($1, $2, $3) as result', [
+      taskId,
+      seconds,
+      duration,
+    ]);
+    return rows[0].result;
+  });
+}
+
+/** Redirect-and-return, opening the 5 s window (ticket B7 decision 3). */
+export async function startTaskVisit(playerId, taskId) {
+  return withPlayer(playerId, async (client) => {
+    const { rows } = await client.query('select public.start_task_visit($1) as result', [taskId]);
+    return rows[0].result;
+  });
+}
+
+/**
+ * return_task_visit returns json, not a thrown error, for `not_yet` and `already_claimed` (see
+ * the SQL function's own comment: the UPDATE that stamps returned_at must survive alongside
+ * either outcome). Turn that into the same thrown-Error-with-.code shape every other case
+ * already gets from call()'s mapError - `not_yet` also carries `retryMs` so the caller can tell
+ * the client when to try again, the same way it carries `retry_ms` over the wire.
+ */
+export async function returnTaskVisit(playerId, taskId) {
+  return withPlayer(playerId, async (client) => {
+    const { rows } = await client.query('select public.return_task_visit($1) as result', [taskId]);
+    const result = rows[0].result;
+    if (result && result.error) {
+      const err = new Error(result.error);
+      err.code = result.error;
+      if (result.retry_ms != null) err.retryMs = result.retry_ms;
+      throw err;
+    }
+    return result;
   });
 }
 

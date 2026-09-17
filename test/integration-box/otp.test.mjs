@@ -111,7 +111,7 @@ async function latestDevOtp(email) {
   return rows[0]?.token;
 }
 
-test('request_otp then verify_otp with the dev-captured code sets email and leaves coins unchanged', async () => {
+test('request_otp then verify_otp with the dev-captured code sets email and releases the email + signup task rewards', async () => {
   const ws = connect();
   await whenOpen(ws);
   const welcome = await authAnonymous(ws);
@@ -131,7 +131,22 @@ test('request_otp then verify_otp with the dev-captured code sets email and leav
   assert.equal(me.type, 'me');
   assert.equal(me.email, email);
   assert.equal(me.email_verified, true);
-  assert.equal(me.coins, 1000, 'verifying an email does not touch coins');
+  // ticket B6+B7+B9 decision 4: verify_otp_code success releases the `email` task itself, and -
+  // this being the first verification on this device - the `signup` task too, both server-side,
+  // never a client claim_task call (which now refuses both as not_claimable). db/seed.sql: email
+  // = 200, signup = 1000.
+  assert.equal(me.reward, 1200, 'the me reply carries the combined email + signup reward');
+  assert.equal(me.coins, 1000 + 1200, 'both rewards are applied to the balance');
+
+  const { rows } = await pool.query(
+    "select task_id from public.task_claims where player_id = $1 order by task_id",
+    [welcome.me.id],
+  );
+  assert.deepEqual(
+    rows.map((r) => r.task_id),
+    ['email', 'signup'],
+    'both task_claims rows exist for this player',
+  );
   ws.close();
 });
 
