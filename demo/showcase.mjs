@@ -34,6 +34,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 import pg from 'pg';
 import { WebSocket } from 'ws';
+import { dismissFirstVisit } from '../tests/e2e/first-visit.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPORT = path.join(REPO, 'docs', 'reports', 'showcase-results.md');
@@ -226,6 +227,7 @@ async function enterKiosk(page, secret) {
   await page.getByText('Tap to play').waitFor({ timeout: 20000 });
   await read();
   await page.locator('.btn-start').click();
+  await dismissFirstVisit(page).catch(() => {});
   await waitPlayable(page);
 }
 
@@ -331,6 +333,8 @@ const SCENARIOS = [
     covered: 'tests/e2e/player-promises.spec.js #1',
     async run({ web }) {
       await web.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+      // C11: the first-visit tour sits in front of Play on a fresh context; walk it like a visitor.
+      await dismissFirstVisit(web).catch(() => {});
       if ((await modeOf(web)) !== 'server') {
         for (let i = 0; i < 40 && (await modeOf(web)) !== 'server'; i++) await sleep(250);
       }
@@ -370,6 +374,8 @@ const SCENARIOS = [
     covered: 'tests/e2e/player-promises.spec.js #2',
     async run({ web }) {
       await web.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+      // C11: the first-visit tour sits in front of Play on a fresh context; walk it like a visitor.
+      await dismissFirstVisit(web).catch(() => {});
       const token = await tokenOf(web);
       const before = await serverMe(token);
       await web.locator('.btn-start').click();
@@ -407,6 +413,8 @@ const SCENARIOS = [
     covered: 'tests/e2e/web-identity.spec.js',
     async run({ web }) {
       await web.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+      // C11: the first-visit tour sits in front of Play on a fresh context; walk it like a visitor.
+      await dismissFirstVisit(web).catch(() => {});
       // Always start this one as a guest so the whole flow is on screen.
       if (await web.locator('.identity-bar').count()) {
         await web
@@ -477,6 +485,8 @@ const SCENARIOS = [
     covered: 'tests/e2e/web-identity.spec.js; test/integration-box/leaderboard.test.mjs',
     async run({ web }) {
       await web.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+      // C11: the first-visit tour sits in front of Play on a fresh context; walk it like a visitor.
+      await dismissFirstVisit(web).catch(() => {});
       await ensureVerifiedWeb(web);
       await beat();
       await web.getByRole('button', { name: 'Board' }).click();
@@ -541,6 +551,8 @@ const SCENARIOS = [
         }
       });
       await web.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+      // C11: the first-visit tour sits in front of Play on a fresh context; walk it like a visitor.
+      await dismissFirstVisit(web).catch(() => {});
       const token = await tokenOf(web);
       const before = await serverMe(token);
       await beat();
@@ -582,6 +594,8 @@ const SCENARIOS = [
     covered: 'tests/e2e/player-promises.spec.js #5',
     async run({ web }) {
       await web.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+      // C11: the first-visit tour sits in front of Play on a fresh context; walk it like a visitor.
+      await dismissFirstVisit(web).catch(() => {});
       const token = await tokenOf(web);
       const me = await serverMe(token);
       await q('update public.players set coins = 50, free_refill_used = false where id = $1', [me.id]);
@@ -890,6 +904,8 @@ const SCENARIOS = [
     async run({ web }) {
       await web.context().clearCookies();
       await web.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+      // C11: the first-visit tour sits in front of Play on a fresh context; walk it like a visitor.
+      await dismissFirstVisit(web).catch(() => {});
       await web.evaluate(() => {
         try {
           localStorage.clear();
