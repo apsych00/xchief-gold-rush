@@ -17,6 +17,7 @@ import { createRoundManager } from './rounds.js';
 import { createAlerts } from './alerts.js';
 import { createKioskIdleSweep } from './kiosk.js';
 import { createLimits, LIMITS } from './limits.js';
+import { createSafeMode } from './safemode.js';
 import * as ledger from './ledger.js';
 import * as otp from './otp.js';
 
@@ -31,6 +32,17 @@ const STATUS_CACHE_MS = 5000; // /status does one DB round-trip; cache it so pol
 // can tell "abusive" from "guessing" apart.
 const CLOSE_RATE_LIMITED = 4429;
 const CLOSE_KIOSK_UNAUTHORIZED = 4401;
+// Ticket S18 decision 2: "locked ... every new web socket is closed with 4503 after the
+// welcome-less refusal frame" - 4503 for the same reason 4429/4401 pick their own numbers,
+// mirroring HTTP 503 Service Unavailable so an operator reading logs can tell this refusal
+// apart from an ordinary rate limit or a bad kiosk secret.
+const CLOSE_SAFE_MODE = 4503;
+
+const SAFE_MODE_RETRY_MS = 30000; // ticket S18 decision 2
+// "a valid device token older than 10 minutes" (ticket S18 decision 2, guarded only).
+const SAFE_MODE_DEVICE_TRUSTED_AGE_MS = 10 * 60 * 1000;
+const SAFE_MODE_OTP_FACTOR = 0.5; // decision 2: "OTP requests allowed but halved limits"
+const SAFE_MODE_LEADERBOARD_DEBOUNCE_MS = 5000; // decision 2: "throttled to once per 5 s"
 
 const TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days (docs/layers.md C3a)
 const TOKEN_RENEW_AFTER_SECONDS = 7 * 24 * 60 * 60; // sliding renewal: reissue once a token is older than this
@@ -279,10 +291,17 @@ export function createApp({
   // Live leaderboard push (docs/layers.md C4). Left at the default in production; tests shrink
   // it so a settle's broadcast does not sit in an in-progress test for a full second.
   leaderboardDebounceMs = LEADERBOARD_DEBOUNCE_MS,
+  // Ticket S18 decision 2: the guarded/locked leaderboard throttle. Left at the product default
+  // in production; tests shrink it for the same reason as leaderboardDebounceMs above.
+  safeModeLeaderboardDebounceMs = SAFE_MODE_LEADERBOARD_DEBOUNCE_MS,
 } = {}) {
   const playerSockets = new Map(); // playerId -> ws
   const kioskSockets = new Map(); // kioskId -> ws
   let statusCache = null; // { at, aggregates } - see STATUS_CACHE_MS
+  // Assigned once, after `limits` and `alerts` exist below - declared here so
+  // effectiveLeaderboardDebounceMs and handleAuth (defined ahead of that point) close over the
+  // real value instead of a stale undefined one.
+  let safeMode = null;
 
   function getSocket(kind, id) {
     return kind === 'player' ? playerSockets.get(id) : kioskSockets.get(id);
@@ -366,9 +385,18 @@ export function createApp({
     }
   }
 
+  /** Ticket S18 decision 2: guarded and locked throttle the leaderboard push to once per 5 s
+   * instead of the product default. `safeMode` is assigned below, after this function is
+   * defined but before it can ever run (nothing calls scheduleLeaderboardRefresh before start());
+   * declared with `let` up front so this closure sees the real value once it exists. */
+  function effectiveLeaderboardDebounceMs() {
+    return safeMode && safeMode.level() !== 'normal' ? safeModeLeaderboardDebounceMs : leaderboardDebounceMs;
+  }
+
   function scheduleLeaderboardRefresh() {
+    const debounceMs = effectiveLeaderboardDebounceMs();
     const elapsed = Date.now() - leaderboardLastRunAt;
-    if (elapsed >= leaderboardDebounceMs && !leaderboardTimer) {
+    if (elapsed >= debounceMs && !leaderboardTimer) {
       runLeaderboardRefresh().catch((err) => console.error('[leaderboard] refresh failed', err));
       return;
     }
@@ -381,7 +409,7 @@ export function createApp({
         leaderboardRunPending = false;
         runLeaderboardRefresh().catch((err) => console.error('[leaderboard] refresh failed', err));
       },
-      Math.max(0, leaderboardDebounceMs - elapsed),
+      Math.max(0, debounceMs - elapsed),
     );
   }
 
@@ -397,6 +425,12 @@ export function createApp({
   const alerts = createAlerts({
     latest: feed.latest,
     blockedCount: limits.blockedIpsCount,
+    log: (line) => console.log(line),
+  });
+  safeMode = createSafeMode({
+    ledger,
+    getSignals: limits.safetySignals,
+    alerts,
     log: (line) => console.log(line),
   });
 
@@ -444,6 +478,7 @@ export function createApp({
       kiosksActive: aggregates.kiosks_active,
       devices24h: aggregates.devices_24h,
       limits: limits.stats(),
+      safe_mode: safeMode.status(),
       db,
     });
   }
@@ -562,12 +597,56 @@ export function createApp({
       let playerId = null;
       let currentToken = null;
       let version = 1;
+      let tokenIssuedAtMs = null;
       if (frame.token) {
         const id = await verifyToken(frame.token);
         if (id) {
           playerId = id;
           currentToken = frame.token;
           version = Number(frame.token.split('.')[1]);
+          tokenIssuedAtMs = (Number(frame.token.split('.')[2]) - TOKEN_TTL_SECONDS) * 1000;
+        }
+      }
+
+      // Safe mode (ticket S18 decision 2). Only a brand-new anonymous player (no valid player
+      // token above) is ever gated - a returning player with a token resumes normally in
+      // guarded, and everything below this block runs exactly as it did before S18 whenever
+      // safeMode.level() is 'normal'.
+      if (!playerId) {
+        limits.trackAnonAttempt(); // before any gate below, so a refusal never hides the attempt
+        const safeLevel = safeMode.level();
+        if (safeLevel !== 'normal') {
+          // guarded's own exemption: a device this socket already holds, old enough that it
+          // predates whatever just started the flood, rather than one minted on the spot by it.
+          // locked drops this exemption entirely (decision 2: "additionally ... except kiosks
+          // and sockets with a token issued before the lock" - a device alone is no longer
+          // enough), which is why this check is skipped outright once level is 'locked'.
+          let deviceTrusted = false;
+          if (safeLevel === 'guarded') {
+            const deviceId0 = verifyDeviceToken(frame.device);
+            if (deviceId0) {
+              const createdAt = await ledger.getDeviceCreatedAt(deviceId0);
+              if (createdAt && Date.now() - new Date(createdAt).getTime() > SAFE_MODE_DEVICE_TRUSTED_AGE_MS) {
+                deviceTrusted = true;
+              }
+            }
+          }
+          if (!deviceTrusted) {
+            send(ws, { type: 'error', code: 'safe_mode', retry_ms: SAFE_MODE_RETRY_MS });
+            if (safeLevel === 'locked') ws.close(CLOSE_SAFE_MODE, 'safe_mode');
+            return;
+          }
+        }
+      } else if (safeMode.level() === 'locked') {
+        // locked's own tightening on top of guarded's (decision 2): a returning player's token
+        // only resumes here if it predates the lock - one issued during it (impossible under
+        // normal play, since no new tokens are minted while locked, but checked all the same)
+        // is treated exactly like a fresh anonymous connection: refused and closed.
+        const lockedAtMs = safeMode.lockedAtMs();
+        if (lockedAtMs === null || tokenIssuedAtMs >= lockedAtMs) {
+          send(ws, { type: 'error', code: 'safe_mode', retry_ms: SAFE_MODE_RETRY_MS });
+          ws.close(CLOSE_SAFE_MODE, 'safe_mode');
+          return;
         }
       }
 
@@ -720,12 +799,16 @@ export function createApp({
             send(ws, { type: 'error', code: 'invalid_email' });
             break;
           }
-          const ipBudget = limits.checkOtpIp(ws.clientIp);
+          // Ticket S18 decision 2: "OTP requests allowed but halved limits" in guarded and
+          // locked - existing sockets keep playing but everyone's OTP budget narrows while
+          // safe mode is not 'normal'.
+          const otpFactor = safeMode.level() === 'normal' ? 1 : SAFE_MODE_OTP_FACTOR;
+          const ipBudget = limits.checkOtpIp(ws.clientIp, otpFactor);
           if (!ipBudget.allowed) {
             send(ws, { type: 'error', code: 'rate_limited', retry_ms: ipBudget.retryMs });
             break;
           }
-          const emailBudget = limits.checkOtpEmail(email);
+          const emailBudget = limits.checkOtpEmail(email, otpFactor);
           if (!emailBudget.allowed) {
             send(ws, { type: 'error', code: 'rate_limited', retry_ms: emailBudget.retryMs });
             break;
@@ -859,6 +942,7 @@ export function createApp({
     feed,
     kioskIdleSweep,
     limits,
+    safeMode,
 
     /**
      * Void leftover open rounds and listen. Resolves with the bound port.
@@ -873,6 +957,7 @@ export function createApp({
       if (startFeed) feed.start();
       limits.start();
       alerts.start();
+      safeMode.start();
       kioskIdleSweep.start();
       await new Promise((resolve, reject) => {
         server.once('error', reject);
@@ -888,6 +973,7 @@ export function createApp({
       kioskIdleSweep.stop();
       clearTimeout(leaderboardTimer);
       clearInterval(heartbeat);
+      safeMode.stop();
       alerts.stop();
       limits.stop();
       try {

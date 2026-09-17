@@ -265,6 +265,85 @@ deploy/deploy.sh
 Same command as the first deploy (section 5 above). It always pulls the
 latest commit of the campaign branch first, then rebuilds and restarts.
 
+## If the box is attacked
+
+The threat this section answers: a script spawning many headless browsers or raw sockets, from
+one IP or (more likely, since a single IP is already handled automatically - see below) from many
+rotating IPs at once. Two layers, working together: the server's own **safe mode**, and a
+Cloudflare setting you flip by hand as the last resort.
+
+### Telling an attack from a busy booth
+
+One IP hammering the game is already handled without you doing anything: the server blocks any
+single IP that opens too many sockets or connections for 15 minutes on its own (ticket S2). What
+is left for you to judge is the harder case - a flood spread across many IPs, which looks, at a
+glance, like "a lot of people are playing." The tell:
+
+- **A busy booth:** kiosk rounds keep running steadily. Web sign-ups (new anonymous players)
+  rise too, but roughly in proportion to the crowd you can see.
+- **An attack:** kiosk rounds continue exactly as normal (a script has no reason to touch the
+  kiosks), but the number of **new anonymous web players** and/or **open connections** spikes far
+  out of proportion to anyone actually standing at the booth.
+
+`/ops` shows both: "Rounds / minute" (kiosk activity is part of this) and, once safe mode has
+already reacted, a banner. If you are unsure before the banner appears, that spike in anonymous
+sign-ups with flat kiosk activity is the signal to act early rather than wait for it.
+
+### What you see on `/ops`
+
+A banner above the table, hidden while everything is normal:
+
+- **Amber, "Safe mode: GUARDED (...)"** - new anonymous players (web only; kiosks are never
+  affected) are being turned away with a short retry hint, OTP request limits are halved, and the
+  leaderboard updates less often. Anyone already playing keeps playing exactly as before.
+- **Red, "Safe mode: LOCKED (...)"** - guarded's rules, plus every brand-new web connection is
+  refused and disconnected outright (kiosks still unaffected). Sockets already open - anyone
+  mid-game - are completely untouched.
+
+The text in parentheses is why: `manual` (you set it), `restored` (the level survived a restart),
+or `auto:connections` / `auto:anon_players` / `auto:blocklist` (which automatic threshold
+tripped - see `server/safemode.js` for the exact numbers, chosen well above normal expo traffic).
+`/status` carries the same two fields as `safe_mode: { level, reason }`, if you ever want it from
+a script instead of the page.
+
+### The one command to lock, and the one to return to normal
+
+```
+ssh deploy@188.6.6.6
+cd /opt/goldrush
+npm run box:safe-mode -- locked
+```
+
+and to bring it back:
+
+```
+npm run box:safe-mode -- normal
+```
+
+The server picks either up within 5 seconds; nothing is restarted, nobody already playing is
+disconnected. Left alone, the server also does this by itself: it escalates one level on its own
+when the numbers above trip, and steps back down on its own after 10 minutes of genuinely quiet
+traffic - so a manual `locked` you forget about does not stay locked forever, but re-running the
+command holds it if you want to keep it that way while you sort out the Cloudflare side below.
+
+### Cloudflare: the edge in front of the box
+
+Two things should already be on from setup (`docs/admin-requirements-box.md`): **Bot Fight
+Mode** and a **rate-limiting rule** on `/ws` and `/api/*` (60 requests per minute per IP - this is
+what actually stops a rotating-IP flood from ever reaching the server in the first place; safe
+mode above is what happens to whatever gets through). If an attack is still hurting the game after
+both of those and safe mode are doing their job, the manual last resort:
+
+1. Log into Cloudflare, select the `xchief.academy` zone.
+2. **Security** → **Settings**.
+3. Set **Security Level** to **I'm Under Attack**.
+
+This puts a short JavaScript check in front of every new visitor before they ever reach the box -
+a few seconds of "checking your browser," once, on first visit. A player already mid-game keeps
+their socket; only new arrivals see the check. Set **Security Level** back to its previous value
+(typically "Medium") once things have calmed down - "I'm Under Attack" adds a delay every new
+visitor pays, worth it only while genuinely under one.
+
 ## Rollback
 
 If a deploy broke something, move the box back to a commit that worked:

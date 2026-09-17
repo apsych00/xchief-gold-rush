@@ -85,6 +85,13 @@ export function createAlerts({ latest, blockedCount = () => 0, log = console.log
   }
 
   return {
+    /** Ticket S18 decision 3: "escalate one level and post an alert" - server/safemode.js calls
+     * this on every level change, manual or automatic. Each `${condition}:${level}` pair gets
+     * its own REPEAT_SUPPRESS_MS window, same as every other condition here, so an operator
+     * toggling between guarded and locked a few times still gets a line for each distinct move. */
+    async fireSafeMode(level, reason) {
+      await fire(`safe_mode_${level}`, `Gold Rush: safe mode -> ${level} (${reason})`);
+    },
     /** Fire the one-off start alert and begin polling for feed silence and the block list. */
     start() {
       fire('server_start', 'Gold Rush: server started').catch(() => {});

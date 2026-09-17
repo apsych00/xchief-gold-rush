@@ -157,6 +157,14 @@ export function clientIp(req, trustProxy = LIMITS.TRUST_PROXY) {
 export function createLimits({ now = Date.now, log = console.log } = {}) {
   const openSocketsByIp = new Map(); // ip -> count of currently open sockets
   const connectWindow = new SlidingWindow(MINUTE); // shared by ws upgrades and /api/* requests
+  // Ticket S18 (safe mode): the same two signals as above, but system-wide instead of per-IP -
+  // a rotating-IP flood never trips any one IP's own window, so the automatic escalation state
+  // machine (server/safemode.js) needs the aggregate instead. globalConnectWindow is fed by
+  // every accepted socket (trackSocketOpen), globalAnonAttemptWindow by every web auth attempt
+  // that would create a new anonymous player (server/index.js calls trackAnonAttempt directly,
+  // before any safe-mode gate, so a refusal never hides the attempt from this signal).
+  const globalConnectWindow = new SlidingWindow(MINUTE);
+  const globalAnonAttemptWindow = new SlidingWindow(10 * MINUTE);
   const anonPlayerWindow = new SlidingWindow(10 * MINUTE);
   const otpIpWindow = new SlidingWindow(10 * MINUTE);
   const otpEmailWindow = new SlidingWindow(10 * MINUTE);
@@ -246,6 +254,15 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
 
   function trackSocketOpen(ip) {
     openSocketsByIp.set(ip, (openSocketsByIp.get(ip) || 0) + 1);
+    globalConnectWindow.record('all', now());
+  }
+
+  /** Ticket S18: called once per web auth attempt that would create a new anonymous player -
+   * before any per-IP budget or safe-mode gate, so a refusal never hides the attempt from the
+   * escalation signal. Kiosk auth attempts never call this: they are not "anonymous players"
+   * for the purpose of this signal (a fixed, small number of booths, unaffected by safe mode). */
+  function trackAnonAttempt() {
+    globalAnonAttemptWindow.record('all', now());
   }
 
   function trackSocketClose(ip) {
@@ -267,10 +284,15 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
     return { allowed: true };
   }
 
-  function checkOtpIp(ip) {
+  /** `factor` (ticket S18 decision 2: guarded/locked "OTP requests allowed but halved limits")
+   * scales the configured max down; server/index.js passes 0.5 whenever safe mode is not
+   * 'normal', 1 otherwise. Floored, and never below 1 - safe mode narrows the budget, it never
+   * closes it entirely. */
+  function checkOtpIp(ip, factor = 1) {
     const t = now();
     const count = otpIpWindow.record(ip, t);
-    if (count > LIMITS.MAX_OTP_REQUESTS_PER_IP_PER_10MIN) {
+    const max = Math.max(1, Math.floor(LIMITS.MAX_OTP_REQUESTS_PER_IP_PER_10MIN * factor));
+    if (count > max) {
       recordRefusal(ip, 'too many otp requests');
       return { allowed: false, retryMs: otpIpWindow.retryMs(ip, t) };
     }
@@ -278,11 +300,12 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
   }
 
   /** Per-email OTP request budget (ticket S2 decision 2). Not backed by SQL - see the
-   * MAX_OTP_REQUESTS_PER_EMAIL_PER_10MIN comment in LIMITS above. */
-  function checkOtpEmail(email) {
+   * MAX_OTP_REQUESTS_PER_EMAIL_PER_10MIN comment in LIMITS above. `factor`: see checkOtpIp. */
+  function checkOtpEmail(email, factor = 1) {
     const t = now();
     const count = otpEmailWindow.record(email, t);
-    if (count > LIMITS.MAX_OTP_REQUESTS_PER_EMAIL_PER_10MIN) {
+    const max = Math.max(1, Math.floor(LIMITS.MAX_OTP_REQUESTS_PER_EMAIL_PER_10MIN * factor));
+    if (count > max) {
       return { allowed: false, retryMs: otpEmailWindow.retryMs(email, t) };
     }
     return { allowed: true };
@@ -318,9 +341,18 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
     for (const type of ['leaderboard', 'tasks', 'get_me']) queryInterval.forget(`${socketId}:${type}`);
   }
 
+  function blockedIpsCount() {
+    const t = now();
+    let n = 0;
+    for (const until of blocklist.values()) if (until > t) n++;
+    return n;
+  }
+
   function sweep() {
     const t = now();
     connectWindow.sweep(t);
+    globalConnectWindow.sweep(t);
+    globalAnonAttemptWindow.sweep(t);
     anonPlayerWindow.sweep(t);
     otpIpWindow.sweep(t);
     otpEmailWindow.sweep(t);
@@ -345,6 +377,7 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
     checkApiRequest,
     trackSocketOpen,
     trackSocketClose,
+    trackAnonAttempt,
     checkAnonAuth,
     checkOtpIp,
     checkOtpEmail,
@@ -363,11 +396,17 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
       };
     },
 
-    blockedIpsCount() {
+    blockedIpsCount,
+
+    /** Ticket S18: the three numbers the automatic escalation state machine
+     * (server/safemode.js) compares against its thresholds every poll. */
+    safetySignals() {
       const t = now();
-      let n = 0;
-      for (const until of blocklist.values()) if (until > t) n++;
-      return n;
+      return {
+        connectionsPerMin: globalConnectWindow.count('all', t),
+        newAnonPlayersPer10Min: globalAnonAttemptWindow.count('all', t),
+        blockedIps: blockedIpsCount(),
+      };
     },
 
     start() {

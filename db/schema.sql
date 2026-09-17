@@ -246,6 +246,18 @@ create table public.otp_codes (
   created_at timestamptz not null default now()
 );
 
+-- Small server-wide operator state, mirrored from memory so it survives a restart (ticket S18,
+-- safe mode): server/safemode.js holds the live level in memory and polls this table every 5 s
+-- for a value scripts/safe-mode.mjs wrote directly, writing it back itself whenever its own
+-- automatic escalation state machine changes level. One row per key, value an opaque string (a
+-- JSON blob for the 'safe_mode' key: {level, reason, at}) - never a client table, treated like
+-- dev_otps and otp_codes below (service role only).
+create table public.settings (
+  key text primary key,
+  value text not null,
+  updated_at timestamptz not null default now()
+);
+
 -- ------------------------------------------------------------------------------ indexes --
 
 -- One round in flight per identity. This is what keeps streaks honest:
@@ -289,6 +301,7 @@ alter table public.kiosks enable row level security;
 alter table public.coupons enable row level security;
 alter table public.dev_otps enable row level security;
 alter table public.otp_codes enable row level security;
+alter table public.settings enable row level security;
 alter table public.devices enable row level security;
 alter table public.tournaments enable row level security;
 alter table public.tournament_scores enable row level security;
@@ -1048,8 +1061,8 @@ revoke insert, update, delete, truncate, references, trigger
 -- DEFINER functions below, never a direct table read.
 revoke select on public.kiosks, public.coupons, public.tournaments, public.tournament_scores from anon, authenticated;
 
--- dev_otps and otp_codes: service role only.
-revoke all on public.dev_otps, public.otp_codes from public, anon, authenticated;
+-- dev_otps, otp_codes and settings: service role only.
+revoke all on public.dev_otps, public.otp_codes, public.settings from public, anon, authenticated;
 
 -- Client-callable, identity from the JWT (set per transaction by the server).
 revoke execute on function public.get_me(), public.claim_task(text), public.free_refill(), public.get_tasks() from public, anon;
