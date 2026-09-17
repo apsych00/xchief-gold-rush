@@ -29,7 +29,7 @@ insert into public.tournament_scores (tournament_id, player_id, record) values (
 set local role anon;
 
 select ok(
-  exists(select 1 from public.leaderboard('lbv-t1') where display = 'l****d@example.com' and record = 9999),
+  exists(select 1 from public.leaderboard('lbv-t1') where display = 'lb-*****med@e**.com' and record = 9999),
   'a confirmed player with a record appears on that tournament''s public leaderboard, masked email as display'
 );
 
@@ -39,7 +39,7 @@ select ok(
 );
 
 select ok(
-  exists(select 1 from public.leaderboard('lbv-t1') where display = 'l****d@example.com' and tier = 'gold'),
+  exists(select 1 from public.leaderboard('lbv-t1') where display = 'lb-*****med@e**.com' and tier = 'gold'),
   'the sole ranked player is rank 1, tiered gold'
 );
 

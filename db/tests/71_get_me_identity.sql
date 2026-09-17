@@ -29,7 +29,7 @@ select is(
 );
 select is(
   (select display from public.get_me()),
-  'm****d@example.com',
+  'me-*****med@e**.com',
   'a confirmed player''s own display is their masked email'
 );
 

@@ -46,11 +46,11 @@ insert into public.tournament_scores (tournament_id, player_id, record, updated_
   ('pg-t2', :'tie_b', 500, now());
 
 select ok(
-  exists(select 1 from public.leaderboard('pg-t2', 1) where display = 't***a@example.com' and rank = 1),
+  exists(select 1 from public.leaderboard('pg-t2', 1) where display = 't***a@e**.com' and rank = 1),
   'an equal record: the earlier update (tie_a) wins rank 1'
 );
 select ok(
-  exists(select 1 from public.leaderboard('pg-t2', 1) where display = 't***b@example.com' and rank = 2),
+  exists(select 1 from public.leaderboard('pg-t2', 1) where display = 't***b@e**.com' and rank = 2),
   'an equal record: the later update (tie_b) is rank 2'
 );
 
