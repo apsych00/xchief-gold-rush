@@ -384,44 +384,44 @@ xChief Gold Rush - showcase
 app       http://localhost:5347
 socket    ws://localhost:8787/ws
 database  postgresql://postgres:***@localhost:55447/postgres
-started   2026-09-16T18:11:13.104Z
+started   2026-09-16T18:30:36.931Z
 
 
 --- 1. A first round, decided by the server  [Web]
-    PASS in 16.5s - verdict after 5052 ms ("MISS Not this time −100 coins Combo rese"); screen 900 = server 900
+    PASS in 16.3s - verdict after 5052 ms ("WIN ×1 New record! +100 coins Stake 100 "); screen 1100 = server 1100
 
 --- 2. Reload in the middle of a round  [Web]
-    PASS in 11.2s - same player ffa12398; rounds 1 -> 2 (exactly one)
+    PASS in 10.9s - same player 9ab98d1b; rounds 1 -> 2 (exactly one)
 
 --- 3. Signing in with an emailed code  [Web]
-    PASS in 20.8s - wrong code -> "That code is not right. Try again"; code 77043802 accepted; header shows Playing as y****f@example.com · Your score and rank are save
+    PASS in 20.6s - wrong code -> "That code is not right. Try again"; code 26996528 accepted; header shows Playing as a****n@example.com · Your score and rank are save
 
 --- 4. The leaderboard, masked and live  [Web]
-    PASS in 17.4s - own row masked and highlighted (1 y****f@example.com Rookie 1,000); rival at 1777 arrived live over the socket
+    PASS in 17.3s - own row masked and highlighted (1 a****n@example.com Rookie 1,100); rival at 1877 arrived live over the socket
 
 --- 5. Claiming a task reward  [Web]
-    PASS in 28.9s - server granted 300; toast "+300 coins"; screen 1300 = server 1300
+    PASS in 29.3s - server granted 300; toast "+300 coins"; screen 1300 = server 1300
 
 --- 6. Broke on the web is never a dead end  [Web]
     PASS in 14.3s - 50 -> 350 after the refill (free_refill_used=true); play enabled again with no reload
 
 --- 7. The booth: attract, tap, play, verdict  [Kiosk A]
-    PASS in 18.3s - verdict "MISS Not this time −100 coins Co"; session now 900 coins / streak 0; forbidden UI nodes: 0
+    PASS in 18.2s - verdict "MISS Not this time −100 coins Co"; session now 900 coins / streak 0; forbidden UI nodes: 0
 
 --- 8. Five wins in a row wins the code  [Kiosk A]
-    PASS in 19.1s - win modal showed XG-SHOWCASE-DEMO on 1 line; Claim returned the booth to attract (server session 'idle')
+    PASS in 19.0s - win modal showed XG-SHOWCASE-DEMO on 1 line; Claim returned the booth to attract (server session 'idle')
 
 --- 9. Out of coins: the exit modal  [Kiosk B]
-    PASS in 15.1s - exit modal shown from the server's broke state; Done reset the booth (server session 'idle', 1000 coins)
+    PASS in 15.0s - exit modal shown from the server's broke state; Done reset the booth (server session 'idle', 1000 coins)
 
 --- 10. Walked away: the idle countdown  [Kiosk B]
-    PASS in 25.7s - overlay appeared, a mouse move cancelled it, it returned, and the flush took the booth back to attract
+    PASS in 25.6s - overlay appeared, a mouse move cancelled it, it returned, and the flush took the booth back to attract
 
 --- 11. The server's own idle sweep, with no client help  [Kiosk B]
-    PASS in 20.5s - playing -> attract 9.0 s after the row went stale, with no client action (the sweep runs every 10 s); server session 'idle', 1000 coins, streak 0
+    PASS in 21.5s - playing -> attract 10.0 s after the row went stale, with no client action (the sweep runs every 10 s); server session 'idle', 1000 coins, streak 0
 
 --- 12. The winning code stays on screen long enough to photograph  [Kiosk A]
-    PASS in 31.5s - the code stayed on screen untouched for 25 s, then Claim cleared the booth
+    PASS in 31.7s - the code stayed on screen untouched for 25 s, then Claim cleared the booth
 
 --- 13. Cold start: what a first-time visitor lands on  [Web]
     PASS in 8.0s - title "xChief Gold Rush"; hero art and the start button both render on a clean first load
@@ -430,18 +430,18 @@ started   2026-09-16T18:11:13.104Z
 SHOWCASE RESULTS
 ==============================================================================================================
 #   WINDOW   SCENARIO                                                   RESULT  SECONDS  OBSERVATION
-1   Web      A first round, decided by the server                       PASS    16.5     verdict after 5052 ms ("MISS Not this time −100 coins Combo rese"); screen 900 = server 900
-2   Web      Reload in the middle of a round                            PASS    11.2     same player ffa12398; rounds 1 -> 2 (exactly one)
-3   Web      Signing in with an emailed code                            PASS    20.8     wrong code -> "That code is not right. Try again"; code 77043802 accepted; header shows Playing as y****f@example.com · Your score and rank are save
-4   Web      The leaderboard, masked and live                           PASS    17.4     own row masked and highlighted (1 y****f@example.com Rookie 1,000); rival at 1777 arrived live over the socket
-5   Web      Claiming a task reward                                     PASS    28.9     server granted 300; toast "+300 coins"; screen 1300 = server 1300
+1   Web      A first round, decided by the server                       PASS    16.3     verdict after 5052 ms ("WIN ×1 New record! +100 coins Stake 100 "); screen 1100 = server 1100
+2   Web      Reload in the middle of a round                            PASS    10.9     same player 9ab98d1b; rounds 1 -> 2 (exactly one)
+3   Web      Signing in with an emailed code                            PASS    20.6     wrong code -> "That code is not right. Try again"; code 26996528 accepted; header shows Playing as a****n@example.com · Your score and rank are save
+4   Web      The leaderboard, masked and live                           PASS    17.3     own row masked and highlighted (1 a****n@example.com Rookie 1,100); rival at 1877 arrived live over the socket
+5   Web      Claiming a task reward                                     PASS    29.3     server granted 300; toast "+300 coins"; screen 1300 = server 1300
 6   Web      Broke on the web is never a dead end                       PASS    14.3     50 -> 350 after the refill (free_refill_used=true); play enabled again with no reload
-7   Kiosk A  The booth: attract, tap, play, verdict                     PASS    18.3     verdict "MISS Not this time −100 coins Co"; session now 900 coins / streak 0; forbidden UI nodes: 0
-8   Kiosk A  Five wins in a row wins the code                           PASS    19.1     win modal showed XG-SHOWCASE-DEMO on 1 line; Claim returned the booth to attract (server session 'idle')
-9   Kiosk B  Out of coins: the exit modal                               PASS    15.1     exit modal shown from the server's broke state; Done reset the booth (server session 'idle', 1000 coins)
-10  Kiosk B  Walked away: the idle countdown                            PASS    25.7     overlay appeared, a mouse move cancelled it, it returned, and the flush took the booth back to attract
-11  Kiosk B  The server's own idle sweep, with no client help           PASS    20.5     playing -> attract 9.0 s after the row went stale, with no client action (the sweep runs every 10 s); server session 'idle', 1000 coins, streak 0
-12  Kiosk A  The winning code stays on screen long enough to photograph PASS    31.5     the code stayed on screen untouched for 25 s, then Claim cleared the booth
+7   Kiosk A  The booth: attract, tap, play, verdict                     PASS    18.2     verdict "MISS Not this time −100 coins Co"; session now 900 coins / streak 0; forbidden UI nodes: 0
+8   Kiosk A  Five wins in a row wins the code                           PASS    19.0     win modal showed XG-SHOWCASE-DEMO on 1 line; Claim returned the booth to attract (server session 'idle')
+9   Kiosk B  Out of coins: the exit modal                               PASS    15.0     exit modal shown from the server's broke state; Done reset the booth (server session 'idle', 1000 coins)
+10  Kiosk B  Walked away: the idle countdown                            PASS    25.6     overlay appeared, a mouse move cancelled it, it returned, and the flush took the booth back to attract
+11  Kiosk B  The server's own idle sweep, with no client help           PASS    21.5     playing -> attract 10.0 s after the row went stale, with no client action (the sweep runs every 10 s); server session 'idle', 1000 coins, streak 0
+12  Kiosk A  The winning code stays on screen long enough to photograph PASS    31.7     the code stayed on screen untouched for 25 s, then Claim cleared the booth
 13  Web      Cold start: what a first-time visitor lands on             PASS    8.0      title "xChief Gold Rush"; hero art and the start button both render on a clean first load
 
 Passed 13 of 13.

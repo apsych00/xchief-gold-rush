@@ -424,7 +424,7 @@ node demo/redteam.mjs
 xChief Gold Rush - red team
 server    ws://localhost:8787/ws / http://localhost:8787
 database  postgresql://postgres:***@localhost:55447/postgres
-started   2026-09-16T18:16:00.030Z
+started   2026-09-16T18:35:19.497Z
 
 ==============================================================================
 A1  Client declares its own win, coins and coupon
@@ -433,7 +433,7 @@ ATTACK    send round_settled / me / kiosk_session / coupon frames upstream on an
 EXPECTED  server ignores unknown frame types; coins, wins and record unchanged
 OBSERVED  db before coins=1000 wins=0 record=1000
           db after  coins=1000 wins=0 record=1000
-          server reply to the forged frames: price, price, price, price, price, me
+          server reply to the forged frames: price, price, price, price, me
 VERDICT   HELD - unknown frame types fall through index.js default: break
 
 ==============================================================================
@@ -442,10 +442,10 @@ A2  Client attaches its own stake, price, multiplier and reward
 ATTACK    play{stake:-5000, coins:999999, start_price:1, mult:99, delta:50000}; claim_task{reward:1000000}
 EXPECTED  every economic number comes from the database function; the extra fields are ignored
 OBSERVED  round 1 outcome=win delta=100
-          round 2 db row: stake=100 mult=1.5 start_price=4313.95
-          round 2 frame: delta=150 mult=1.5
+          round 2 db row: stake=100 mult=1 start_price=4287.95
+          round 2 frame: delta=-100 mult=1
           claim_task reply reward=300 (tasks.reward for instagram is 300)
-          coins 1000 -> 1550
+          coins 1000 -> 1300
 VERDICT   HELD - stake_for(lever) and tasks.reward are server-side
 
 ==============================================================================
@@ -474,10 +474,10 @@ A5  Dodge a loss: disconnect mid-round, reconnect, replay the play frame
 ------------------------------------------------------------------------------
 ATTACK    play{up,5}; hard-kill the TCP socket 600 ms in; reconnect with the same token; send play again
 EXPECTED  the first round settles on the server timer regardless; the replay is refused round_in_flight; the missed verdict is delivered exactly once
-OBSERVED  first round opened: 469f75de-3642-4478-928e-5b4357f675ee
+OBSERVED  first round opened: 8bb21949-5ce9-47ee-94d2-6259466cc304
           replay reply: error:round_in_flight
-          pending verdict after reconnect: win delta=500 (round_settled frames on the new socket: 1)
-          players.rounds 0 -> 1; round rows: win
+          pending verdict after reconnect: lose delta=-500 (round_settled frames on the new socket: 1)
+          players.rounds 0 -> 1; round rows: lose
 VERDICT   HELD - the 5 s timer lives in the server process, not the socket
 
 ==============================================================================
@@ -485,14 +485,14 @@ A6  Forged, expired and revoked player tokens
 ------------------------------------------------------------------------------
 ATTACK    8 hand-minted tokens for a victim's uuid (bad hmac, guessed secrets, expired, wrong version, legacy shape)
 EXPECTED  every one is treated exactly like no token: a brand-new anonymous player, never an error and never the victim
-OBSERVED  unsigned (no hmac at all)                      -> fresh player cb6b7ae0 coins=1000
-          hmac under a guessed secret                    -> fresh player a4b3b0ce coins=1000
-          hmac under the literal "PLAYER_TOKEN_SECRET"   -> fresh player 8dd5a31a coins=1000
-          legit shape, expired yesterday                 -> fresh player cba60d9e coins=1000
-          legit shape, version bumped to 99              -> fresh player 903b247b coins=1000
-          old two-field format id.sig                    -> fresh player d744223f coins=1000
-          signature flipped one nibble                   -> fresh player 76be8ee6 coins=1000
-          victim id with no signature field              -> fresh player fed4dc08 coins=1000
+OBSERVED  unsigned (no hmac at all)                      -> fresh player fe6b2e09 coins=1000
+          hmac under a guessed secret                    -> fresh player be66545d coins=1000
+          hmac under the literal "PLAYER_TOKEN_SECRET"   -> fresh player 0c694e02 coins=1000
+          legit shape, expired yesterday                 -> fresh player 4f56efdc coins=1000
+          legit shape, version bumped to 99              -> fresh player 293115ab coins=1000
+          old two-field format id.sig                    -> fresh player 413ed26f coins=1000
+          signature flipped one nibble                   -> fresh player 405e6005 coins=1000
+          victim id with no signature field              -> fresh player 396ed497 coins=1000
           control: correctly signed, current version     -> victim, coins=50000
 VERDICT   HELD - timing-safe hmac compare, expiry and token_version all checked
 
@@ -511,7 +511,7 @@ OBSERVED  active secret before revoke   -> welcome (authorised)
           guess dev-kiosk-secret-0000                    -> error:kiosk_unauthorized
           guess sql wildcard                             -> error:kiosk_unauthorized
           guess sql injection in the secret              -> error:kiosk_unauthorized
-          guess null byte splice                         -> error:22021
+          guess null byte in the secret                  -> error:22021
           unthrottled guess rate measured: 3.6 attempts/s, no lockout, no backoff (bcrypt cost is the only brake)
 VERDICT   PARTIAL - no secret was guessed and revoke is enforced inside verify_kiosk's own where-clause; but an empty ?k= is falsy in handleAuth, so a booth whose launch URL loses its secret is silently welcomed as a web player instead of being refused (1 case)
 
@@ -557,7 +557,7 @@ A11  OTP: unlimited code requests, and brute-forcing a code
 ------------------------------------------------------------------------------
 ATTACK    40 request_otp for one address as fast as the socket allows; 7 wrong codes; a fresh request to reset the attempt counter; then 10 requests aimed at a third party's address
 EXPECTED  a code cannot be guessed (5 attempts per code, 10^8 space); requests are rate limited per email and per connection
-OBSERVED  40 request_otp accepted in 1238 ms (32.3/s), zero refusals; otp_codes rows for the address: 40
+OBSERVED  40 request_otp accepted in 1242 ms (32.2/s), zero refusals; otp_codes rows for the address: 40
           wrong-code guesses: invalid_code, invalid_code, invalid_code, invalid_code, too_many_attempts, invalid_code, invalid_code
           after a new request_otp, guess 1 of 5 again: invalid_code
           guesses still accepted after that lockout, without requesting anything more: 120 (a superseded code is never invalidated, so verify_otp_code walks down the pile of 40 outstanding codes, 5 guesses each); still live: 16
@@ -569,7 +569,7 @@ A12  Take over someone else's verified email
 ------------------------------------------------------------------------------
 ATTACK    a fresh player tries to verify a victim address with an empty, missing, null, object, injected and foreign code; then with the code actually mailed to the victim
 EXPECTED  nothing but the code mailed to that address works; and that path is a login into the victim, not a merge or a theft of their row
-OBSERVED  victim verified as r****9@example.com (record set to 99999)
+OBSERVED  victim verified as r****5@example.com (record set to 99999)
           verify with an empty code                            -> error:expired_code
           verify with a guess, no request first                -> error:expired_code
           verify with no code field at all                     -> error:expired_code
@@ -578,7 +578,7 @@ OBSERVED  victim verified as r****9@example.com (record set to 99999)
           sql injection in the code                            -> error:expired_code
           sql injection in the email                           -> error:expired_code
           own valid code replayed on the victim's email        -> error:expired_code
-          code actually mailed to the victim (inbox access assumed) -> me id=a8ccc5a1 email=redteam-victim-1789582620349@example.com
+          code actually mailed to the victim (inbox access assumed) -> me id=ff666ed6 email=redteam-victim-1789583780125@example.com
           re-login landed on the victim's player: true (docs/layers.md C3a: the code proved ownership, so this is the intended re-login)
 VERDICT   HELD - the otp_codes row is looked up by (player_id, email) and compared by sha256; nothing crosses over
 
@@ -588,7 +588,7 @@ A13  leaderboard and /status leaking raw emails or player ids
 ATTACK    read the leaderboard frame as an anonymous player, and GET /status and /health with no credential
 EXPECTED  masked emails only, no raw address, no player or kiosk uuid, no secret
 OBSERVED  leaderboard row fields: display, record, rank
-          leaderboard sample: [{"display":"r****9@example.com","record":99999,"rank":"1"}]
+          leaderboard sample: [{"display":"r****5@example.com","record":99999,"rank":"1"}]
           raw addresses of 1 verified players found in either payload: 0
           uuid anywhere in the leaderboard frame: false; in /status: false
           /status keys: ok, uptimeSeconds, feed, sockets, rounds, flats24h, coupons, kiosksActive, db
@@ -601,8 +601,8 @@ A14  Force a flat by timing the play
 ------------------------------------------------------------------------------
 ATTACK    watch the server-published `quiet` flag on every price frame, then open rounds and see whether a client-chosen instant can produce a guaranteed flat
 EXPECTED  a flat costs nothing and pays nothing, so timing one is at best a refusal to bet - never a way to win
-OBSERVED  price frames seen: 20, of which quiet: 0; feed quiet right now: false
-          4 timed rounds: win, win, win, lose; flats over this player's whole history: 0/4
+OBSERVED  price frames seen: 28, of which quiet: 0; feed quiet right now: false
+          4 timed rounds: lose, lose, win, lose; flats over this player's whole history: 0/4
           both prices are read by the server from feed.latest() (server/rounds.js); the client supplies neither and cannot delay the 5 s timer
           a flat leaves coins, streak and record untouched (settle_round), so a perfectly timed flat achieves a round that did not happen
 VERDICT   HELD - the `quiet` flag is published to clients, so a patient client can skew towards flats - but a flat pays zero, so there is no profit and no streak in it
@@ -614,9 +614,9 @@ ATTACK    set the streak to 4, drop the socket, reconnect; re-send auth five tim
 EXPECTED  the streak survives a reconnect (it is server session state) but cannot be inflated, and two devices on one secret share exactly one session
 OBSERVED  reconnect: welcome.streak 4 -> 4; kiosk_session streak 4 -> 4
           second live device on the same secret: welcome.streak 4, session 1000 coins - the same session, not a second one
-          5 re-auths on a live socket: replies price,price,price,price; streak after: 4
+          5 re-auths on a live socket: replies price,price,price,price,price; streak after: 4
           simultaneous plays from the two devices: round_opened | error:round_in_flight
-          final streak=0 coins=1300
+          final streak=0 coins=900
 VERDICT   PARTIAL - streak and coins are server state keyed by kiosk id, so a reconnect cannot inflate them - but the bearer secret rides in the launch URL (?k=), so anyone who photographs the booth address bar gets a live session on the booth from their own phone (ticket S3)
 
 ==============================================================================
@@ -624,7 +624,7 @@ A16  Dodge a kiosk loss by resetting the session mid-round
 ------------------------------------------------------------------------------
 ATTACK    open a kiosk round with a 200-coin pot, then send kiosk_reset before the 5 s timer fires
 EXPECTED  a round in flight is settled against the session that staked it; a reset ends the session for good - a late verdict cannot refund the stake or drag the machine back out of attract mode
-OBSERVED  pot at open: 200 (playing); round e28d75a6-31a6-47e1-8f70-f785c0766093
+OBSERVED  pot at open: 200 (playing); round b0a7d8fe-85e0-4768-96c9-155195303e7c
           kiosk_reset reply: coins=1000 state=idle
           verdict that still arrived: lose delta=-100 coins=900 state=playing
           pot after: 900 state=playing streak=0
@@ -637,9 +637,9 @@ A17  Influence the start or end price
 ------------------------------------------------------------------------------
 ATTACK    send price/hello/tick frames upstream, then play with start_price:1, price:1 and end_price:999999 attached
 EXPECTED  both prices are read by the server from its own feed; nothing a client sends reaches rounds.start_price or rounds.end_price
-OBSERVED  feed price at open (from /status): 4317.25; rounds.start_price recorded: 4317.25 (source okx)
-          feed price at settle: 4317.95; rounds.end_price recorded: 4317.95
-          verdict: win start=4317.25 end=4317.95
+OBSERVED  feed price at open (from /status): 4274.4; rounds.start_price recorded: 4274.4 (source okx)
+          feed price at settle: 4274.65; rounds.end_price recorded: 4274.65
+          verdict: win start=4274.4 end=4274.65
           index.js reads only frame.dir and frame.lever off a play frame; server/rounds.js supplies the price from feed.latest()
 VERDICT   HELD - the price arguments are never client-reachable
 
@@ -648,11 +648,11 @@ A18  Two kiosks hit a 5-win streak at the same instant with one coupon left
 ------------------------------------------------------------------------------
 ATTACK    four kiosks preset to streak 4, exactly one available coupon, two play up and two play down so the winning pair settles within milliseconds of each other
 EXPECTED  exactly one coupon is issued; the other winner keeps its streak and is told the pool is exhausted; the code is never handed out twice
-OBSERVED  outcomes: k0=win k1=win k2=lose k3=lose (winners this round: 2)
+OBSERVED  outcomes: k0=lose k1=lose k2=win k3=win (winners this round: 2)
           coupons issued: REDTEAM-LAST-CODE
           coupons_exhausted reported to: 1 kiosk(s)
-          coupons row: REDTEAM-LAST-CODE claimed by 63a49c5f
-          streaks after: 0/playing 0/won 5/playing 0/playing
+          coupons row: REDTEAM-LAST-CODE claimed by 450a1b75
+          streaks after: 0/won 0/playing 0/playing 5/playing
 VERDICT   HELD - a genuine two-winner race: `for update skip locked` over the available pool gave the code to exactly one
 
 ==============================================================================
@@ -660,11 +660,11 @@ A19  Message flood from one socket
 ------------------------------------------------------------------------------
 ATTACK    20000 get_me frames pushed down one socket with no pacing (each one is a database round-trip)
 EXPECTED  a per-socket rate limit or flood cut-off refuses the burst; other players stay responsive
-OBSERVED  20000 frames queued in 819 ms; the socket was never closed or throttled by the server
-          me replies received back: 20000/20000 over the next 50120 ms (399 db round-trips/s sustained); error frames: 0
+OBSERVED  20000 frames queued in 441 ms; the socket was never closed or throttled by the server
+          me replies received back: 20000/20000 over the next 45128 ms (443 db round-trips/s sustained); error frames: 0
           server still healthy afterwards: true (db true)
-          a bystander connecting during the flood: welcome in 31 ms, play -> round_opened
-          feed was connected before the flood: {"okx":{"connected":true,"lastTickAt":1789582675324,"raw":4317.95},"binance":{"connected":
+          a bystander connecting during the flood: welcome in 39 ms, play -> round_opened
+          feed was connected before the flood: {"okx":{"connected":true,"lastTickAt":1789583835110,"raw":4272.25},"binance":{"connected":
 VERDICT   LOOPHOLE - there is no per-socket rate limit (ticket S2 is queued, not built): one socket forces unbounded database round-trips. The server survived this burst, but nothing in the code stops a larger or sustained one
 
 ==============================================================================
@@ -685,7 +685,7 @@ OBSERVED  not JSON at all                    -> ignored (no reply)
           task_id as an object               -> error:unknown_task
           email 100k chars                   -> error:invalid_email
           deeply nested json (2000 levels)   -> ignored (no reply)
-          64 MB single frame                 -> me after 687 ms - ACCEPTED: buffered, JSON.parsed and acted on
+          64 MB single frame                 -> me after 725 ms - ACCEPTED: buffered, JSON.parsed and acted on
           socket still open after all of the above: true
           server still answering /health: true
 VERDICT   PARTIAL - parsing and type handling held - every malformed frame was ignored or answered with a code, and the process stayed up. But no maxPayload is set on the WebSocketServer, so the `ws` default of 100 MB applies: each open socket can make the server buffer and JSON.parse a 100 MB string on demand
@@ -722,10 +722,10 @@ A22  The unauthenticated HTTP surface (/api/lead)
 ATTACK    post malformed, injected and 64 MB bodies to /api/lead with no credential of any kind
 EXPECTED  validation rejects bad input, and a body size limit rejects an absurd one before it is buffered
 OBSERVED  valid lead                     -> 204 in 6 ms
-          invalid email                  -> 400 in 2 ms
-          crlf injection in the email    -> 400 in 1 ms
-          garbage body                   -> 400 in 2 ms
-          64 MB body                     -> 204 in 446 ms
+          invalid email                  -> 400 in 3 ms
+          crlf injection in the email    -> 400 in 0 ms
+          garbage body                   -> 400 in 1 ms
+          64 MB body                     -> 204 in 593 ms
           server still answering /health: true
           no auth, no origin check and no rate limit on POST /api/lead; readJsonBody() buffers the whole body before parsing it
 VERDICT   PARTIAL - email validation held (the CRLF address is refused because EMAIL_RE excludes whitespace), but the body is read with no size cap and the endpoint has no rate limit - the same memory-pressure lever as the missing WebSocket maxPayload
@@ -735,8 +735,8 @@ A23  The DEV cheat hook (window.__xchief.inject) in a production build
 ------------------------------------------------------------------------------
 ATTACK    npm run build, then grep every emitted bundle for __xchief, kioskTiming and settledCount
 EXPECTED  import.meta.env.DEV is statically false in a production build, so Rollup drops the hook entirely - a shipped client has no way to inject a frame
-OBSERVED  build: ✓ built in 792ms
-          bundles scanned: 3 (af-DigemgIo.js 12 kB, Logo-Ciy-ZiPv.js 141 kB, main-nay3SLHJ.js 80 kB)
+OBSERVED  build: ✓ built in 786ms
+          bundles scanned: 3 (af-DigemgIo.js 12 kB, Logo-Ciy-ZiPv.js 141 kB, main-Co_-CUC6.js 80 kB)
           matches for __xchief / kioskTiming / settledCount: none
           dist/ removed again
 VERDICT   HELD - the hook is dead-code-eliminated; it exists only under `npm run dev`
@@ -770,5 +770,5 @@ A22  The unauthenticated HTTP surface (/api/lead)                               
 A23  The DEV cheat hook (window.__xchief.inject) in a production build               HELD
 
 HELD: 14   PARTIAL: 7   LOOPHOLE: 2
-finished 2026-09-16T18:19:00.785Z (181 s)
+finished 2026-09-16T18:38:15.229Z (176 s)
 ```
