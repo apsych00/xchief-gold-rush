@@ -529,7 +529,9 @@ export function createApp({
     sendJson(res, 200, {
       ok: true,
       uptimeSeconds: Math.round(process.uptime()),
-      feed: { sources, price: p ? p.price : null, quiet: p ? p.quiet : true },
+      // `source` is which tier is publishing right now (mt5, finnhub, okx, binance) - the one
+      // line an operator needs to tell MT5 from the fallbacks at a glance (gap G10).
+      feed: { sources, source: p ? p.source || null : null, price: p ? p.price : null, quiet: p ? p.quiet : true },
       sockets: { web: playerSockets.size, kiosk: kioskSockets.size },
       rounds: {
         inFlight: aggregates.rounds_in_flight,

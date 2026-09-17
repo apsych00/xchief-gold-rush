@@ -19,6 +19,7 @@ function harness({
   metaapiAccountId = null,
   metaapiSymbol,
   mt5BridgeWs = null,
+  feedRelayWs = null,
 } = {}) {
   let clock = T0;
   const ticks = [];
@@ -28,6 +29,7 @@ function harness({
     metaapiAccountId,
     metaapiSymbol,
     mt5BridgeWs,
+    feedRelayWs,
     onTick: (tick) => ticks.push(tick),
     now: () => clock,
   });
@@ -397,4 +399,17 @@ test('stop() is safe before start and idempotent without any socket activity', (
   h.feed.stop();
   h.inject('okx', 4355, 0);
   assert.equal(h.ticks.length, 1);
+});
+
+test('FEED_RELAY_WS replaces the direct Finnhub socket with the relay at the same tier', () => {
+  const h = harness({ finnhubToken: null, feedRelayWs: 'ws://relay.test/ws' });
+  assert.deepEqual(Object.keys(h.feed.status()), ['finnhub', 'okx', 'binance'], 'relay stands in as the finnhub tier');
+  h.feed._injectTick('finnhub', 4300.5, T0);
+  assert.equal(h.ticks.length, 1);
+  assert.equal(h.feed.latest().source, 'finnhub');
+});
+
+test('FEED_RELAY_WS wins over a Finnhub token: one socket per key, held by the relay', () => {
+  const h = harness({ finnhubToken: 'test-token', feedRelayWs: 'ws://relay.test/ws' });
+  assert.deepEqual(Object.keys(h.feed.status()), ['finnhub', 'okx', 'binance'], 'exactly one finnhub tier');
 });

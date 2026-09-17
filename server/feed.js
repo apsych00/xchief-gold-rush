@@ -56,7 +56,7 @@ const round3 = (p) => Math.round(p * 1000) / 1000;
  * "Bridge route") is configured. MetaApi wins if both are set - it is the
  * hosted route and the one already vetted against the success bar.
  */
-function sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbol, mt5BridgeWs }) {
+function sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbol, mt5BridgeWs, feedRelayWs }) {
   const defs = [];
   if (metaapiToken && metaapiAccountId) {
     defs.push({
@@ -74,7 +74,22 @@ function sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbo
       createSource: (onTick, onState) => createMt5BridgeSource({ url: mt5BridgeWs, onTick, onState }),
     });
   }
-  if (finnhubToken) {
+  if (feedRelayWs) {
+    // The gold price relay (relay/server.js) holds the one Finnhub socket a key allows and
+    // fans it out; a game server pointed at it (FEED_RELAY_WS) takes the relay's published
+    // price as its Finnhub tier instead of opening its own socket, so any number of servers
+    // share one key. The relay's frames are {type:'hello'|'price', price, t}.
+    defs.push({
+      id: 'finnhub',
+      priority: 1,
+      url: feedRelayWs,
+      subscribe: [],
+      parse(m) {
+        if (!m || (m.type !== 'price' && m.type !== 'hello')) return null;
+        return typeof m.price === 'number' ? m.price : null;
+      },
+    });
+  } else if (finnhubToken) {
     defs.push({
       id: 'finnhub',
       priority: 1,
@@ -126,11 +141,12 @@ export function createFeed({
   metaapiAccountId = process.env.METAAPI_ACCOUNT_ID || null,
   metaapiSymbol = process.env.METAAPI_SYMBOL || 'XAUUSD',
   mt5BridgeWs = process.env.MT5_BRIDGE_WS || null,
+  feedRelayWs = process.env.FEED_RELAY_WS || null,
   onTick,
   now = Date.now,
 } = {}) {
   const sources = new Map(); // id -> state, iteration order = priority order
-  for (const def of sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbol, mt5BridgeWs })) {
+  for (const def of sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbol, mt5BridgeWs, feedRelayWs })) {
     sources.set(def.id, { def, connected: false, lastTickAt: null, raw: null, offset: 0 });
   }
 
