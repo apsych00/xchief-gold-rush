@@ -2,19 +2,34 @@
 
 The one tracker. Updated at every merge. `layers.md` defines the layers and holds the ticket specs; `tasks-marketing-lead.md` is the brief handed to the marketing lead (Part A is theirs, Part B is mirrored here). `PROGRESS.md` is retired into this file.
 
-Status values: `done` (merged into `dev`, verified by the orchestrator's own runs) · `verifying` · `building` · `blocked` · `queued` · `parked`.
+Status values, each with its emoji in the table: ✅ `done` (merged into `dev`, verified by the orchestrator's own runs) · 🔍 `verifying` (delivered, the orchestrator is running the gates) · 🔨 `building` (a worker is on it) · 📋 `ready` (ticket written, waiting for a seat) · ⛔ `blocked` (waiting on someone outside the team) · ⏳ `queued` (not ticketed yet) · 🟡 `partly` · 💤 `parked`.
 Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening · `MKT` marketing lead's brief · `OPS` deployment and operations · `FEED` price feed.
 
 ## Where we are
 
-| Layer | Done | Open | Read |
+| Layer | Progress | Open | Read |
 |---|---|---|---|
-| L1 game on the box | 7 / 7 | 0 | complete, load-tested (100 sockets, p95 settle 5024 ms), rehearsed through compose + Caddy |
-| L1.5 client experience | 13 / 17 | C10 red-team fixes (ready), C9 WIN reveal (proposed), C4b animation, Q1 rest | the booth and the web flows are built and verified end to end; red team: 2 loopholes, both carded in C10 |
-| OPS | 2 / 4 | D3 run on the box (M2), T1 Telegram bot (M4) | deploy scripts built; first real run happens on the box |
-| FEED | 3 / 5 | M3: MetaApi blocked on admin; Docker bridge hardened, unverified | Finnhub live with PAXG fallbacks, 3-decimal publishing |
-| L2 hardening | 5 / 18 | M1: S2, S18 (with S10, S12); rest moved to scope creep for M2 | audit 2026-09-16: S7, S9, S16 were already done by other tickets |
-| MKT Part B | 3 / 16 | all of B1-B13 are M1 | B14-B16 done; B1+B4, B5, B10+B11 ticketed |
+| L1 game on the box | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 7/7 | 0 | complete, load-tested (100 sockets, p95 settle 5024 ms), rehearsed through compose + Caddy |
+| L1.5 client experience | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 15/19 | C9 QR claim 🔨, C11 tours ⏳, C4b animation ⏳, Q1 rest 🟡 | booth and web flows built and verified end to end; red team: every loophole fixed (C10) |
+| L2 hardening | 🟩🟩🟩⬜⬜⬜⬜⬜⬜⬜ 6/18 | S18 safe mode 📋 (M1); S1, S3, S5, S6, S8, S10, S11, S12, S14, S15 are M2 scope creep | S2 rate limits merged; production numbers under review with the owner |
+| MKT Part B | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 6/16 | B6+B7+B9 🔨, B10+B11 🔍, B2+B3 📋, B8 📋, B12 ⏳, B13 ⏳ | B1, B4, B5, B14, B15 (build), B16 done |
+| OPS | 🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜ 2/4 | D3 run on the box (M2), T1 Telegram bot 📋 (M4) | deploy scripts built; first real run happens on the box |
+| FEED | 🟩🟩🟩🟩🟩🟩⬜⬜⬜⬜ 3/5 | S17 MetaApi ⛔ admin; B15 Docker bridge 🔍 | Finnhub live with PAXG fallbacks, 3-decimal publishing |
+
+**Demo milestone (M1):** 21 of 31 tickets done. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
+
+### Queue, in the exact order it is picked up
+
+1. 🔍 B10+B11 tour flag and ad banners: my full E2E run, then merge.
+2. 🔍 B15 second pass: clean-volume cold boot on my side (in progress), then merge to close the Docker feed route.
+3. 🔨 C9 QR claim flow (running) and 🔨 B6+B7+B9 rewards (running): verify and merge as they land.
+4. 📋 S18 safe mode: dispatch now that S2 is merged (constants revisited with the owner's venue numbers first).
+5. 📋 B2+B3 paged leaderboard and badges: dispatch now that B1 is merged.
+6. 📋 B8 Instagram: after B6+B7+B9 merges.
+7. ⏳ C11 tours with real content: after B10 merges (ticket to write).
+8. ⏳ B13 hardening pass on rewards: after B5 to B9.
+9. ⏳ B12 YouTube list curation (content), C4b leaderboard animation (after B2).
+10. Demo gate: showcase run on the compose build, all E2E green, then M2 deployment on the box.
 
 Play it now: compose stack at http://localhost:8080 (kiosk `/?k=dev-kiosk-secret-0001`), operator pages `/ops` and `/logs`.
 
@@ -58,32 +73,32 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 
 | ID | Layer | Title | Owner | Status | Evidence / notes | Next |
 |---|---|---|---|---|---|---|
-| 1-7 | L1 | Schema, feed, rounds, ledger, kiosk coupons, OTP, client wiring, acceptance | done | done | 101 pgTAP at the time, 16 integration, E2E 4/4, load PASS, rehearsal PASS | |
-| C1 | L1.5 | Kiosk session on the server | Sonnet | done | `kiosk_session` frame, `kiosk_reset`, 60 s sweep; merged `c91d294` | |
-| C2 | L1.5 | Kiosk screens: attract, WIN modal + Claim, EXIT modal, reconnect | Sonnet | done | `src/KioskApp.jsx`; `reports/c2/`; merged `b03d468` | |
-| C2b | L1.5 | Kiosk idle: 20 s no activity, activity cancels, 20 s countdown, flush | qwen3.8-max + Sonnet | done | kiosk E2E 5/5; merged `727f2de` | |
-| C3 | L1.5 | OTP entry screen, masked email in the header, sign out | Sonnet | done | `src/Identity.jsx`; `reports/c3-c4/`; merged `2efe3a6` | |
-| C3a | L1.5 | Session policy: 30-day versioned token, 7-day renewal, OTP re-login, revocation | Sonnet | done | merged `abdec28` | |
-| C4 | L1.5 | Live masked leaderboard over the socket | Sonnet | done | `mask_email()` in SQL, push after every player settle; merged `2efe3a6` | |
+| 1-7 | L1 | Schema, feed, rounds, ledger, kiosk coupons, OTP, client wiring, acceptance | Sonnet | ✅ done | 101 pgTAP at the time, 16 integration, E2E 4/4, load PASS, rehearsal PASS | |
+| C1 | L1.5 | Kiosk session on the server | Sonnet | ✅ done | `kiosk_session` frame, `kiosk_reset`, 60 s sweep; merged `c91d294` | |
+| C2 | L1.5 | Kiosk screens: attract, WIN modal + Claim, EXIT modal, reconnect | Sonnet | ✅ done | `src/KioskApp.jsx`; `reports/c2/`; merged `b03d468` | |
+| C2b | L1.5 | Kiosk idle: 20 s no activity, activity cancels, 20 s countdown, flush | qwen3.8-max + Sonnet | ✅ done | kiosk E2E 5/5; merged `727f2de` | |
+| C3 | L1.5 | OTP entry screen, masked email in the header, sign out | Sonnet | ✅ done | `src/Identity.jsx`; `reports/c3-c4/`; merged `2efe3a6` | |
+| C3a | L1.5 | Session policy: 30-day versioned token, 7-day renewal, OTP re-login, revocation | Sonnet | ✅ done | merged `abdec28` | |
+| C4 | L1.5 | Live masked leaderboard over the socket | Sonnet | ✅ done | `mask_email()` in SQL, push after every player settle; merged `2efe3a6` | |
 | C4b | L1.5 | Leaderboard row animation, own row cue | | queued | after Part B B2 reshapes the list (paged, own rank) | dispatch with B2 |
-| C5 | L1.5 | Tasks and gifts server-owned: `tasks` frame, reward on claim and refill | Sonnet | done | 172 pgTAP, 33 integration, 12 E2E; merged `966068b` | |
-| C6 | L1.5 | Web verdict pane driven only by `round_settled` | Sonnet | done | loss line reads the server's delta; merged `a54eeff` | stake in the frame (gap G2) |
-| C7 | L1.5 | Broke on the web: refill, tasks, verify email; never a dead end | Sonnet | done | the signup-bonus dead end fixed; broke E2E; merged `a54eeff` | |
-| C8 | L1.5 | Kiosk with no prize codes left: server refuses new rounds, full-screen modal asks the visitor to tell the booth staff, recovers when codes are loaded | Sonnet (cb) | done | 176 pgTAP, 36 integration, kiosk + streak E2E 8/8 on my run; `reports/c8/no-codes.png`; merged | |
+| C5 | L1.5 | Tasks and gifts server-owned: `tasks` frame, reward on claim and refill | Sonnet | ✅ done | 172 pgTAP, 33 integration, 12 E2E; merged `966068b` | |
+| C6 | L1.5 | Web verdict pane driven only by `round_settled` | Sonnet | ✅ done | loss line reads the server's delta; merged `a54eeff` | stake in the frame (gap G2) |
+| C7 | L1.5 | Broke on the web: refill, tasks, verify email; never a dead end | Sonnet | ✅ done | the signup-bonus dead end fixed; broke E2E; merged `a54eeff` | |
+| C8 | L1.5 | Kiosk with no prize codes left: server refuses new rounds, full-screen modal asks the visitor to tell the booth staff, recovers when codes are loaded | Sonnet (cb) | ✅ done | 176 pgTAP, 36 integration, kiosk + streak E2E 8/8 on my run; `reports/c8/no-codes.png`; merged | |
 | C9 | L1.5 | Prize by QR: N wins in a row shows a QR with a one-time claim link (fa + en text), 20 s countdown and an "I've scanned it" button that resets the booth; the claim page asks for an email, shows the gift card with the code, emails it; coupon reserved at win, released after 24 h unclaimed | | building | approved 2026-09-17, overrides the on-screen code and the reveal idea; ticket `docs/tickets/c9-qr-claim.md`; Sonnet (cbx, live) | verify, merge |
-| C10 | L1.5 | Red-team fixes: `kiosk_reset` cancels the round it stands on (D1, high); empty `?k=` refused (D7); `leaderboard` frame kind check (D8); SQLSTATE never escapes as an error code (D9); kiosk secret guessing throttled (D10) | Sonnet (cbx) | done | red-team reruns A7/A8/A16 HELD; 211 pgTAP, 58 integration, 17 E2E on my merged run; merged | |
+| C10 | L1.5 | Red-team fixes: `kiosk_reset` cancels the round it stands on (D1, high); empty `?k=` refused (D7); `leaderboard` frame kind check (D8); SQLSTATE never escapes as an error code (D9); kiosk secret guessing throttled (D10) | Sonnet (cbx) | ✅ done | red-team reruns A7/A8/A16 HELD; 211 pgTAP, 58 integration, 17 E2E on my merged run; merged | |
 | D3 | OPS | Execute the runbook on the real box: install, DNS, deploy, rollback rehearsal, alerts, safe mode tried once | | queued | needs the admin's box and Cloudflare access | M2 |
 | T1 | OPS | Telegram bot: server events to a group (restart, feed silence/recovery, safe-mode change, IP block, coupon stock low, deploy done), one-line recommendation per event | | ready | ticket `docs/tickets/t1-telegram-alerts.md`; extends `server/alerts.js` | M4, after S18 |
-| Q1 | L1.5 | Blind E2E over every scenario | gpt-5.6-luna (B14) | partly | five-win streak covered by B14; web flows covered by the player-promises and web-identity specs written with the tickets | blind pass for the rest after C4b |
-| B14 | L1.5 | Blind five-win streak tests, kiosk and web | gpt-5.6-luna | done | coupon row, session_over, exhausted pool, WIN modal E2E; merged `e4efdd0` | |
-| B16 | L1.5 | E2E regression after the profile merge | Sonnet + orchestrator | done | kiosk crashed on the avatar's missing action; 13/13 E2E; merged `92bd000` | |
-| D1 | OPS | Monitoring: `/status`, `/ops`, `/logs`, alerts | Sonnet | done | merged `4839072`; `$` doubling trap documented | |
-| D2 | OPS | One-command deploy, auto-deploy on push, install, rollback | Sonnet | done | `deploy/*.sh`, `client.Dockerfile` (bundle built in Docker, verified: no dev socket address); box behaviour of install/cron/ufw untestable on Windows, to be rehearsed on the real box | rehearse on the box |
-| S17 | FEED | MT5 via MetaApi, plug-and-play | orchestrator | blocked | code merged and reaches MetaApi; refused by token scope | M3: write the "credentials arrived" checklist; admin: account UUID, token with account read, quote interval 0 |
-| B15 | FEED | MT5 terminal + tick bridge in Docker | Sonnet | verifying | build committed on `nightmareinc/b15-mt5-docker` (74 unit, 11 Python tests); base image pull truncated in the sandbox; verification 2026-09-17 FAILED on a clean volume: the entrypoint raced the base image's Python install, bridge.py crashed, the container halted mid-install and restart-looped (10 restarts) with a poisoned volume; gates lint/unit/pytest green; second-pass ticket `docs/tickets/b15-harden-2.md`, building on cbx | M3: verify on a clean volume, merge |
+| Q1 | L1.5 | Blind E2E over every scenario | gpt-5.6-luna (B14) | 🟡 partly | five-win streak covered by B14; web flows covered by the player-promises and web-identity specs written with the tickets | blind pass for the rest after C4b |
+| B14 | L1.5 | Blind five-win streak tests, kiosk and web | gpt-5.6-luna | ✅ done | coupon row, session_over, exhausted pool, WIN modal E2E; merged `e4efdd0` | |
+| B16 | L1.5 | E2E regression after the profile merge | Sonnet + orchestrator | ✅ done | kiosk crashed on the avatar's missing action; 13/13 E2E; merged `92bd000` | |
+| D1 | OPS | Monitoring: `/status`, `/ops`, `/logs`, alerts | Sonnet | ✅ done | merged `4839072`; `$` doubling trap documented | |
+| D2 | OPS | One-command deploy, auto-deploy on push, install, rollback | Sonnet | ✅ done | `deploy/*.sh`, `client.Dockerfile` (bundle built in Docker, verified: no dev socket address); box behaviour of install/cron/ufw untestable on Windows, to be rehearsed on the real box | rehearse on the box |
+| S17 | FEED | MT5 via MetaApi, plug-and-play | orchestrator | ⛔ blocked | code merged and reaches MetaApi; refused by token scope | M3: write the "credentials arrived" checklist; admin: account UUID, token with account read, quote interval 0 |
+| B15 | FEED | MT5 terminal + tick bridge in Docker | Sonnet (cbx) | 🔍 verifying | build committed on `nightmareinc/b15-mt5-docker` (74 unit, 11 Python tests); base image pull truncated in the sandbox; verification 2026-09-17 FAILED on a clean volume: the entrypoint raced the base image's Python install, bridge.py crashed, the container halted mid-install and restart-looped (10 restarts) with a poisoned volume; gates lint/unit/pytest green; second pass done by the worker: readiness = Wine `import encodings` + MetaTrader5 dist-info, supervised bridge loop, idle mode without credentials, 28 Python tests; clean-volume proof running on my side | merge when the clean boot passes |
 | F1 | FEED | Finnhub + PAXG continuous series, 3 decimals | | done | measured 9 moves / 5 s vs 1-2 on PAXG | |
 | S1 | L2 | Secret rotation procedure | | queued | folded into C3a except the procedure | |
-| S2 | L2 | Per-socket AND per-IP rate limits (sockets per IP, connections per minute, anonymous signups, OTP per IP, frame flood, frame size, play cadence), 15-minute IP block | Sonnet (cbx) | done | limits.js; load 100 sockets over 10 IPs p95 settle 5061 ms; merged; production numbers under review with the owner (venue NAT) | S18 next |
+| S2 | L2 | Per-socket AND per-IP rate limits (sockets per IP, connections per minute, anonymous signups, OTP per IP, frame flood, frame size, play cadence), 15-minute IP block | Sonnet (cbx) | ✅ done | limits.js; load 100 sockets over 10 IPs p95 settle 5061 ms; merged; production numbers under review with the owner (venue NAT) | S18 next |
 | S3 | L2 | Kiosk secret out of the URL; scrub `k=` from Caddy logs | | queued | audit: not done, secret still in `?k=` | |
 | S4 | L2 | OTP on a known email logs into that player | | done | in C3a | |
 | S5 | L2 | Postgres least privilege: an `app` role | | queued | audit: the server still connects as `postgres`; the compat roles exist only for pgTAP | |
@@ -99,20 +114,20 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | S15 | L2 | Least privilege, extended | | queued | with S5 | |
 | S16 | L2 | Leaderboard integrity at prize time: one row per verified email | | done | `players.email` is unique and `leaderboard()` ranks verified emails only; the export becomes per-tournament with B1 | |
 | S18 | L2 | Safe mode: guarded and locked levels, automatic escalation on connection and signup spikes, operator command, Cloudflare Under Attack runbook | | ready | design in `docs/tickets/s18-safe-mode.md`; depends on S2; this is the "am I overwhelmed" answer on `/ops` | after S2 |
-| B1 | MKT | Tournaments as data (dates, prize image and title, broker bonus), adjustable without code | Sonnet (cbx) | done | tournaments table, no-overlap constraint, per-tournament records, SQL one-liners in the runbook; merged | B2, B3 |
+| B1 | MKT | Tournaments as data (dates, prize image and title, broker bonus), adjustable without code | Sonnet (cbx) | ✅ done | tournaments table, no-overlap constraint, per-tournament records, SQL one-liners in the runbook; merged | B2, B3 |
 | B2 | MKT | Leaderboard API: 20 per page, own rank and row in every response, live top 20 | | ready | closes gap G3; ticket `docs/tickets/b2-b3-leaderboard-pages-badges.md` | after B1 |
 | B3 | MKT | Badge tiers and the legend endpoint | | ready | in the B2 ticket | after B1 |
-| B4 | MKT | Name and phone removed from lead capture | Sonnet (cbx) | done | email only in forms, storage and /api/lead; merged | |
-| B5 | MKT | Per-device identity for anonymous players | Sonnet (cb) | building | ticket `docs/tickets/b5-device-identity.md` | verify, merge |
+| B4 | MKT | Name and phone removed from lead capture | Sonnet (cbx) | ✅ done | email only in forms, storage and /api/lead; merged | |
+| B5 | MKT | Per-device identity for anonymous players | Sonnet (cbx) | ✅ done | 189 pgTAP, 40 integration on my run; `clientIp` now owned by S2's limits.js; merged | |
 | B6 | MKT | Reward: video watched (90 %) once per device, released by the server from reported progress | | ready | ticket `docs/tickets/b6-b7-b9-rewards.md` | after B5 |
 | B7 | MKT | Reward: redirect and return (Trustpilot, YouTube, Telegram), 5 s window | | ready | in the B6 ticket; lenient until B13 | after B5 |
 | B8 | MKT | Reward: Instagram, bound to an OAuth-verified Instagram account once per account, device and email (Instagram exposes no follow check to third parties); env-driven, fake for tests, live the day the app id and secret arrive | | ready | ticket `docs/tickets/b8-instagram.md`; needs an Instagram app from the owner | after B6 |
 | B9 | MKT | Reward: email verified, released by the server on OTP success | | ready | in the B6 ticket; closes G1 | after B5 |
-| B10 | MKT | Tour-seen flag per device (web) and per boot (kiosk) | Sonnet (cbx) | building | ticket `docs/tickets/b10-b11-tour-banners.md` (with B11) | verify, merge |
-| B11 | MKT | Ad banner list served to the client | Sonnet (cbx) | building | in the B10 ticket | with B10 |
+| B10 | MKT | Tour-seen flag per device (web) and per boot (kiosk) | Sonnet (cbx) | 🔍 verifying | worker reports lint, unit, build, E2E 2/2 green; full suite running on my side | merge |
+| B11 | MKT | Ad banner list served to the client | Sonnet (cbx) | 🔍 verifying | `ads/banners.json`, `<AdZone/>`, Caddy `handle_path /ads*`; with B10 | merge |
 | B12 | MKT | Curate the YouTube list (under one minute each) | | queued | content task | |
 | B13 | MKT | Hardening pass on rewards and device identity | | queued | after B5-B9 | last in M1 |
-| A1-A8 | MKT | Screens and copy: ad zone, paged leaderboard, tournaments, profile, tours, rewards rework | us (owner's call 2026-09-17: nothing landed on `apsych/main`) | queued | A1 in B11, A2 in B2, A3 in B1+B3, A4 exists (profile screen pulled earlier), A7 in B6-B9; A5+A6 real tour content is the only standalone piece: C11 | in Demo |
+| A1-A8 | MKT | Screens and copy: ad zone, paged leaderboard, tournaments, profile, tours, rewards rework | us (owner's call 2026-09-17: nothing landed on `apsych/main`) | ⏳ queued | A1 in B11, A2 in B2, A3 in B1+B3, A4 exists (profile screen pulled earlier), A7 in B6-B9; A5+A6 real tour content is the only standalone piece: C11 | in Demo |
 | C11 | L1.5 | First-visit tour (web) and kiosk intro with real content on the B10 mount points | | queued | after B10; three short cards each, copy in fa and en | after B10 |
 
 ## Known gaps (small, carded above where they belong)
