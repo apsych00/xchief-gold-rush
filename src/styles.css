@@ -1349,10 +1349,18 @@ button:focus:not(:focus-visible) {
      the element so the animation replays on every rotation. */
   animation: gr-rise 0.4s ease-out both;
 }
+.ad-zone-scale {
+  /* Native 1072x310 canvas, scaled as one block to the zone width by src/ads.jsx (the banners
+     clip their bottom when laid out narrower than ~800 px). */
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1072px;
+  height: 310px;
+  transform-origin: top left;
+}
 .ad-zone-frame {
   display: block;
-  width: 100%;
-  height: 100%;
   border: 0;
   background: #000;
 }

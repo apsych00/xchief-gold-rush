@@ -90,6 +90,18 @@ test.describe('web: the ad zone shows an animated banner (U3)', () => {
       `zone ${box.width.toFixed(1)}x${box.height.toFixed(1)} must match ${BANNER_ASPECT.toFixed(4)}:1 (expected height ${expected.toFixed(1)})`,
     ).toBeLessThanOrEqual(2);
     await page.screenshot({ path: `${REPORT_DIR}/02-web-ad-zone-aspect.png` });
+
+    // ---- 2b. the scaled frame fills the zone exactly and the banner is not clipped -----------
+    // The frame is the native 1072x310 canvas scaled down as one block (src/ads.jsx), so its
+    // rendered box must equal the zone's box, and inside the frame the document must fit its own
+    // 310 px viewport (the assets keep a minimum content height when laid out narrower).
+    const frameBox = await frame.boundingBox();
+    expect(Math.abs(frameBox.width - box.width)).toBeLessThanOrEqual(2);
+    expect(Math.abs(frameBox.height - box.height)).toBeLessThanOrEqual(2);
+    const inner = page.frameLocator('.ad-zone-frame');
+    await expect
+      .poll(() => inner.locator('html').evaluate((el) => [el.clientWidth, el.scrollHeight]), { timeout: 15000 })
+      .toEqual([1072, 310]);
   });
 });
 

@@ -16,12 +16,15 @@
  * is kept as a thin re-export so every import path the ticket and this ticket's tests use still
  * resolves.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { adDurationMs, hasIframeAds, nextAd, pickRandomAd } from './adsPicker.js';
 
 export { adDurationMs, hasIframeAds, nextAd, pickRandomAd };
 
 const BANNERS_URL = '/ads/banners.json';
+// Native canvas of the two HTML banners (ads/banners/README.md); .ad-zone keeps the same ratio.
+const BANNER_W = 1072;
+const BANNER_H = 310;
 
 /** The leaderboard screen's banner zone. Its height follows the banner aspect ratio (1072:310),
  * so the list above reclaims the rest through the flex column. Renders nothing - the list above
@@ -57,22 +60,45 @@ export function AdZone() {
     return () => clearTimeout(id);
   }, [ads, current]);
 
+  // Scale for the iframe banners: zone width over the banners' native canvas width. Measured with a
+  // ResizeObserver so a rotated phone or a resized desktop window keeps the whole creative visible.
+  const zoneRef = useRef(null);
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const el = zoneRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const measure = () => setScale(el.clientWidth / BANNER_W);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [current]);
+
   if (!current) return null;
 
   return (
-    <div className="ad-zone">
+    <div className="ad-zone" ref={zoneRef}>
       {current.type === 'iframe' ? (
+        // The two bundled banners lay themselves out for their native 1072x310 canvas and keep a
+        // minimum content height below ~800 px wide, so a frame sized to the zone clips their
+        // bottom. The frame is therefore always the native canvas size and is scaled down as one
+        // block to the zone's width (transform-origin top left), like any fixed-size creative.
         // Clicks belong to the banner itself, so there is no wrapping anchor here. tabIndex -1
         // keeps the frame out of the keyboard tab order; loading="lazy" defers the offscreen
         // load until the zone is near the viewport.
-        <iframe
-          key={current.src}
-          className="ad-zone-frame"
-          src={current.src}
-          title="xChief"
-          loading="lazy"
-          tabIndex={-1}
-        />
+        // The scale lives on a wrapper: .ad-zone-frame keeps the gr-rise entrance animation, whose
+        // fill-mode would otherwise overwrite an inline transform on the frame itself.
+        <div key={current.src} className="ad-zone-scale" style={{ transform: `scale(${scale})` }}>
+          <iframe
+            className="ad-zone-frame"
+            src={current.src}
+            title="xChief"
+            loading="lazy"
+            tabIndex={-1}
+            width={BANNER_W}
+            height={BANNER_H}
+          />
+        </div>
       ) : (
         <a key={current.src} className="ad-zone-link" href={current.href} target="_blank" rel="noopener noreferrer">
           <img className="ad-zone-img" src={current.src} alt={current.alt || ''} draggable={false} />
