@@ -3,18 +3,20 @@
  * "Price feed"). Starting point: relay/server.js.
  *
  * One upstream connection per source, all kept hot at once:
- *   0. MT5      broker XAUUSD tick stream    (only when METAAPI_TOKEN and METAAPI_ACCOUNT_ID are both set)
+ *   0. MT5      broker XAUUSD tick stream    (METAAPI_TOKEN+METAAPI_ACCOUNT_ID, or else MT5_BRIDGE_WS)
  *   1. Finnhub  OANDA:XAU_USD trade stream   (only when a token is given)
  *   2. OKX      PAXG-USDT tickers mid
  *   3. Binance  PAXG/USDT bookTicker mid
  * Reconnect with exponential backoff 1 s..30 s.
  *
- * MT5 is a "custom" source (server/feed-mt5.js, docs/mt5-feed.md): it does
- * not speak the raw WebSocket protocol the others share, so it connects
- * through its own adapter (connect()/disconnect(), onTick/onState callbacks)
- * instead of a `url`/`subscribe`/`parse` def. It still goes through the same
- * ingest() pipeline as every other source once a tick arrives, so priority,
- * demotion, the continuity offset, and validation are identical.
+ * MT5 is a "custom" source (server/feed-mt5.js for MetaApi,
+ * server/feed-mt5-bridge.js for our own terminal+bridge, docs/mt5-feed.md):
+ * it does not speak the raw WebSocket protocol the others share, so it
+ * connects through its own adapter (connect()/disconnect(), onTick/onState
+ * callbacks) instead of a `url`/`subscribe`/`parse` def. It still goes
+ * through the same ingest() pipeline as every other source once a tick
+ * arrives, so priority, demotion, the continuity offset, and validation are
+ * identical.
  *
  * ONE published series: the active source is the highest-priority source that
  * ticked within STALE_MS; a source is demoted only after 10 s of silence.
@@ -32,6 +34,7 @@
 
 import { WebSocket } from 'ws';
 import { createMt5Source } from './feed-mt5.js';
+import { createMt5BridgeSource } from './feed-mt5-bridge.js';
 
 const STALE_MS = 10000; // demote the active source only after 10 s of silence
 const QUIET_MS = 3000; // no published tick for 3 s -> the series is quiet
@@ -48,10 +51,12 @@ const round3 = (p) => Math.round(p * 1000) / 1000;
 
 /**
  * Source definitions in priority order. Finnhub only exists when a token is
- * given; mt5 only exists when both METAAPI_TOKEN and METAAPI_ACCOUNT_ID are
- * given (docs/mt5-feed.md).
+ * given; mt5 only exists when either MetaApi (METAAPI_TOKEN +
+ * METAAPI_ACCOUNT_ID) or our own bridge (MT5_BRIDGE_WS, docs/mt5-feed.md
+ * "Bridge route") is configured. MetaApi wins if both are set - it is the
+ * hosted route and the one already vetted against the success bar.
  */
-function sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbol }) {
+function sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbol, mt5BridgeWs }) {
   const defs = [];
   if (metaapiToken && metaapiAccountId) {
     defs.push({
@@ -60,6 +65,13 @@ function sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbo
       custom: true,
       createSource: (onTick, onState) =>
         createMt5Source({ token: metaapiToken, accountId: metaapiAccountId, symbol: metaapiSymbol, onTick, onState }),
+    });
+  } else if (mt5BridgeWs) {
+    defs.push({
+      id: 'mt5',
+      priority: 0,
+      custom: true,
+      createSource: (onTick, onState) => createMt5BridgeSource({ url: mt5BridgeWs, onTick, onState }),
     });
   }
   if (finnhubToken) {
@@ -113,11 +125,12 @@ export function createFeed({
   metaapiToken = process.env.METAAPI_TOKEN || null,
   metaapiAccountId = process.env.METAAPI_ACCOUNT_ID || null,
   metaapiSymbol = process.env.METAAPI_SYMBOL || 'XAUUSD',
+  mt5BridgeWs = process.env.MT5_BRIDGE_WS || null,
   onTick,
   now = Date.now,
 } = {}) {
   const sources = new Map(); // id -> state, iteration order = priority order
-  for (const def of sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbol })) {
+  for (const def of sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbol, mt5BridgeWs })) {
     sources.set(def.id, { def, connected: false, lastTickAt: null, raw: null, offset: 0 });
   }
 

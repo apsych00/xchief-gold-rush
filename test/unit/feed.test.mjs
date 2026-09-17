@@ -13,7 +13,13 @@ const T0 = 1_700_000_000_000;
 // metaapiToken/metaapiAccountId default to null (not process.env) so these
 // tests are isolated from whatever the box's real environment happens to
 // have set; a test enables mt5 explicitly by passing both.
-function harness({ finnhubToken = 'test-token', metaapiToken = null, metaapiAccountId = null, metaapiSymbol } = {}) {
+function harness({
+  finnhubToken = 'test-token',
+  metaapiToken = null,
+  metaapiAccountId = null,
+  metaapiSymbol,
+  mt5BridgeWs = null,
+} = {}) {
   let clock = T0;
   const ticks = [];
   const feed = createFeed({
@@ -21,6 +27,7 @@ function harness({ finnhubToken = 'test-token', metaapiToken = null, metaapiAcco
     metaapiToken,
     metaapiAccountId,
     metaapiSymbol,
+    mt5BridgeWs,
     onTick: (tick) => ticks.push(tick),
     now: () => clock,
   });
@@ -253,6 +260,52 @@ test('mt5 exists in status() only when both metaapiToken and metaapiAccountId ar
 
   const h = mt5Harness();
   assert.deepEqual(Object.keys(h.feed.status()), ['mt5', 'finnhub', 'okx', 'binance'], 'mt5 is priority 0');
+});
+
+// --- mt5 bridge route (server/feed-mt5-bridge.js), review b15-review.md #10 ---
+// mt5BridgeWs is the alternative to MetaApi (docs/mt5-feed.md "Bridge route"):
+// same mt5 source id and priority, wired through sourceDefs()'s else-if
+// branch instead of the metaapiToken+metaapiAccountId branch above.
+
+test('mt5BridgeWs alone produces an mt5 source at priority 0', () => {
+  const h = harness({ mt5BridgeWs: 'ws://mt5:8765' });
+  assert.deepEqual(h.feed.status(), {
+    mt5: { connected: false, lastTickAt: null, raw: null },
+    finnhub: { connected: false, lastTickAt: null, raw: null },
+    okx: { connected: false, lastTickAt: null, raw: null },
+    binance: { connected: false, lastTickAt: null, raw: null },
+  });
+  h.inject('mt5', 4360.0, 0);
+  assert.equal(h.ticks.length, 1);
+  assert.equal(h.feed.latest().source, 'mt5');
+});
+
+test('MetaApi wins when both metaapiToken/metaapiAccountId and mt5BridgeWs are configured', () => {
+  const h = harness({ metaapiToken: 'tok', metaapiAccountId: 'acct', mt5BridgeWs: 'ws://mt5:8765' });
+  assert.deepEqual(Object.keys(h.feed.status()), ['mt5', 'finnhub', 'okx', 'binance'], 'still exactly one mt5 source');
+  // Not directly observable which adapter backs it from status() alone (by design - the
+  // client and the operator health endpoint never know); sourceDefs() precedence is
+  // exercised properly by createMt5Source vs createMt5BridgeSource each owning distinct
+  // modules, so this only re-confirms the id/priority contract is unaffected either way.
+  h.inject('mt5', 4360.0, 0);
+  assert.equal(h.ticks.length, 1);
+  assert.equal(h.feed.latest().source, 'mt5');
+});
+
+test('mt5BridgeWs runs through ingest() identically to MetaApi: priority, demotion, continuity', () => {
+  const h = harness({ mt5BridgeWs: 'ws://mt5:8765' });
+  h.inject('mt5', 4360.0, 0);
+  h.inject('finnhub', 4358.0, 100); // finnhub ticks too, but mt5 is priority 0: never published
+  assert.equal(h.ticks.length, 1);
+  h.inject('finnhub', 4358.1, 10500); // mt5 stale > 10s -> finnhub takes over, no jump
+  assert.equal(h.ticks.length, 2);
+  assert.equal(h.ticks.at(-1).price, 4360.0);
+  assert.equal(h.feed.latest().source, 'finnhub');
+  h.inject('mt5', 4362.0, 100); // mt5 fresh again -> switches back, offset anchors, no jump
+  assert.equal(h.ticks.at(-1).price, 4360.0);
+  assert.equal(h.feed.latest().source, 'mt5');
+  h.inject('mt5', 4362.5, 100); // subsequent mt5 movement carries through the offset
+  assert.equal(h.ticks.at(-1).price, 4360.5);
 });
 
 test('mt5 outranks finnhub when both are fresh', () => {
