@@ -59,3 +59,25 @@ The plumbing (`server/feed.js` priority 0, `server/feed-mt5.js` adapter, unit te
 4. Check `/status` (or the operator health endpoint) shows an `mt5` entry with `connected: true`. If it never connects, check the box logs for `[feed] upstream mt5` warnings - same reconnect/backoff logging as every other source.
 5. Run `demo/feed-compare.mjs` for 10 minutes during expo hours (`METAAPI_TOKEN=... METAAPI_ACCOUNT_ID=... node demo/feed-compare.mjs --seconds=600`) and read the `mt5 broker XAUUSD` row against the success bar above (3x Finnhub's changes/5s, p95 gap under 1 s, no gap over 5 s).
 6. Decision bar: if it clears, mt5 is already priority 0 and takes over automatically - nothing else to flip. If it does not clear, unset `METAAPI_TOKEN`/`METAAPI_ACCOUNT_ID` and restart; the feed falls back to Finnhub/PAXG exactly as it does today.
+
+## Status 2026-09-17 (owner's dashboard check)
+
+What the owner sees in the MetaApi app: one MT account created under "MT accounts" (id and tags visible), state **undeployed**, connection **disconnected**. The Deploy action asks for billing details and a deposit first.
+
+What MetaApi's public docs say (their pricing figures are only on the JavaScript pricing widget, so numbers below are from the docs and our earlier estimate):
+
+- Charging happens only while an account is **deployed**; an undeployed account costs nothing, and a deployed one is billed in 6-hour blocks each time it starts (FAQ).
+- "API access to one MetaTrader account is free of charge" appears in the SDK read-mes, but the app still wants a payment method and a prepaid balance on file before it deploys anything; there is no card-free path to a deployed account. The earlier estimate for our load stands: one **regular** reliability account, about 30 USD a month; prepay one month.
+- A MetaApi-created MT5 demo account (the scope the current token already has) does not avoid this: it also has to be deployed.
+
+Steps in the app, in order:
+
+1. Billing: add the payment method and top up the minimum the deposit screen offers (one month of a regular account covers the expo).
+2. MT accounts, open the account, **Deploy**. Wait until state is `DEPLOYED` and connection is `CONNECTED` (a minute or two). The login used must be the **investor** (read-only) password.
+3. In the same account's settings set **Quote streaming interval** to `0` (default 2.5 s is too slow for a 5 s round).
+4. Copy the account **id** (a UUID, not the MT login number). That is `METAAPI_ACCOUNT_ID`.
+5. Auth / Tokens: create a token whose scopes include account management **read** and real-time streaming (the token we have carries only `createMT5DemoAccount` plus streaming and is refused). That is `METAAPI_TOKEN`.
+6. Confirm the broker's gold symbol name on that server (`XAUUSD`, `XAUUSD.` or `GOLD`). That is `METAAPI_SYMBOL`.
+7. Follow "Hook-up procedure" above from step 2.
+
+Local Docker alternative (B15, docs/TRACKER.md): the MT5 terminal plus tick bridge container is built (`mt5/`, compose profile `mt5`, 74 unit and 21 Python tests), independently reviewed, and hardened once; that hardening failed the orchestrator's clean-volume verification on 2026-09-17 (the entrypoint raced the base image's Python install and the container restart-looped). A second hardening pass is ticketed (`docs/tickets/b15-harden-2.md`). It is not merged and needs the broker's investor login the same as MetaApi does; its advantage is no per-account fee and no streaming interval cap.
