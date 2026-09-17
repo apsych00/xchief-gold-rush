@@ -125,6 +125,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | G4 | Nothing tests the production bundle; the Connecting trap slipped past every E2E because they run on the Vite dev server | a compose smoke test in the deploy gate; with D2 |
 | G5b | The chart is shown only while a round runs (by design); the idle play screen has no chart. Checked 2026-09-16 on the compose build: it draws. | none; say so in the demo doc |
 | G5 | `npm run format:check` red on ~20 pre-existing files | cosmetic |
+| G6 | `get_tasks()` marks `claimed` per player only, so a task blocked by another player on the same device still looks open until the claim is refused | B6-B9 reworks get_tasks; fold in |
 
 ## Defects found and fixed (for the record)
 
