@@ -62,6 +62,15 @@ const initialGame = {
   // first fetch or push. `tournament` is null while no tournament is running.
   tournament: null,
   tournaments: [],
+  // Paging and the player's own row (ticket B2): `me` is this player's own row from
+  // public.my_rank() - matched by player id, never a masked-email string (closes gap G3) - or
+  // null for a guest/unverified player. `legend` (ticket B3) is set once from whichever request
+  // reply carried it and kept across the unsolicited live push, which never carries one.
+  page: 1,
+  pages: 1,
+  total: 0,
+  me: null,
+  legend: [],
   feed: { mode: 'connecting', source: null, symbol: null, quiet: false },
   // last settled round
   result: null, // { outcome:'win'|'lose'|'flat', stake, delta, mult, streak, badge, coupon? }
@@ -101,8 +110,8 @@ export function useGame() {
   // and the OTP actions further down - every one of them lands a fresh players row and rebuilds
   // the profile from it the same way. `email`/`emailVerified`/`display` are ticket C3/C4's own
   // additions: display is this player's own masked email (docs/layers.md, "playing as
-  // k****i@gmail.com"), the same string leaderboard rows use so matching "is this my row" is a
-  // plain equality check.
+  // k****i@gmail.com"), shown in the identity bar - the leaderboard's own-row match no longer
+  // uses it (ticket B2 decision 1, closes gap G3): see applyLeaderboardPayload below.
   const applyMe = useCallback((row) => {
     const next = {
       ...profileRef.current,
@@ -121,6 +130,27 @@ export function useGame() {
     profileRef.current = next;
     setProfile(next);
     return next;
+  }, []);
+
+  // Applies one `leaderboard`-shaped frame (ticket B2), whether it is a direct request's reply
+  // or the unsolicited live push (docs/layers.md C4) - both share this exact shape. `rows` are
+  // already ranked and tiered server-side; `me` is this player's own row from
+  // public.my_rank(), matched by player id, or null for a guest/unverified player - never a
+  // masked-email string comparison (closes gap G3). `legend` (ticket B3) only ever arrives on a
+  // direct request, so a push (which carries none) keeps whatever legend is already in state.
+  const applyLeaderboardPayload = useCallback((payload) => {
+    const { rows, tournament, tournaments, page, pages, total, me, legend } = payload;
+    setState((s) => ({
+      ...s,
+      others: rows,
+      tournament,
+      tournaments,
+      page: page ?? 1,
+      pages: pages ?? 1,
+      total: total ?? 0,
+      me: me ?? null,
+      legend: legend ?? s.legend,
+    }));
   }, []);
 
   // Task definitions plus this player's own claimed state (docs/layers.md C5): fetched on
@@ -165,19 +195,16 @@ export function useGame() {
     };
   }, [applyMe, refreshTasks]);
 
-  // Live, masked leaderboard (docs/layers.md C4): re-renders `others` from whichever `me` this
-  // socket currently is, so the own-row match below stays correct across a re-login mid-view.
+  // Live, masked leaderboard (docs/layers.md C4, ticket B2): every push and every request reply
+  // share this same frame shape, so one applier handles both - see applyLeaderboardPayload
+  // below. The live push always carries page 1 of the currently running tournament; if the
+  // player has paged or switched tournaments, this snaps the view back to that live board on
+  // the next settle. Deliberate: per-page/per-tournament live merging is C4b's animation work,
+  // not this ticket's.
   useEffect(() => {
     if (!apiEnabled || IS_KIOSK) return undefined;
-    return onLeaderboard(({ rows, tournament, tournaments }) => {
-      const myDisplay = profileRef.current.display;
-      const mapped = rows.map((r) => ({
-        name: r.display,
-        s: r.record,
-        me: myDisplay != null && r.display === myDisplay,
-      }));
-      setState((s) => ({ ...s, others: mapped, tournament, tournaments }));
-    });
+    return onLeaderboard(applyLeaderboardPayload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const stopTimer = useCallback(() => {
@@ -520,36 +547,38 @@ export function useGame() {
     return true;
   }, [applyMe, toast]);
 
-  // The public top-10; refetched each time the leaderboard screen opens so it reflects the
-  // latest server state (docs/layers.md C4). Rows are masked emails, not names: the current
-  // player's own row is marked `me` by an exact match on its own masked email (profile.display)
-  // rather than excluded, so a verified player in the top 10 sees themself highlighted in
-  // place, same as the live push in the effect above.
-  const applyLeaderboardPayload = useCallback(({ rows, tournament, tournaments }) => {
-    const myDisplay = profileRef.current.display;
-    const mapped = rows.map((r) => ({
-      name: r.display,
-      s: r.record,
-      me: myDisplay != null && r.display === myDisplay,
-    }));
-    setState((s) => ({ ...s, others: mapped, tournament, tournaments }));
-  }, []);
-
-  const refreshLeaderboard = useCallback(() => {
+  /** Refetches whichever page the pager buttons should land on next: same tournament (or
+   * whichever is current, if none is explicitly selected) and page. */
+  const fetchLeaderboard = useCallback((tournament, page) => {
     if (!apiEnabled || IS_KIOSK) return;
-    api.getLeaderboard().then(applyLeaderboardPayload).catch((err) => console.error('[api] leaderboard fetch failed', err));
-  }, [applyLeaderboardPayload]);
+    api
+      .getLeaderboard({ tournament, page })
+      .then(applyLeaderboardPayload)
+      .catch((err) => console.error('[api] leaderboard fetch failed', err));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const refreshLeaderboard = useCallback(() => fetchLeaderboard(null, 1), [fetchLeaderboard]);
 
   /** Switches the leaderboard screen to a specific tournament's own board - past or upcoming
-   * (ticket B1's switcher). `null` goes back to whichever tournament is currently running. */
-  const selectTournament = useCallback(
-    (id) => {
-      if (!apiEnabled || IS_KIOSK) return;
-      const call = id ? api.getTournament(id) : api.getLeaderboard();
-      call.then(applyLeaderboardPayload).catch((err) => console.error('[api] tournament fetch failed', err));
+   * (ticket B1's switcher), reset to page 1. `null` goes back to whichever tournament is
+   * currently running. */
+  const selectTournament = useCallback((id) => fetchLeaderboard(id, 1), [fetchLeaderboard]);
+
+  /** Prev/Next (ticket B2 decision 4): pages within whichever tournament is currently on
+   * screen (state.tournament?.id - `null` once no tournament is running or none was ever
+   * fetched, which already means "whichever is current" to the server). Clamped to
+   * [1, state.pages] and a no-op at either edge. */
+  const gotoLeaderboardPage = useCallback(
+    (delta) => {
+      const s = stateRef.current;
+      const target = Math.min(Math.max(1, (s.page || 1) + delta), Math.max(1, s.pages || 1));
+      if (target === s.page) return;
+      fetchLeaderboard(s.tournament ? s.tournament.id : null, target);
     },
-    [applyLeaderboardPayload],
+    [fetchLeaderboard],
   );
+  const prevLeaderboardPage = useCallback(() => gotoLeaderboardPage(-1), [gotoLeaderboardPage]);
+  const nextLeaderboardPage = useCallback(() => gotoLeaderboardPage(1), [gotoLeaderboardPage]);
 
   /** Requests an 8-digit code for `email` (docs/layers.md C3). */
   const requestOtp = useCallback((email) => sessionRequestOtp(email), []);
@@ -661,6 +690,8 @@ export function useGame() {
     verifyOtp,
     signOut,
     selectTournament,
+    prevLeaderboardPage,
+    nextLeaderboardPage,
   };
 
   return { state, profile, actions, trackRef, isKiosk: IS_KIOSK, tourSeen, markTourSeen };

@@ -820,7 +820,31 @@ function TournamentHeader({ tournament, tournaments, selectedId, onSelect }) {
   );
 }
 
-function Leaderboard({ others, profile, guestMode, onOpenIdentity, tournament, tournaments, onSelectTournament }) {
+// One badge tier's icon (ticket B3): looked up from the legend by tier id. Renders nothing for
+// a row with no tier yet (the offline/no-server demo path, which has no server-computed tiers).
+function BadgeIcon({ tier, legend }) {
+  const entry = legend?.find((l) => l.tier === tier);
+  if (!entry) return null;
+  return <img className="lb-badge" src={entry.icon} alt={entry.title} title={entry.title} />;
+}
+
+function Leaderboard({
+  others,
+  apiEnabled,
+  page,
+  pages,
+  total,
+  me,
+  legend,
+  profile,
+  guestMode,
+  onOpenIdentity,
+  tournament,
+  tournaments,
+  onSelectTournament,
+  onPrevPage,
+  onNextPage,
+}) {
   const { t, lang } = useLang();
   const you = t('lb.you');
   const [selectedId, setSelectedId] = useState(null);
@@ -828,17 +852,51 @@ function Leaderboard({ others, profile, guestMode, onOpenIdentity, tournament, t
     setSelectedId(id);
     onSelectTournament?.(id);
   };
-  // A live/fetched row already carries `me: true` once the player is verified and matched by
-  // its own masked email (docs/layers.md C4, useGame.js's refreshLeaderboard/onLeaderboard).
-  // Only the dummy/offline OTHERS list (api disabled) and a guest never on the board at all
-  // still need the synthetic "you" row this screen used to always append.
-  const ownRowPresent = others.some((o) => o.me);
-  const entries =
-    ownRowPresent || guestMode
-      ? others.map((o) => ({ ...o, me: !!o.me }))
-      : [...others.map((o) => ({ ...o, me: false })), { name: you, s: profile.record, me: true }];
-  const sorted = [...entries].sort((a, b) => b.s - a.s);
-  const myRank = sorted.findIndex((a) => a.me);
+
+  // The no-server demo path (VITE_GAME_WS unset - a preview build or local UI work with no
+  // backend, src/api/client.js): `others` is the static dummy list, with no rank, tier or
+  // server-computed `me` to page or badge. Keep the old synthetic "you" row for that case only;
+  // every real path (guest or verified, ticket B2) is server-paged below.
+  if (!apiEnabled) {
+    const entries = [...others.map((o) => ({ ...o, me: false })), { name: you, s: profile.record, me: true }];
+    const sorted = [...entries].sort((a, b) => b.s - a.s);
+    return (
+      <section className="lb">
+        <div className="screen-head">
+          <div className="screen-title">
+            <TrophyIcon stroke={GOLD} size={24} /> {t('lb.title')}
+          </div>
+          <div className="screen-sub">{t('lb.byRecord')}</div>
+        </div>
+        <TournamentHeader tournament={tournament} tournaments={tournaments} selectedId={selectedId} onSelect={selectTournament} />
+        <div className="lb-list">
+          <div className="lb-spacer" style={{ '--n': entries.length }} />
+          {entries.map((r) => {
+            const rank = sorted.findIndex((a) => a.name === r.name);
+            const level = levelFor(r.s);
+            return (
+              <div key={r.me ? '__me' : r.name} className={r.me ? 'lb-row lb-row-me' : 'lb-row'} style={{ '--i': rank }}>
+                <span className="lb-rank">{num(rank + 1, lang)}</span>
+                <span className="lb-name" dir={r.me ? undefined : 'ltr'}>
+                  {r.name}
+                  <span className="lb-level">{t(`level.${level.id}`)}</span>
+                </span>
+                <span className="lb-score">{num(r.s, lang)}</span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
+
+  // Server-paged rows (ticket B2): each row already carries its own rank and badge tier from
+  // public.leaderboard(). `me` is this player's own row from public.my_rank(), matched by
+  // player id, never the masked display string (closes gap G3); null for a guest/unverified
+  // player, who sees the guest CTA row instead.
+  const rows = others || [];
+  const ownRowOnPage = me != null && rows.some((r) => r.rank === me.rank);
+
   return (
     <section className="lb">
       <div className="screen-head">
@@ -854,30 +912,62 @@ function Leaderboard({ others, profile, guestMode, onOpenIdentity, tournament, t
         onSelect={selectTournament}
       />
       <div className="lb-list">
-        <div className="lb-spacer" style={{ '--n': entries.length + (guestMode && !ownRowPresent ? 1 : 0) }} />
-        {entries.map((r) => {
-          const rank = sorted.findIndex((a) => a.name === r.name);
-          const level = levelFor(r.s);
+        <div className="lb-spacer" style={{ '--n': rows.length + (guestMode && me == null ? 1 : 0) }} />
+        {rows.map((r, i) => {
+          const mine = me != null && r.rank === me.rank;
           return (
-            <div key={r.me ? '__me' : r.name} className={r.me ? 'lb-row lb-row-me' : 'lb-row'} style={{ '--i': rank }}>
-              <span className="lb-rank">{num(rank + 1, lang)}</span>
-              <span className="lb-name" dir={r.me ? undefined : 'ltr'}>
-                {r.name}
-                <span className="lb-level">{t(`level.${level.id}`)}</span>
+            <div key={r.rank} className={mine ? 'lb-row lb-row-me' : 'lb-row'} style={{ '--i': i }}>
+              <span className="lb-rank">{num(r.rank, lang)}</span>
+              <span className="lb-name" dir="ltr">
+                {r.display}
+                <BadgeIcon tier={r.tier} legend={legend} />
               </span>
-              <span className="lb-score">{num(r.s, lang)}</span>
+              <span className="lb-score">{num(r.record, lang)}</span>
             </div>
           );
         })}
         {/* Unverified web players never get a synthetic score row - the leaderboard is exactly
             where the ticket asks for the guest prompt instead (docs/layers.md C3, C4). */}
-        {guestMode && !ownRowPresent && (
-          <button type="button" className="lb-row lb-row-me" style={{ '--i': entries.length }} onClick={onOpenIdentity}>
+        {guestMode && me == null && (
+          <button type="button" className="lb-row lb-row-me" style={{ '--i': rows.length }} onClick={onOpenIdentity}>
             <span className="lb-name">{t('lb.guestNote')}</span>
           </button>
         )}
       </div>
-      {myRank < 10 && !readLead() && (
+      {pages > 1 && (
+        <div className="lb-pager">
+          <button type="button" className="lang-btn" disabled={page <= 1} onClick={onPrevPage}>
+            {t('lb.prev')}
+          </button>
+          <span className="lb-pager-info">{t('lb.pageOf', { page, pages, total })}</span>
+          <button type="button" className="lang-btn" disabled={page >= pages} onClick={onNextPage}>
+            {t('lb.next')}
+          </button>
+        </div>
+      )}
+      {/* The sticky own row (ticket B2 decision 4, docs/tasks-marketing-lead.md A2): pinned to
+          the bottom whenever `me`'s rank is not one of the rows on the current page. */}
+      {me != null && !ownRowOnPage && (
+        <div className="lb-row lb-row-me lb-row-sticky">
+          <span className="lb-rank">{num(me.rank, lang)}</span>
+          <span className="lb-name" dir="ltr">
+            {me.display}
+            <BadgeIcon tier={me.tier} legend={legend} />
+          </span>
+          <span className="lb-score">{num(me.record, lang)}</span>
+        </div>
+      )}
+      {legend?.length > 0 && (
+        <div className="lb-legend">
+          {legend.map((l) => (
+            <div key={l.tier} className="lb-legend-item">
+              <img className="lb-legend-icon" src={l.icon} alt="" />
+              <span className="lb-legend-title">{l.title}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {me != null && me.rank <= 10 && !readLead() && (
         <LeadCapture
           source="leaderboard"
           balance={profile.coins}
@@ -1003,12 +1093,20 @@ export default function App() {
               {screen === 'lb' && (
                 <Leaderboard
                   others={state.others}
+                  apiEnabled={apiEnabled}
+                  page={state.page}
+                  pages={state.pages}
+                  total={state.total}
+                  me={state.me}
+                  legend={state.legend}
                   profile={profile}
                   guestMode={guestMode}
                   onOpenIdentity={() => setOtpOpen(true)}
                   tournament={state.tournament}
                   tournaments={state.tournaments}
                   onSelectTournament={actions.selectTournament}
+                  onPrevPage={actions.prevLeaderboardPage}
+                  onNextPage={actions.nextLeaderboardPage}
                 />
               )}
               {screen === 'profile' && (

@@ -1318,6 +1318,55 @@ button:focus:not(:focus-visible) {
   animation: gr-rise 0.4s ease-out both;
 }
 
+.lb-badge {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.lb-row-sticky {
+  flex: none;
+  margin-top: 8px;
+}
+
+.lb-pager {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+.lb-pager-info {
+  font: 600 11px var(--en);
+  color: rgba(255, 255, 255, 0.55);
+  text-align: center;
+  flex: 1;
+}
+
+.lb-legend {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1.5px solid rgba(255, 255, 255, 0.1);
+}
+.lb-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.lb-legend-icon {
+  width: 14px;
+  height: 14px;
+}
+.lb-legend-title {
+  font: 600 10px var(--fa);
+  color: rgba(255, 255, 255, 0.55);
+}
+
 /* ---------- tasks ---------- */
 
 .tasks {

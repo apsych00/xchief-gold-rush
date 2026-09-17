@@ -92,6 +92,9 @@ const dict = {
       you: 'شما',
       byRecord: 'بر اساس رکورد',
       guestNote: 'به‌عنوان مهمان بازی می‌کنی؛ ایمیلت رو بزن تا رتبه‌بندی بشی',
+      prev: 'قبلی',
+      next: 'بعدی',
+      pageOf: 'صفحه {page} از {pages} · {total} بازیکن',
     },
     tournament: {
       none: 'در حال حاضر مسابقه‌ای برگزار نمی‌شود',
@@ -335,6 +338,9 @@ const dict = {
       you: 'You',
       byRecord: 'by record',
       guestNote: 'Play as guest - add your email to be ranked',
+      prev: 'Prev',
+      next: 'Next',
+      pageOf: 'Page {page} of {pages} · {total} players',
     },
     tournament: {
       none: 'No tournament running',

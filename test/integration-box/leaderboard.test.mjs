@@ -230,6 +230,135 @@ test('a settled round that changes the top 10 pushes a leaderboard frame to the 
   ws.close();
 });
 
+// public.leaderboard()'s own pgTAP suite (db/tests/85_leaderboard_paging.sql) already proves the
+// page-size and boundary math directly against the database; this suite proves the same paging
+// reaches the client over the socket, plus the per-socket `me`/`legend` shaping that only exists
+// at the server/index.js layer (ticket B2, B3).
+//
+// Fixture players that never need a live socket (fill rows for paging, or "a stranger ranked
+// above me") are created directly through the same tests.create_confirmed_player() SQL helper
+// the pgTAP suites use (loaded once, outside a transaction, by db/tests/00_helpers.sql - it
+// persists in this --keep database) rather than through a real OTP round-trip: this file's
+// server instance enforces the same per-IP OTP budget (5 per 10 minutes, server/limits.js) a
+// real deployment would, and only the tests that actually assert what a specific authenticated
+// socket receives need a real verified player behind one.
+async function createScoredPlayer(email, record) {
+  const { rows } = await pool.query('select tests.create_confirmed_player($1) as id', [email]);
+  const playerId = rows[0].id;
+  const { rowCount } = await pool.query(
+    `insert into public.tournament_scores (tournament_id, player_id, record)
+       select ct.id, $1, $2 from public.current_tournament() ct
+     on conflict (tournament_id, player_id) do update set record = excluded.record`,
+    [playerId, record],
+  );
+  if (rowCount === 0) {
+    throw new Error(
+      "no tournament is currently running - this suite needs one of db/seed.sql's tournament windows to be live",
+    );
+  }
+  return playerId;
+}
+
+test('a `leaderboard` request carries page/pages/total and the badge legend; the unsolicited push never carries a legend', async () => {
+  const ws = connect();
+  await whenOpen(ws);
+  await authAnonymous(ws); // legend/page/pages/total need no email verification, just an authenticated web socket
+
+  send(ws, { type: 'leaderboard' });
+  const requested = await nextFrame(ws, (f) => f.type === 'leaderboard');
+  assert.equal(requested.page, 1);
+  assert.ok(requested.pages >= 1);
+  assert.ok(requested.total >= 0);
+  assert.ok(Array.isArray(requested.legend) && requested.legend.length === 6, 'the request reply carries all six badge tiers');
+  assert.deepEqual(
+    requested.legend.map((l) => l.tier),
+    ['gold', 'silver', 'bronze', 'top10', 'top100', 'player'],
+    'the legend is ordered by sort',
+  );
+
+  currentPrice = 3000;
+  await new Promise((r) => setTimeout(r, 250));
+  currentPrice = 3100;
+  const [, pushed] = await Promise.all([playOneRound(ws, 'up'), nextFrame(ws, (f) => f.type === 'leaderboard', 6000)]);
+  assert.equal(pushed.legend, undefined, 'the unsolicited live push never carries a legend (ticket B3 decision 3)');
+  ws.close();
+});
+
+test('a page-2 request returns the next 20 rows, none of which are on page 1', async () => {
+  const ws = connect();
+  await whenOpen(ws);
+  await authAnonymous(ws); // this test never checks `me`, so no verified player is needed
+
+  const emails = Array.from({ length: 25 }, (_, i) => `lb-page-fill-${Date.now()}-${i}@example.com`);
+  for (const email of emails) {
+    await createScoredPlayer(email, 4000 + Math.floor(Math.random() * 1000));
+  }
+
+  send(ws, { type: 'leaderboard', page: 1 });
+  const page1 = await nextFrame(ws, (f) => f.type === 'leaderboard');
+  assert.equal(page1.rows.length, 20);
+  assert.equal(page1.page, 1);
+
+  send(ws, { type: 'leaderboard', page: 2 });
+  const page2 = await nextFrame(ws, (f) => f.type === 'leaderboard');
+  assert.equal(page2.page, 2);
+  assert.ok(page2.rows.length >= 5, 'at least the 5 fill rows past the first page land on page 2');
+  const page1Ranks = new Set(page1.rows.map((r) => r.rank));
+  assert.ok(
+    page2.rows.every((r) => !page1Ranks.has(r.rank)),
+    'no rank on page 2 repeats a rank already shown on page 1',
+  );
+  ws.close();
+});
+
+test("`me` is computed per socket: two players settling together each see their own row, never the other's", async () => {
+  const wsA = connect();
+  const wsB = connect();
+  await Promise.all([whenOpen(wsA), whenOpen(wsB)]);
+  const emailA = `lb-me-a-${Date.now()}@example.com`;
+  const emailB = `lb-me-b-${Date.now()}@example.com`;
+  await verifyFreshPlayer(wsA, emailA);
+  await verifyFreshPlayer(wsB, emailB);
+  const recordA = await parkRecordAtSentinel(emailA);
+  const recordB = await parkRecordAtSentinel(emailB);
+
+  currentPrice = 3000;
+  await new Promise((r) => setTimeout(r, 250));
+  currentPrice = 3100;
+  const [, , lbA, lbB] = await Promise.all([
+    playOneRound(wsA, 'up'),
+    playOneRound(wsB, 'up'),
+    nextFrame(wsA, (f) => f.type === 'leaderboard', 6000),
+    nextFrame(wsB, (f) => f.type === 'leaderboard', 6000),
+  ]);
+  assert.equal(lbA.me.display, maskEmail(emailA));
+  assert.equal(lbA.me.record, recordA);
+  assert.equal(lbB.me.display, maskEmail(emailB));
+  assert.equal(lbB.me.record, recordB);
+  wsA.close();
+  wsB.close();
+});
+
+test('own-row identity is the player id, not the masked display string (closes gap G3)', async () => {
+  // "ab" and "ac" both mask to "a***" (mask_email keeps only the first character when the local
+  // part is 2 characters or shorter): two different real players, same domain (unique to this
+  // test run so re-login never kicks in), an identical masked display between them.
+  const ws = connect();
+  await whenOpen(ws);
+  const domain = `example-${Date.now()}.com`;
+  const emailMine = `ab@${domain}`;
+  const emailOther = `ac@${domain}`;
+  await verifyFreshPlayer(ws, emailMine);
+  const recordMine = await parkRecordAtSentinel(emailMine);
+  await createScoredPlayer(emailOther, recordMine + 1000000); // a higher-ranked stranger with the same masked display
+
+  send(ws, { type: 'leaderboard' });
+  const lb = await nextFrame(ws, (f) => f.type === 'leaderboard');
+  assert.equal(lb.me.display, maskEmail(emailMine));
+  assert.equal(lb.me.record, recordMine, "my own record, not the same-masked stranger's higher one");
+  ws.close();
+});
+
 test('a leaderboard push never reaches a kiosk socket', async () => {
   const kioskWs = connect();
   await whenOpen(kioskWs);

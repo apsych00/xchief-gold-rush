@@ -149,6 +149,12 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | A1-A8 | MKT | Screens and copy: ad zone, paged leaderboard, tournaments, profile, tours, rewards rework | us (owner's call 2026-09-17: nothing landed on `apsych/main`) | ⏳ queued | A1 in B11, A2 in B2, A3 in B1+B3, A4 exists (profile screen pulled earlier), A7 in B6-B9; A5+A6 real tour content is the only standalone piece: C11 | in Demo |
 | C11 | L1.5 | First-visit tour (web) and kiosk intro with real content on the B10 mount points | | ⏳ queued | after B10; three short cards each, copy in fa and en | after B10 |
 
+## Open defects (owner-reported, fix later, target the search when picked up)
+
+| ID | Reported | What happened | Keys to reproduce | Related | Status |
+|---|---|---|---|---|---|
+| OD1 | owner, 2026-09-17 on the local stack | Registering with an email opened the OTP dialog; a few gibberish codes produced a **429** in the browser console; a few attempts later with other emails the owner got in and was credited rewards on the account | email `t1w@f.com`; wrong codes typed several times; then different emails; look for the 429 on the socket upgrade or `/api` (S2's per-IP OTP window is 5 per 10 min, the connection window 30 per min, verify attempts 5 per code); check whether the client reconnects after `too_many_attempts` and burns the connection window; check how the local stack let a later email through (dev OTP peek? code accepted?) and whether the signup/email reward was released on a verified path (B9) | S2, S13, B9, C3 | ⏳ queued |
+
 ## Known gaps (small, carded above where they belong)
 
 | ID | Gap | Covered by |

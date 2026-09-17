@@ -258,11 +258,12 @@ function handleMessage(frame) {
       settlePending(frame);
       break;
     case 'leaderboard':
-      // Both a reply to this socket's own `leaderboard`/`tournament` request (getLeaderboard(),
-      // getTournament()) and an unsolicited push whenever the top 10 changes (docs/layers.md
-      // C4) arrive as this same frame shape: `rows` (that tournament's top 10), `tournament`
-      // (its header, ticket B1) and `tournaments` (the full switcher list). settlePending() is
-      // a no-op when nothing is waiting on it.
+      // Both a reply to this socket's own `leaderboard` request (getLeaderboard()) and an
+      // unsolicited push after a settle (docs/layers.md C4, ticket B2) arrive as this same
+      // frame shape: `rows` (this page of that tournament's board), `tournament` (its header,
+      // ticket B1), `tournaments` (the full switcher list), `page`/`pages`/`total` (the pager)
+      // and `me` (this player's own row, ticket B2 decision 1). settlePending() is a no-op when
+      // nothing is waiting on it.
       leaderboardEmitter.emit(payloadOf(frame));
       settlePending(frame);
       break;
@@ -379,10 +380,11 @@ export function kioskReset() {
   send({ type: 'kiosk_reset' });
 }
 
-/** Fires with `{rows, tournament, tournaments}` every time the server pushes a `leaderboard`
- * frame - on request (getLeaderboard's and getTournament's own replies also land here) and,
- * unsolicited, whenever the top 10 changes (docs/layers.md C4). Never fires for a kiosk socket:
- * the server never sends it one. */
+/** Fires with `{rows, tournament, tournaments, page, pages, total, me, legend?}` every time the
+ * server pushes a `leaderboard` frame - on request (getLeaderboard's own reply also lands here)
+ * and, unsolicited, after a settle (docs/layers.md C4, ticket B2). `legend` is only ever present
+ * on a request reply, never on the unsolicited push (ticket B3 decision 3). Never fires for a
+ * kiosk socket: the server never sends it one. */
 export function onLeaderboard(cb) {
   return leaderboardEmitter.on(cb);
 }
@@ -411,13 +413,11 @@ export function getTasks() {
   return request(['tasks'], { type: 'tasks' }).then((frame) => frame.rows);
 }
 
-export function getLeaderboard() {
-  return request(['leaderboard'], { type: 'leaderboard' }).then(payloadOf);
-}
-
-/** A specific tournament's own board (past or upcoming), same shape as getLeaderboard(). */
-export function getTournament(id) {
-  return request(['leaderboard'], { type: 'tournament', id }).then(payloadOf);
+/** One page of one tournament's board (ticket B2): `tournament` null/omitted means whichever
+ * tournament is currently running, `page` defaults to 1. Same call reads back a past or
+ * upcoming tournament's own board by passing its id. */
+export function getLeaderboard({ tournament = null, page = 1 } = {}) {
+  return request(['leaderboard'], { type: 'leaderboard', tournament, page }).then(payloadOf);
 }
 
 export function requestOtp(email) {

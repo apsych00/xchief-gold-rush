@@ -185,6 +185,31 @@ create table public.tournament_scores (
 
 create index tournament_scores_board on public.tournament_scores (tournament_id, record desc, updated_at asc);
 
+-- Badge tiers (ticket B3, docs/tasks-marketing-lead.md A3): the rule that assigns a tier to a
+-- leaderboard rank, stored with the rank rather than the player - a player's tier changes as
+-- other players' scores move past them, so there is nothing to store on public.players. Ranges
+-- are inclusive; max_rank null means "and everyone below" (the player tier, 101+).
+create table public.badge_tiers (
+  tier text primary key,
+  title text not null,
+  min_rank int not null,
+  max_rank int,
+  icon text not null,
+  sort int not null,
+  check (max_rank is null or max_rank >= min_rank)
+);
+
+insert into public.badge_tiers (tier, title, min_rank, max_rank, icon, sort) values
+  ('gold', 'Gold', 1, 1, '/badges/gold.svg', 1),
+  ('silver', 'Silver', 2, 2, '/badges/silver.svg', 2),
+  ('bronze', 'Bronze', 3, 3, '/badges/bronze.svg', 3),
+  ('top10', 'Top 10', 4, 10, '/badges/top10.svg', 4),
+  ('top100', 'Top 100', 11, 100, '/badges/top100.svg', 5),
+  ('player', 'Player', 101, null, '/badges/player.svg', 6)
+on conflict (tier) do update set
+  title = excluded.title, min_rank = excluded.min_rank, max_rank = excluded.max_rank,
+  icon = excluded.icon, sort = excluded.sort;
+
 -- Task definitions (docs/layers.md C5): id, title and reward are the server's own, never
 -- duplicated as numbers in src/ - get_tasks() below is what the client's tasks screen renders
 -- from. title is plain English; the client's own i18n (src/i18n.js) still owns the localized
@@ -337,6 +362,7 @@ alter table public.devices enable row level security;
 alter table public.tournaments enable row level security;
 alter table public.tournament_scores enable row level security;
 alter table public.claim_links enable row level security;
+alter table public.badge_tiers enable row level security;
 
 create policy players_select_own on public.players
   for select to authenticated using (id = auth.uid());
@@ -350,15 +376,16 @@ create policy task_claims_select_own on public.task_claims
 create policy tasks_select_all on public.tasks
   for select to anon, authenticated using (true);
 
--- kiosks, coupons, dev_otps, otp_codes, devices, tournaments, tournament_scores, settings and
--- claim_links deliberately have NO client policy: service-role tables (devices per ticket B5
--- decision 5 - "nothing identifies a device to other players"; a player's own device_id rides
--- on get_me() instead). claim_links is read/written only through claim_prize() (ticket C9) -
+-- kiosks, coupons, dev_otps, otp_codes, devices, tournaments, tournament_scores, settings,
+-- claim_links and badge_tiers deliberately have NO client policy: service-role tables (devices per
+-- ticket B5 decision 5 - "nothing identifies a device to other players"; a player's own device_id
+-- rides on get_me() instead). claim_links is read/written only through claim_prize() (ticket C9) -
 -- a visitor's claim proof is the token itself, not a client role.
--- The public top-10 leaderboard and the tournament header are exposed through the SECURITY
--- DEFINER functions public.leaderboard() and public.current_tournament() below, not a view:
--- Supabase's linter flags SECURITY DEFINER views, and a function keeps the same access model
--- (anonymous visitors can read the top 10 and the tournament dates/prize, nothing else about
+-- The public board, the tournament header and the badge legend are exposed through the SECURITY
+-- DEFINER functions public.leaderboard(), public.current_tournament() and public.badge_legend()
+-- below, not a view: Supabase's linter flags SECURITY DEFINER views, and a function keeps the same
+-- access model (anonymous visitors can read the board, the tournament dates/prize and the badge
+-- legend, nothing else about
 -- players or other tournaments' internals).
 
 -- ---------------------------------------------------------------------------- functions --
@@ -401,6 +428,28 @@ create function public.current_tournament()
 returns public.tournaments
 language sql stable as $$
   select * from public.tournaments where tstzrange(starts_at, ends_at) @> now() limit 1;
+$$;
+
+-- ------------------------------------------------------------------------------- badges --
+
+-- The tier whose [min_rank, max_rank] range contains p_rank (ticket B3): security definer so
+-- it still resolves correctly when called from inside another security definer function
+-- (public.leaderboard(), public.my_rank()) even though badge_tiers itself carries RLS with no
+-- client policy - see that table's own comment.
+create function public.tier_for_rank(p_rank bigint)
+returns text language sql stable security definer set search_path = public as $$
+  select tier from public.badge_tiers
+  where p_rank >= min_rank and (max_rank is null or p_rank <= max_rank)
+  order by min_rank
+  limit 1;
+$$;
+
+-- The tier legend, sort order (ticket B3, docs/tasks-marketing-lead.md A3): the client renders
+-- this once per leaderboard request, never on the unsolicited live push (server/index.js).
+create function public.badge_legend()
+returns table (tier text, title text, min_rank int, max_rank int, icon text, sort int)
+language sql security definer stable set search_path = public as $$
+  select tier, title, min_rank, max_rank, icon, sort from public.badge_tiers order by sort;
 $$;
 
 -- ---------------------------------------------------------------------------- masking --
@@ -1055,29 +1104,81 @@ end $$;
 
 -- --------------------------------------------------------------------- leaderboard --
 
--- Public leaderboard: top 10 of one tournament's tournament_scores, email-confirmed players
--- only, safe columns only (ticket B1: the campaign is a series of tournaments, not one long
--- contest). p_tournament defaults to whichever tournament public.current_tournament() reports;
--- passing an explicit id (the `tournament` request frame, server/index.js) is how a closed
--- tournament's final board is read back. Either way, no tournament resolved (no id given and
--- none running, or an id that names no tournament) means the coalesce below is null, the
--- tournament_id equality can never match, and the result is simply empty rows - never an error.
+-- Public leaderboard: one tournament's tournament_scores, email-confirmed players only, safe
+-- columns only (ticket B1: the campaign is a series of tournaments, not one long contest; B2:
+-- paged, 20 rows per page, each row carrying its own badge tier). p_tournament defaults to
+-- whichever tournament public.current_tournament() reports; passing an explicit id (the
+-- `tournament` request frame, or the `tournament` field on a `leaderboard` request,
+-- server/index.js) is how a closed or upcoming tournament's own board is read back. Either
+-- way, no tournament resolved (no id given and none running, or an id that names no
+-- tournament) means the coalesce below is null, the tournament_id equality can never match,
+-- and the result is simply empty rows - never an error. p_page is 1-based; a page past the end
+-- is empty rows, same as no tournament resolved - never an error either.
 -- Runs with the function owner's rights on purpose, so it can read players and
 -- tournament_scores past RLS while exposing nothing but a masked email and record
 -- (docs/layers.md C4: "never a raw address" - display_name is not returned any more since it
 -- would defeat the point of masking).
-create function public.leaderboard(p_tournament text default null)
-returns table (display text, record int, rank bigint)
+create function public.leaderboard(p_tournament text default null, p_page int default 1)
+returns table (rank bigint, display text, record int, tier text)
 language sql security definer stable set search_path = public as $$
-  select public.mask_email(p.email) as display, ts.record,
-    rank() over (order by ts.record desc, ts.updated_at asc) as rank
-  from public.tournament_scores ts
+  with ranked as (
+    select public.mask_email(p.email) as display, ts.record,
+      rank() over (order by ts.record desc, ts.updated_at asc) as rank
+    from public.tournament_scores ts
+    join public.players p on p.id = ts.player_id
+    where ts.tournament_id = coalesce(p_tournament, (select id from public.current_tournament()))
+      and p.email is not null
+  )
+  select rank, display, record, public.tier_for_rank(rank) as tier
+  from ranked
+  order by rank
+  limit 20 offset (greatest(coalesce(p_page, 1), 1) - 1) * 20;
+$$;
+
+-- The total ranked player count behind public.leaderboard(), for the client's page count
+-- (server/index.js computes `pages = ceil(total / 20)`) - a separate call rather than a window
+-- column on leaderboard() itself, since a page past the end would otherwise return zero rows
+-- and take the total down with it.
+create function public.leaderboard_total(p_tournament text default null)
+returns bigint language sql security definer stable set search_path = public as $$
+  select count(*) from public.tournament_scores ts
   join public.players p on p.id = ts.player_id
   where ts.tournament_id = coalesce(p_tournament, (select id from public.current_tournament()))
-    and p.email is not null
-  order by ts.record desc, ts.updated_at asc
-  limit 10;
+    and p.email is not null;
 $$;
+
+-- The caller's own row on one tournament's board (ticket B2 decision 1, closes gap G3): matched
+-- by auth.uid(), never by a masked-email string comparison, so two players whose masks happen
+-- to collide can never highlight each other's row. No row for a caller with no verified email
+-- or no score in that tournament - not an error, just nothing returned (server/index.js's
+-- ledger.myRank turns the empty result into `null`), same "resolves to nothing, never raises"
+-- shape as leaderboard() itself.
+create function public.my_rank(p_tournament text default null)
+returns table (rank bigint, display text, record int, tier text, total bigint)
+language plpgsql security definer stable set search_path = public as $$
+declare
+  v_tournament text;
+begin
+  if auth.uid() is null then
+    raise exception 'unauthenticated';
+  end if;
+  v_tournament := coalesce(p_tournament, (select id from public.current_tournament()));
+  return query
+    -- Column names qualified with the CTE's own alias throughout: this function's OUT
+    -- parameters (rank, display, record, tier, total) shadow bare column references of the
+    -- same name as PL/pgSQL variables, which read as ambiguous rather than "the CTE's column".
+    with ranked as (
+      select p.id as player_id, public.mask_email(p.email) as row_display, ts.record as row_record,
+        rank() over (order by ts.record desc, ts.updated_at asc) as row_rank,
+        count(*) over () as row_total
+      from public.tournament_scores ts
+      join public.players p on p.id = ts.player_id
+      where ts.tournament_id = v_tournament and p.email is not null
+    )
+    select ranked.row_rank, ranked.row_display, ranked.row_record, public.tier_for_rank(ranked.row_rank), ranked.row_total
+    from ranked
+    where ranked.player_id = auth.uid();
+end $$;
 
 -- -------------------------------------------------------------------------- otp codes --
 
@@ -1169,30 +1270,41 @@ end $$;
 -- No client writes, anywhere.
 revoke insert, update, delete, truncate, references, trigger
   on public.players, public.rounds, public.tasks, public.task_claims, public.kiosks, public.coupons,
-     public.tournaments, public.tournament_scores, public.settings, public.claim_links
+     public.tournaments, public.tournament_scores, public.settings, public.claim_links, public.badge_tiers
   from anon, authenticated;
 
--- kiosks, coupons, tournaments, tournament_scores, settings and claim_links: not even readable
--- by clients. Service role only - the tournament header and the board reach the client through
--- the SECURITY DEFINER functions below, never a direct table read; a claim link's own state
--- reaches the /claim/<token> page through GET /api/claim/<token> (server/index.js), never a
--- direct table read either.
+-- kiosks, coupons, tournaments, tournament_scores, settings, claim_links and badge_tiers: not even
+-- readable by clients. Service role only - the tournament header, the board and the badge legend
+-- reach the client through the SECURITY DEFINER functions below, never a direct table read; a claim
+-- link's own state reaches the /claim/<token> page through GET /api/claim/<token> (server/index.js),
+-- never a direct table read either.
 revoke select on public.kiosks, public.coupons, public.tournaments, public.tournament_scores,
-  public.settings, public.claim_links from anon, authenticated;
+  public.settings, public.claim_links, public.badge_tiers from anon, authenticated;
 
 -- dev_otps, otp_codes and settings: service role only.
 revoke all on public.dev_otps, public.otp_codes, public.settings from public, anon, authenticated;
 
--- Client-callable, identity from the JWT (set per transaction by the server).
-revoke execute on function public.get_me(), public.claim_task(text), public.free_refill(), public.get_tasks() from public, anon;
-grant execute on function public.get_me(), public.claim_task(text), public.free_refill(), public.get_tasks() to authenticated;
+-- Client-callable, identity from the JWT (set per transaction by the server). my_rank (ticket
+-- B2) joins this group: it reads auth.uid() exactly like get_me, so an anonymous or
+-- unauthenticated caller gets nothing from it either.
+revoke execute on function public.get_me(), public.claim_task(text), public.free_refill(), public.get_tasks(),
+  public.my_rank(text)
+  from public, anon;
+grant execute on function public.get_me(), public.claim_task(text), public.free_refill(), public.get_tasks(),
+  public.my_rank(text)
+  to authenticated;
 
--- Any visitor may read the top 10 (of the current tournament, or an explicit one) and the
--- tournament header; no other role besides the two client roles gets it.
-revoke execute on function public.leaderboard(text) from public;
-grant execute on function public.leaderboard(text) to anon, authenticated;
+-- Any visitor may read one tournament's board page (of the current tournament, or an explicit
+-- one), its total row count, the tournament header and the badge legend; no other role besides
+-- the two client roles gets them.
+revoke execute on function public.leaderboard(text, int) from public;
+grant execute on function public.leaderboard(text, int) to anon, authenticated;
+revoke execute on function public.leaderboard_total(text) from public;
+grant execute on function public.leaderboard_total(text) to anon, authenticated;
 revoke execute on function public.current_tournament() from public;
 grant execute on function public.current_tournament() to anon, authenticated;
+revoke execute on function public.badge_legend() from public;
+grant execute on function public.badge_legend() to anon, authenticated;
 
 -- Service-role only: a client holding the anon key must not be able to call these.
 revoke execute on function
