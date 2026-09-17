@@ -137,7 +137,7 @@ test.describe.serial('kiosk: the intro on the B10 mount point (C11)', () => {
       page.getByText('Predict gold for 5 seconds. Win 5 in a row and take home the $100 bonus.'),
     ).toBeVisible();
     await expect(
-      page.getByText('طلا را برای ۵ ثانیه پیش‌بینی کن. ۵ برد پشت‌سرهم بگیر و بونوس ۱۰۰ دلاری را ببر.'),
+      page.getByText('طلا را برای ۵ ثانیه پیش‌بینی کن. ۵ برد پشت‌سرهم بگیر و بونوس ۱۰۰ دلاری ایکس‌چیف را ببر.'),
     ).toBeVisible();
     await expect(forbiddenUi(page)).toHaveCount(0);
     await page.screenshot({ path: `${REPORT_DIR}/05-kiosk-intro.png` });

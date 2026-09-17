@@ -10,13 +10,13 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | Layer | Progress | Open | Read |
 |---|---|---|---|
 | L1 game on the box | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 7/7 | 0 | complete, load-tested (100 sockets, p95 settle 5024 ms), rehearsed through compose + Caddy |
-| L1.5 client experience | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 17/19 | C11 tours ⏳, C4b animation ⏳, Q1 rest 🟡 | booth and web flows built and verified end to end; red team: every loophole fixed (C10) |
+| L1.5 client experience | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 18/19 | C4b animation ⏳, Q1 rest 🟡 | booth and web flows built and verified end to end; red team: every loophole fixed (C10) |
 | L2 hardening | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 7/18 | S1, S3, S5, S6, S8, S10, S11, S12, S14, S15 are M2 scope creep | S2 rate limits and S18 safe mode merged; production numbers under review with the owner |
 | MKT Part B | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 13/16 | B8 📋, B12 ⏳, B13 ⏳ | B1, B4, B5, B14, B15 (build), B16 done |
 | OPS | 🟩🟩🟩🟩🟩🟩⬜⬜⬜⬜ 3/5 | D3 run on the box, D4 schema apply (M2) | deploy scripts built; first real run happens on the box |
 | FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 
-**Demo milestone (M1):** 30 of 31 tickets done. Left: B8 Instagram, C11 tours, B13 hardening, then the showcase gate. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
+**Demo milestone (M1):** 31 of 33 tickets done. Left: B8 Instagram and B13 hardening (both on OpenCode), then the showcase gate. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
 
 ### Landed on dev today (newest first)
 
@@ -24,6 +24,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 | Time | Ticket | What landed | Gates on the merged tree |
 |---|---|---|---|
+| 17:05 | C11 | real first-visit tour and bilingual kiosk intro on the B10 mount points | 127 unit, 28 E2E |
 | 16:30 | T1 | Telegram alerts with an event catalogue and a recommendation per event; first OpenCode Go delivery | 127 unit, 277 pgTAP, 82 integration |
 | 16:05 | B6+B7+B9 | rewards released by the server: video progress, redirect-and-return, email and signup on verify; client renders the server task list | 277 pgTAP, 82 integration, 25 E2E |
 | 15:20 | B2+B3 | paged leaderboard with the own row pinned, badge tiers and legend | 261 pgTAP, 78 integration, 22 E2E |
@@ -148,7 +149,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | B12 | MKT | Curate the YouTube list (under one minute each) | | ⏳ queued | content task | |
 | B13 | MKT | Hardening pass on rewards and device identity: nine attacks scripted, fixes decided, audit view and export | OpenCode kimi-k2.7-code | 🔨 building | ticket `docs/tickets/b13-rewards-hardening.md` | verify, merge; last in M1 |
 | A1-A8 | MKT | Screens and copy: ad zone, paged leaderboard, tournaments, profile, tours, rewards rework | us (owner's call 2026-09-17: nothing landed on `apsych/main`) | ⏳ queued | A1 in B11, A2 in B2, A3 in B1+B3, A4 exists (profile screen pulled earlier), A7 in B6-B9; A5+A6 real tour content is the only standalone piece: C11 | in Demo |
-| C11 | L1.5 | First-visit tour (web) and kiosk intro with real content on the B10 mount points | OpenCode deepseek-v4.1-flash | 🔨 building | ticket `docs/tickets/c11-tours.md` | verify, merge |
+| C11 | L1.5 | First-visit tour (web) and kiosk intro with real content on the B10 mount points | OpenCode deepseek-v4.1-flash | ✅ done | three web cards with Next/Skip/Got it, bilingual kiosk intro with the server's streak target; 127 unit, 28 E2E on my merged run; Persian copy written by the worker, one brand-name edit by the orchestrator, still wants a native read; merged | native fa read |
 
 ## Open defects (owner-reported, fix later, target the search when picked up)
 
