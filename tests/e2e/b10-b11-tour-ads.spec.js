@@ -76,17 +76,15 @@ test.describe('web: tour placeholder and the ad zone (B10, B11)', () => {
     await dismissFirstVisit(page);
     await expect(page.locator('.modal-backdrop')).toHaveCount(0);
 
-    // ---- 2. the leaderboard's ad zone renders an image, chosen from ads/banners.json ------
+    // ---- 2. the leaderboard's ad zone renders a banner from ads/banners.json --------------
     await page.getByRole('button', { name: 'Board' }).click();
     await expect(page.locator('.lb')).toBeVisible();
-    const adImg = page.locator('.ad-zone-img');
-    await expect(adImg).toBeVisible({ timeout: 10000 });
-    await expect
-      .poll(() => adImg.evaluate((img) => img.naturalWidth), {
-        message: 'the ad image must actually have loaded pixels, not a broken src',
-        timeout: 10000,
-      })
-      .toBeGreaterThan(0);
+    // Ticket U3: the list now leads with the two animated banners, so the first thing the zone
+    // shows is an iframe served from /ads/banners/ (the still images rotate in behind it). The
+    // iframe's own load and the aspect ratio are proven by tests/e2e/u3-animated-banners.spec.js.
+    const adFrame = page.locator('.ad-zone-frame');
+    await expect(adFrame).toBeVisible({ timeout: 10000 });
+    await expect(adFrame).toHaveAttribute('src', /^\/ads\/banners\//);
     await page.screenshot({ path: `${REPORT_DIR}/02-web-ad-zone.png` });
 
     // ---- 3. reloading never shows the tour again - xchief.tour_seen persisted -------------

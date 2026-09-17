@@ -23,8 +23,15 @@ import { URL, URLSearchParams } from 'node:url';
 const ACCOUNTS = new Map(); // access_token -> { id, username }
 const CODES = new Map(); // authorization code -> { access_token, user_id }
 
+// Real Instagram user ids are globally unique, so the fake must not hand out the same ids after
+// a process restart: the E2E suite reuses one kept dev database (db/run-tests.sh --keep), and a
+// deterministic base made every second run's account collide with the first run's
+// (`instagram_accounts.ig_user_id` is the primary key, so the callback answered already_claimed).
+// A per-process random base keeps ids unique; issueCode({ id }) still lets a test pin an exact id.
+const ID_BASE = 1000000000 + Math.floor(Math.random() * 100000000);
+
 function nextId() {
-  return String(ACCOUNTS.size + 1000000000);
+  return String(ID_BASE + ACCOUNTS.size);
 }
 
 function generateCode() {
