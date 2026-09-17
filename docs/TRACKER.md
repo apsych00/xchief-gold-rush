@@ -24,6 +24,7 @@ Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge 
 
 | Time | Ticket | What landed | Gates on the merged tree |
 |---|---|---|---|
+| 22:35 | K5 | new email mask on the server (`ped*****ncy@gmail.com`, company domains masked to `f***d@a**.co`), leak test proves anonymous sockets and alerts never carry a raw email | 98 server, 35 E2E |
 | 22:05 | U2 | one leaderboard header card (cup icon, title, tournament info), switcher toggles it, guest note is the own row, pinned own row fixed | 137 unit, 35 E2E |
 | 21:20 | U1 | wipe button gone (code kept), user-icon avatar, themed scrollbars, client keeps one socket to our server only (direct Finnhub/OKX/Binance sources removed from the client) | 137 unit, 33 E2E |
 | 19:50 | B13 | rewards hardening: nine attacks held, claim audit, device-bound claims | 137 unit, 287 pgTAP, 97 integration, 31 E2E |
@@ -90,7 +91,7 @@ Demo tickets are all merged (33/33). The showcase run against the compose build 
 | K4 | Coins tab becomes Missions: YouTube missions with a non-seekable watch-progress player; redirect rewards release the moment the timer ends | change | 🔨 OpenCode |
 | U5 | English only: the Persian locale is wiped from every page; i18n plumbing stays with one language, the switcher returns in a later version (owner 2026-09-17 late: "a lot of dual locale pages right next to each other") | change | 📋 ticketed; dispatched after the in-flight U2-U4, K1, K5 land (they all touch i18n.js) |
 | D5 | Screenshots of every screen (separate PNGs + one high-quality sprite) for a design agent, git-ignored under `design/screens/` (owner 2026-09-17 late) | one-off | 🔨 OpenCode |
-| K5 | Nicer server-side email mask that shows more of a long address; masked on the server everywhere | change | 🔨 OpenCode |
+| K5 | Nicer server-side email mask that shows more of a long address; masked on the server everywhere | change | ✅ merged (my gates on the merged tree: 137 unit, 295 pgTAP, 98 server, 35 E2E) |
 
 Working mode during the owner's walk: the main checkout runs a Vite dev server on http://localhost:5173 with a game server on 8787 against the compose database, so the owner can tweak the UI on `dev` directly. Workers stay in worktrees. Before every merge the orchestrator commits the owner's working-tree edits on `dev` as "Owner UI tweaks" so nothing is overwritten.
 
