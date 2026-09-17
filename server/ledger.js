@@ -49,6 +49,13 @@ export const KNOWN_ERROR_CODES = [
   'too_many_attempts',
   'expired_code',
   'feed_stale',
+  // ticket C9: claim_prize()'s own failure codes (docs/tickets/c9-qr-claim.md decision 4),
+  // deliberately not the bare 'invalid'/'expired' the wire contract shows the client - see
+  // claim_prize's own comment in db/schema.sql for why. 'already_claimed' is shared with
+  // claim_task above - the two contexts never collide since handleFrame and the /api/claim/*
+  // handler each only ever forward the code they can produce.
+  'claim_invalid',
+  'claim_link_expired',
 ];
 
 function mapError(err) {
@@ -138,6 +145,16 @@ export async function settlePlayerRound(playerId, roundId, endPrice) {
   const result = await call('settle_round', roundId, endPrice);
   const { rows } = await getPool().query('select best_streak from public.players where id = $1', [playerId]);
   return { ...result, best_streak: rows[0] ? rows[0].best_streak : null };
+}
+
+/**
+ * Settle a kiosk round and turn settle_kiosk_round's own claim_token (ticket C9 decision 2)
+ * into the absolute claim_url the round_settled frame actually carries - the code itself never
+ * rides on this frame, only the one-time link.
+ */
+export async function settleKioskRound(roundId, endPrice) {
+  const { claim_token: claimToken, ...result } = await call('settle_kiosk_round', roundId, endPrice);
+  return { ...result, claim_url: claimUrlFor(claimToken) };
 }
 
 /**
@@ -246,21 +263,46 @@ export async function listTournaments() {
   return rows;
 }
 
+/** Absolute claim URL from a claim_prize/settle_kiosk_round token (ticket C9 decision 2):
+ * `${PUBLIC_URL}/claim/<token>`. Required only when a token is actually present - a box that
+ * never has a kiosk reach the streak target inside a given run never needs it set. */
+function publicUrl() {
+  const base = process.env.PUBLIC_URL;
+  if (!base) throw new Error('PUBLIC_URL is required to build a claim link');
+  return base;
+}
+
+function claimUrlFor(token) {
+  return token ? `${publicUrl()}/claim/${token}` : null;
+}
+
 /**
- * The kiosk's visitor session as the `kiosk_session` frame shape (ticket C1,
- * docs/layers.md): {coins, streak, state, codes_left}. Sent right after a kiosk `welcome` and
- * mirrored into every kiosk `round_settled`. codes_left (ticket C8) is the live available
+ * The kiosk's visitor session as the `kiosk_session` frame shape (ticket C1, docs/layers.md;
+ * ticket C9 adds streak_target, claim_url and claim_expires_at): {coins, streak, state,
+ * codes_left, streak_target, claim_url, claim_expires_at}. Sent right after a kiosk `welcome`
+ * and mirrored into every kiosk `round_settled`. codes_left (ticket C8) is the live available
  * coupon count, computed here rather than cached, so it is always the number the kiosk would
- * see if it tried to play right now.
+ * see if it tried to play right now. claim_url/claim_expires_at mirror this kiosk's own most
+ * recent still-open reservation (unclaimed, unexpired) so the WON screen survives a reconnect
+ * without losing its QR - null once that reservation is claimed or the sweep releases it.
  */
 export async function kioskSession(kioskId) {
   const { rows } = await getPool().query(
     `select k.session_coins as coins, k.streak, k.session_state as state,
-       (select count(*)::int from public.coupons where status = 'available') as codes_left
-     from public.kiosks k where k.id = $1`,
+       (select count(*)::int from public.coupons where status = 'available') as codes_left,
+       public.get_setting_int('kiosk_streak_target', 5) as streak_target,
+       cl.token as claim_token, cl.expires_at as claim_expires_at
+     from public.kiosks k
+     left join public.claim_links cl on cl.kiosk_id = k.id and cl.claimed_at is null and cl.expired_at is null
+     where k.id = $1
+     order by cl.created_at desc
+     limit 1`,
     [kioskId],
   );
-  return rows[0] || { coins: 1000, streak: 0, state: 'idle', codes_left: 0 };
+  const row = rows[0];
+  if (!row) return { coins: 1000, streak: 0, state: 'idle', codes_left: 0, streak_target: 5 };
+  const { claim_token: claimToken, ...rest } = row;
+  return { ...rest, claim_url: claimUrlFor(claimToken) };
 }
 
 /** Live available-coupon count (ticket C8): the idle sweep polls this every tick to notice
@@ -336,6 +378,52 @@ export async function verifyOtpCode(playerId, email, code) {
   throw err;
 }
 
+/**
+ * Claims a $100 bonus code once (ticket C9, docs/tickets/c9-qr-claim.md decision 4). ip may be
+ * null (Caddy/Cloudflare terminate the connection in production, so it is usually present; a
+ * direct dev connection may have none). email is validated by the caller (server/index.js,
+ * the same EMAIL_RE every other email entry point uses) before this ever runs.
+ */
+export async function claimPrize(token, email, ip) {
+  return call('claim_prize', token, email, ip);
+}
+
+/**
+ * The /claim/<token> page's own read (GET /api/claim/<token>, ticket C9 decision 4): a plain
+ * read, not a SECURITY DEFINER function, since the box's server already connects with full
+ * access and this decides nothing - it only describes what claim_prize would do if called.
+ * `email_masked` reuses the same public.mask_email() the leaderboard already shows the world -
+ * never a raw address, even to someone reopening their own claimed link.
+ */
+export async function getClaimStatus(token) {
+  const { rows } = await getPool().query(
+    `select cl.expires_at, cl.claimed_at, cl.expired_at, public.mask_email(cl.email) as email_masked
+     from public.claim_links cl where cl.token = $1`,
+    [token],
+  );
+  const row = rows[0];
+  if (!row) return { state: 'invalid' };
+  if (row.claimed_at) return { state: 'claimed', email_masked: row.email_masked };
+  if (row.expired_at || row.expires_at <= new Date()) return { state: 'expired' };
+  return { state: 'ready', expires_at: row.expires_at };
+}
+
+/** The 60 s kiosk sweep's own claim-link housekeeping (ticket C9): releases every claim link
+ * whose 24 h window ran out unclaimed, coupon back to 'available'. Returns the count released. */
+export async function releaseExpiredClaims() {
+  return call('release_expired_claims');
+}
+
+/** Mirrors an env-driven tunable into public.settings at boot (ticket C9 decision 1): a running
+ * box can then change it with one SQL update, and a restart with no env var set never clobbers
+ * that manual change - see server/index.js's start(). */
+export async function upsertSetting(key, value) {
+  await getPool().query(
+    'insert into public.settings (key, value) values ($1, $2) on conflict (key) do update set value = excluded.value',
+    [key, value],
+  );
+}
+
 /** players.token_version for a player, or null if that id has no row - a token naming an
  * unknown player is exactly as invalid as a bad signature (server/index.js verifyToken). */
 export async function getTokenVersion(playerId) {
@@ -369,6 +457,7 @@ export async function statusAggregates() {
          where outcome = 'flat' and end_at > now() - interval '24 hours') as flats_24h,
       (select count(*)::int from public.coupons where status = 'available') as coupons_available,
       (select count(*)::int from public.coupons where status = 'claimed') as coupons_claimed,
+      (select count(*)::int from public.coupons where status = 'reserved') as coupons_reserved,
       (select count(*)::int from public.kiosks where status = 'active') as kiosks_active,
       (select count(*)::int from public.devices
          where last_seen_at > now() - interval '24 hours') as devices_24h

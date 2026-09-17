@@ -17,9 +17,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { kioskReset, onKioskSession } from './api/kiosk.js';
 import { onSettled, onStatus } from './api/socket.js';
 
-// Product defaults (docs/layers.md "Product defaults taken"): WIN modal 30 s, EXIT modal 20 s.
-export const KIOSK_WON_MODAL_MS = 30000;
+// Product defaults: the QR screen (ticket C9, replacing the old WIN modal's on-screen code)
+// stays up 20 s, same as the EXIT modal (docs/layers.md "Product defaults taken").
+export const QR_MS = 20000;
 export const KIOSK_BROKE_MODAL_MS = 20000;
+export const DEFAULT_STREAK_TARGET = 5;
 // Idle countdown (ticket C2b): 20 s of no activity shows the overlay, which then counts down
 // 20 s to the flush - 40 s total. The server's own idle sweep (server/kiosk.js IDLE_MS) resets a
 // session after 60 s without a round, so 20 + 20 = 40 s keeps the client's flush ahead of it and
@@ -38,6 +40,10 @@ if (import.meta.env.DEV) {
     if (typeof idleMs === 'number') idleBeforeCountdownMs = idleMs;
     if (typeof cdMs === 'number') countdownMs = cdMs;
   };
+  // ticket C9: a plain assignable property, not a setter argument like idleMs/countdownMs above -
+  // window.__xchief.kioskTiming.QR_MS = 20000 is the exact hook the ticket names, read fresh
+  // every time the QR screen's own countdown effect starts.
+  g.kioskTiming.QR_MS = QR_MS;
 }
 
 const TICK_MS = 250;
@@ -51,7 +57,11 @@ const SERVER_TO_SCREEN = { idle: 'attract', playing: 'playing', won: 'won', brok
 
 export function useKioskFlow({ onReturnToAttract } = {}) {
   const [screen, setScreen] = useState('attract');
-  const [coupon, setCoupon] = useState(null);
+  // ticket C9: the WON screen's QR points at claim_url; the coupon code itself never reaches
+  // the kiosk client at all any more.
+  const [claimUrl, setClaimUrl] = useState(null);
+  const [claimExpiresAt, setClaimExpiresAt] = useState(null);
+  const [streakTarget, setStreakTarget] = useState(DEFAULT_STREAK_TARGET);
   const [reconnecting, setReconnecting] = useState(false);
   const [kioskUnauthorized, setKioskUnauthorized] = useState(false);
   const [abandonSecondsLeft, setAbandonSecondsLeft] = useState(null); // null = overlay hidden
@@ -69,7 +79,8 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
   // effects below can depend on it without re-subscribing.
   const goToAttract = useCallback(() => {
     setScreen('attract');
-    setCoupon(null);
+    setClaimUrl(null);
+    setClaimExpiresAt(null);
     setAbandonSecondsLeft(null);
     setModalSecondsLeft(null);
     lastActivityRef.current = Date.now();
@@ -106,17 +117,28 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
   );
 
   useEffect(
-    () => onKioskSession((session) => applyServerState(session.state, session.codes_left)),
+    () =>
+      onKioskSession((session) => {
+        if (typeof session.streak_target === 'number') setStreakTarget(session.streak_target);
+        if (session.claim_url) {
+          setClaimUrl(session.claim_url);
+          setClaimExpiresAt(session.claim_expires_at ?? null);
+        }
+        applyServerState(session.state, session.codes_left);
+      }),
     [applyServerState],
   );
 
-  // round_settled carries the coupon itself and its own `state` (server/rounds.js): applying
-  // both here means a synthetic round_settled alone is enough to drive WON end-to-end, without
-  // waiting on its kiosk_session mirror.
+  // round_settled carries the claim link itself (never the code, ticket C9) and its own `state`
+  // (server/rounds.js): applying both here means a synthetic round_settled alone is enough to
+  // drive WON end-to-end, without waiting on its kiosk_session mirror.
   useEffect(
     () =>
       onSettled((verdict) => {
-        if (verdict.coupon) setCoupon(verdict.coupon);
+        if (verdict.claim_url) {
+          setClaimUrl(verdict.claim_url);
+          setClaimExpiresAt(verdict.claim_expires_at ?? null);
+        }
         if (verdict.state) applyServerState(verdict.state, verdict.codes_left);
       }),
     [applyServerState],
@@ -171,13 +193,18 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
     return () => clearInterval(id);
   }, [screen, goToAttract]);
 
-  // The WON/EXIT modal's own countdown; either button or zero does the same kiosk_reset.
+  // The QR/EXIT screen's own countdown; either button or zero does the same kiosk_reset.
+  // Activity does not extend it (ticket C9 decision 3) - it never reads lastActivityRef, unlike
+  // the abandon countdown above.
   useEffect(() => {
     if (screen !== 'won' && screen !== 'broke') {
       setModalSecondsLeft(null);
       return undefined;
     }
-    const totalMs = screen === 'won' ? KIOSK_WON_MODAL_MS : KIOSK_BROKE_MODAL_MS;
+    const totalMs =
+      screen === 'won'
+        ? (import.meta.env.DEV && window.__xchief?.kioskTiming?.QR_MS) || QR_MS
+        : KIOSK_BROKE_MODAL_MS;
     const deadline = Date.now() + totalMs;
     setModalSecondsLeft(Math.ceil(totalMs / 1000));
     const id = setInterval(() => {
@@ -194,7 +221,9 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
 
   return {
     screen, // 'attract' | 'playing' | 'won' | 'broke' | 'no_codes'
-    coupon,
+    claimUrl,
+    claimExpiresAt,
+    streakTarget,
     reconnecting,
     kioskUnauthorized,
     abandonSecondsLeft, // null while hidden

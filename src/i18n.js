@@ -225,6 +225,31 @@ const dict = {
     },
     toast: { limit: 'سقف ۶۰ دور در ساعت؛ کمی استراحت کن', coins: '{n}+ سکه' },
     update: { text: 'نسخهٔ جدید بازی آماده‌ست', cta: 'به‌روزرسانی' },
+    // ticket C9: the kiosk WON screen shows both languages together, always, regardless of the
+    // lang toggle - qrTitleFa/qrTitleEn and scannedBtnFa/scannedBtnEn are read directly by key
+    // (never through the active-lang lookup) and so carry the same literal text in both dict.fa
+    // and dict.en.
+    kioskWin: {
+      qrTitleFa: 'تبریک! شما برنده بونوس ۱۰۰ دلاری ایکس‌چیف شدید. برای دریافت هدیه اسکن کنید:',
+      qrTitleEn: 'Congratulations! You won the xChief $100 bonus. Scan to claim your gift:',
+      scannedBtnFa: 'اسکن کردم',
+      scannedBtnEn: "I've scanned it",
+    },
+    claim: {
+      title: 'جایزهٔ ۱۰۰ دلاری xChief شما',
+      step1: 'ایمیلی که می‌خوای جایزه بهش ارسال بشه رو وارد کن',
+      step2: 'کارت هدیه‌ت همین‌جا نمایش داده می‌شه',
+      step3: 'برات ایمیل هم می‌کنیم',
+      emailPlaceholder: 'you@email.com',
+      cta: 'دریافت کد من',
+      cardNote: 'از این صفحه اسکرین‌شات بگیر یا ایمیلت رو چک کن',
+      sentTo: 'ارسال شد به {email}',
+      claimedBy: 'این هدیه توسط {email} دریافت شده است',
+      expired: 'این لینک منقضی شده. از کارکنان غرفه بپرس.',
+      invalid: 'این لینک معتبر نیست.',
+      errInvalidEmail: 'یک ایمیل معتبر وارد کن',
+      errDefault: 'مشکلی پیش اومد. دوباره امتحان کن',
+    },
   },
   en: {
     dir: 'ltr',
@@ -443,6 +468,27 @@ const dict = {
     },
     toast: { limit: '60 rounds per hour max. Take a breather', coins: '+{n} coins' },
     update: { text: 'A new version of the game is ready', cta: 'Update' },
+    kioskWin: {
+      qrTitleFa: 'تبریک! شما برنده بونوس ۱۰۰ دلاری ایکس‌چیف شدید. برای دریافت هدیه اسکن کنید:',
+      qrTitleEn: 'Congratulations! You won the xChief $100 bonus. Scan to claim your gift:',
+      scannedBtnFa: 'اسکن کردم',
+      scannedBtnEn: "I've scanned it",
+    },
+    claim: {
+      title: 'Your xChief $100 bonus',
+      step1: 'Enter the email you want the bonus sent to',
+      step2: 'Your gift card appears here',
+      step3: 'We also email it to you',
+      emailPlaceholder: 'you@email.com',
+      cta: 'Get my code',
+      cardNote: 'Screenshot this or check your inbox',
+      sentTo: 'Sent to {email}',
+      claimedBy: 'This gift was claimed by {email}',
+      expired: 'This link has expired. Ask the booth staff.',
+      invalid: 'This link is not valid.',
+      errInvalidEmail: 'Enter a valid email',
+      errDefault: 'Something went wrong. Try again',
+    },
   },
 };
 

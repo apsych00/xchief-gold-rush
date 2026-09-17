@@ -6,12 +6,15 @@
  * from App.jsx - the play screen itself (idle/running/result) is identical to the web's, just
  * wrapped by ATTRACT/WON/BROKE instead of Home/Leaderboard/Tasks.
  */
+import { useEffect, useRef, useState } from 'react';
+import QRCode from 'qrcode';
 import { Console, TopBar } from './App.jsx';
-import { useKioskFlow } from './useKioskFlow.js';
+import { useLang } from './i18n.js';
+import { QR_MS, useKioskFlow } from './useKioskFlow.js';
 
 // showButton is false for the no_codes screen (ticket C8, docs/layers.md): same attract
 // screen, minus the Play button, while KioskNoCodesModal sits on top of it.
-function KioskAttract({ onTap, showButton = true }) {
+function KioskAttract({ onTap, showButton = true, streakTarget }) {
   return (
     <section className="home kiosk-attract-in">
       <div className="home-question">Predict gold. Win a prize.</div>
@@ -33,7 +36,9 @@ function KioskAttract({ onTap, showButton = true }) {
             Tap to play
           </button>
           <div className="home-rules">
-            Predict whether gold goes up or down in 5 seconds. Five wins in a row wins a $100 code.
+            {/* streakTarget (ticket C9 decision 1) comes from the server's kiosk_session frame,
+                never a number baked into this file - the owner may set it to 10. */}
+            Predict whether gold goes up or down in 5 seconds. {streakTarget} wins in a row wins a $100 code.
           </div>
         </div>
       )}
@@ -41,19 +46,55 @@ function KioskAttract({ onTap, showButton = true }) {
   );
 }
 
-function KioskWonModal({ coupon, secondsLeft, onClaim }) {
+// The QR claim screen (ticket C9, docs/tickets/c9-qr-claim.md), replacing the old WIN modal's
+// on-screen code entirely - the kiosk client never learns the code itself, only claim_url.
+function KioskWonModal({ claimUrl, secondsLeft, onScanned }) {
+  const { t } = useLang();
+  const [qrSrc, setQrSrc] = useState(null);
+  // Fixed once per mount: the countdown bar's own denominator, read from the same DEV-only hook
+  // src/useKioskFlow.js's timer reads, so a test that shrinks QR_MS still sees a bar that reaches
+  // full width exactly when the button's own timer resets the kiosk.
+  const totalSecRef = useRef(
+    Math.ceil(((import.meta.env.DEV && window.__xchief?.kioskTiming?.QR_MS) || QR_MS) / 1000),
+  );
+
+  useEffect(() => {
+    if (!claimUrl) {
+      setQrSrc(null);
+      return undefined;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(claimUrl, { margin: 1, width: 220 }).then((url) => {
+      if (!cancelled) setQrSrc(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [claimUrl]);
+
+  const totalSec = totalSecRef.current;
+  const pct = secondsLeft == null ? 0 : Math.max(0, Math.min(100, ((totalSec - secondsLeft) / totalSec) * 100));
+
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="You won">
-      <div className="modal kiosk-modal">
-        <div className="modal-title">You won!</div>
-        <div className="modal-sub">Get your phone ready - photograph this code</div>
-        <div className="kiosk-code" dir="ltr">
-          {coupon || '----'}
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t('kioskWin.qrTitleEn')}>
+      <div className="modal kiosk-modal kiosk-qr-modal">
+        <div className="modal-title" dir="rtl">
+          {t('kioskWin.qrTitleFa')}
         </div>
-        <div className="modal-sub">Claim within {secondsLeft ?? ''}s</div>
+        <div className="modal-sub">{t('kioskWin.qrTitleEn')}</div>
+        <div className="kiosk-qr-wrap">
+          {qrSrc ? (
+            <img className="kiosk-qr" src={qrSrc} alt="" width={200} height={200} />
+          ) : (
+            <div className="kiosk-qr kiosk-qr-loading" aria-hidden="true" />
+          )}
+        </div>
+        <div className="promo-bar">
+          <div className="promo-bar-fill" style={{ width: `${pct}%` }} />
+        </div>
         <div className="modal-actions">
-          <button type="button" className="btn-primary kiosk-modal-btn" onClick={onClaim}>
-            Claim
+          <button type="button" className="btn-primary kiosk-modal-btn" onClick={onScanned}>
+            {t('kioskWin.scannedBtnFa')} / {t('kioskWin.scannedBtnEn')}
           </button>
         </div>
       </div>
@@ -134,12 +175,18 @@ export default function KioskApp({ state, profile, actions, trackRef }) {
   return (
     <>
       <TopBar profile={profile} />
-      {showAttractScreen && <KioskAttract onTap={flow.startPlaying} showButton={flow.screen === 'attract'} />}
+      {showAttractScreen && (
+        <KioskAttract
+          onTap={flow.startPlaying}
+          showButton={flow.screen === 'attract'}
+          streakTarget={flow.streakTarget}
+        />
+      )}
       {!showAttractScreen && (
         <Console state={state} profile={profile} actions={actions} trackRef={trackRef} />
       )}
       {flow.screen === 'won' && (
-        <KioskWonModal coupon={flow.coupon} secondsLeft={flow.modalSecondsLeft} onClaim={flow.claimOrDone} />
+        <KioskWonModal claimUrl={flow.claimUrl} secondsLeft={flow.modalSecondsLeft} onScanned={flow.claimOrDone} />
       )}
       {flow.screen === 'broke' && (
         <KioskBrokeModal secondsLeft={flow.modalSecondsLeft} onDone={flow.claimOrDone} />

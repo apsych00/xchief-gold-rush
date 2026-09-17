@@ -1827,6 +1827,58 @@ button:focus:not(:focus-visible) {
   animation: gr-blink 1.2s ease-in-out infinite;
 }
 
+/* ---------- kiosk QR claim screen (ticket C9): the WIN modal's own bar/QR, everything else
+   (.modal, .modal-title, .modal-sub, .promo-bar/.promo-bar-fill) reused as-is. ---------- */
+.kiosk-qr-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 14px 0;
+}
+.kiosk-qr {
+  width: 200px;
+  height: 200px;
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+}
+.kiosk-qr-loading {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ---------- claim page (ticket C9): the /claim/<token> screen, otherwise built entirely from
+   .home/.screen-head/.screen-title, .lead-input/.lead-error, .btn-primary and .kiosk-code. ---- */
+.claim-steps {
+  width: 100%;
+  max-width: 320px;
+  margin: 0 0 12px;
+  padding-inline-start: 20px;
+  font: 500 13px/1.6 var(--fa);
+  color: rgba(255, 255, 255, 0.75);
+}
+.claim-steps li {
+  margin-bottom: 4px;
+}
+.claim-home {
+  justify-content: flex-start;
+  gap: 22px;
+  padding-top: 48px;
+}
+.claim-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 320px;
+}
+.claim-form .lead-input {
+  width: 100%;
+}
+.claim-card {
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+}
+
 /* short displays: tighten the result stack so actions never leave the panel */
 @media (max-height: 700px) {
   .pane-result {

@@ -13,6 +13,7 @@ if (!process.env.DATABASE_URL) {
 }
 
 process.env.PLAYER_TOKEN_SECRET ??= 'test-secret';
+process.env.PUBLIC_URL ??= 'http://localhost:5359'; // ticket C9: claim_url is built from this
 
 const { createApp } = await import('../../server/index.js');
 const { LIMITS } = await import('../../server/limits.js');
@@ -98,6 +99,14 @@ function send(ws, frame) {
 
 async function createKiosk(label) {
   const secret = `${label}-secret-0001`;
+  // The secret is deterministic per label, so a prior run against this same --keep'd database
+  // (docs/box-plan.md: the shared, long-lived database this suite runs against) can leave an
+  // earlier active kiosk with an identical plaintext secret behind. verify_kiosk's own query has
+  // no ORDER BY/LIMIT, so two active rows that both satisfy the same bcrypt secret resolve to
+  // whichever one Postgres happens to scan first - not necessarily this test's own fresh row.
+  // Revoking any earlier one first is exactly the guard test/integration-box/server.test.mjs's
+  // own createTestKiosk already applies.
+  await pool.query("update public.kiosks set status = 'revoked' where label = $1 and status = 'active'", [label]);
   const { rows } = await pool.query(
     `insert into public.kiosks (label, secret_hash)
      values ($1, extensions.crypt($2, extensions.gen_salt('bf')))
@@ -149,17 +158,23 @@ test('kiosk claims a coupon on the fifth win, ends, then reset starts a fresh se
       await nextFrame(ws, (frame) => frame.type === 'kiosk_session');
     }
 
-    assert.equal(typeof fifth.coupon, 'string');
-    assert.notEqual(fifth.coupon, '');
+    // ticket C9: the fifth win reserves a coupon and opens a one-time claim link - it never
+    // hands the code itself to the kiosk any more, only the absolute claim_url.
+    assert.equal(typeof fifth.claim_url, 'string');
+    assert.notEqual(fifth.claim_url, '');
     assert.equal(fifth.state, 'won');
     assert.equal(fifth.streak, 0);
+    assert.equal(fifth.coupon, undefined, 'no coupon code ever rides on round_settled any more');
 
-    const couponRows = await pool.query(
-      'select status, claimed_by_kiosk from public.coupons where code = $1',
-      [fifth.coupon],
+    const token = new URL(fifth.claim_url).pathname.split('/').pop();
+    const linkRows = await pool.query(
+      `select c.status, c.claimed_by_kiosk
+       from public.claim_links cl join public.coupons c on c.id = cl.coupon_id
+       where cl.token = $1`,
+      [token],
     );
-    assert.equal(couponRows.rows.length, 1);
-    assert.deepEqual(couponRows.rows[0], { status: 'claimed', claimed_by_kiosk: kiosk.id });
+    assert.equal(linkRows.rows.length, 1);
+    assert.deepEqual(linkRows.rows[0], { status: 'reserved', claimed_by_kiosk: kiosk.id });
 
     send(ws, { type: 'play', dir: 'up', lever: 1 });
     const refused = await nextFrame(ws, (frame) => frame.type === 'error');
@@ -222,7 +237,8 @@ test('an empty coupon pool keeps the fifth-win streak and the kiosk playing', as
 
     assert.equal(fifth.outcome, 'win');
     assert.equal(fifth.coupons_exhausted, true);
-    assert.equal(fifth.coupon, null);
+    assert.equal(fifth.claim_url, null, 'nothing to reserve: no claim link is opened');
+    assert.equal(fifth.coupon, undefined);
     assert.equal(fifth.state, 'playing');
     assert.equal(fifth.streak, 5);
   } finally {

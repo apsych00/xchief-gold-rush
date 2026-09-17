@@ -210,14 +210,48 @@ create table public.task_claims (
 );
 
 -- The $100 codes. Claimed atomically, once each.
+-- 'reserved' (ticket C9, docs/tickets/c9-qr-claim.md decision 2): a coupon a 5th win just
+-- earned sits here from settle_kiosk_round until claim_prize() actually claims it (or the
+-- sweep releases it back to 'available' after its claim_links row expires unclaimed) -
+-- claimed_by_kiosk and claimed_at are set to the reserving kiosk at reservation time, but
+-- claimed_at is only ever really "claimed" once claim_prize() overwrites it.
 create table public.coupons (
   id uuid primary key default gen_random_uuid(),
   code text not null unique,
-  status text not null default 'available' check (status in ('available', 'claimed')),
+  status text not null default 'available' check (status in ('available', 'reserved', 'claimed')),
   claimed_by_kiosk uuid references public.kiosks (id),
   claimed_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+-- Server-owned tunables a running box can change with one SQL update, no restart (ticket C9
+-- decision 1): kiosk_streak_target is mirrored from the KIOSK_STREAK_TARGET env var at boot
+-- when that var is set (server/index.js), then lives here until someone updates it directly.
+create table public.settings (
+  key text primary key,
+  value text not null
+);
+
+-- One-time QR claim links for a kiosk's $100 prize coupon (ticket C9, docs/tickets/c9-qr-claim.md
+-- decision 2). A coupon is reserved, not claimed, the moment a visitor's Nth win earns it;
+-- claim_prize() is what actually claims it, once, when the visitor enters an email on the
+-- /claim/<token> page the QR points at. expired_at is set by the 60 s sweep (server/kiosk.js)
+-- once a reserved coupon's link goes 24 h unclaimed, which releases the coupon back to
+-- 'available' - the link row itself stays, kept for the audit rather than deleted.
+create table public.claim_links (
+  token text primary key,
+  coupon_id uuid not null unique references public.coupons (id),
+  kiosk_id uuid not null references public.kiosks (id),
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  email text,
+  claimed_at timestamptz,
+  claimed_ip inet,
+  expired_at timestamptz
+);
+
+create index claim_links_expiry on public.claim_links (expires_at)
+  where claimed_at is null and expired_at is null;
 
 -- Dev-only OTP capture. When the OTP sender has no ELASTIC_API_KEY configured, it
 -- stores the login code here instead of sending mail, so the login flow can be
@@ -292,6 +326,8 @@ alter table public.otp_codes enable row level security;
 alter table public.devices enable row level security;
 alter table public.tournaments enable row level security;
 alter table public.tournament_scores enable row level security;
+alter table public.settings enable row level security;
+alter table public.claim_links enable row level security;
 
 create policy players_select_own on public.players
   for select to authenticated using (id = auth.uid());
@@ -305,9 +341,11 @@ create policy task_claims_select_own on public.task_claims
 create policy tasks_select_all on public.tasks
   for select to anon, authenticated using (true);
 
--- kiosks, coupons, dev_otps, otp_codes, devices, tournaments and tournament_scores deliberately
--- have NO client policy: service-role tables (devices per ticket B5 decision 5 - "nothing
--- identifies a device to other players"; a player's own device_id rides on get_me() instead).
+-- kiosks, coupons, dev_otps, otp_codes, devices, tournaments, tournament_scores, settings and
+-- claim_links deliberately have NO client policy: service-role tables (devices per ticket B5
+-- decision 5 - "nothing identifies a device to other players"; a player's own device_id rides
+-- on get_me() instead). claim_links is read/written only through claim_prize() (ticket C9) -
+-- a visitor's claim proof is the token itself, not a client role.
 -- The public top-10 leaderboard and the tournament header are exposed through the SECURITY
 -- DEFINER functions public.leaderboard() and public.current_tournament() below, not a view:
 -- Supabase's linter flags SECURITY DEFINER views, and a function keeps the same access model
@@ -336,6 +374,13 @@ $$;
 create function public.stake_for(p_lever int)
 returns int language sql immutable as $$
   select 100 * p_lever;
+$$;
+
+-- A tunable in public.settings (ticket C9 decision 1), or p_default when no row for p_key
+-- exists yet - a running box can change one with a plain SQL update, no restart, no migration.
+create function public.get_setting_int(p_key text, p_default int)
+returns int language sql stable as $$
+  select coalesce((select value::int from public.settings where key = p_key), p_default);
 $$;
 
 -- ---------------------------------------------------------------------------- tournaments --
@@ -696,12 +741,15 @@ begin
   return json_build_object('round_id', v_id, 'start_price', p_start_price);
 end $$;
 
--- Applies the same economy as settle_round to the kiosk's session_coins, then five
--- server-validated wins in a row claims one coupon, atomically, and resets the streak. An
--- empty pool keeps the streak and reports exhausted instead of silently resetting
--- (docs/box-plan.md): the kiosk tells the staff, and the session keeps playing. A coupon
--- actually claimed ends the session ('won'); otherwise dropping under 100 coins ends it
--- ('broke') - both are terminal until the next kiosk_reset or idle timeout.
+-- Applies the same economy as settle_round to the kiosk's session_coins, then N (public.settings
+-- 'kiosk_streak_target', ticket C9 decision 1) server-validated wins in a row RESERVES one
+-- coupon, atomically, opens its one-time claim_links row, and resets the streak - the code
+-- itself is never in this function's own result (decision 2: claim_prize() is the only place
+-- that ever reads a coupon's code back out). An empty pool keeps the streak and reports
+-- exhausted instead of silently resetting (docs/box-plan.md): the kiosk tells the staff, and the
+-- session keeps playing. A coupon actually reserved ends the session ('won'); otherwise dropping
+-- under 100 coins ends it ('broke') - both are terminal until the next kiosk_reset or idle
+-- timeout.
 create function public.settle_kiosk_round(p_round uuid, p_end_price numeric)
 returns json language plpgsql security definer set search_path = public as $$
 declare
@@ -712,7 +760,10 @@ declare
   v_delta int := 0;
   v_coins int;
   v_streak int;
-  v_code text;
+  v_target int;
+  v_coupon_id uuid;
+  v_token text;
+  v_claim_expires_at timestamptz;
   v_exhausted boolean := false;
   v_state text;
 begin
@@ -740,18 +791,35 @@ begin
     v_delta := round(r.stake * v_mult)::int;
     v_coins := k.session_coins + v_delta;
     v_streak := k.streak + 1;
-    if v_streak >= 5 then
-      update public.coupons set status = 'claimed', claimed_by_kiosk = k.id, claimed_at = now()
+    v_target := public.get_setting_int('kiosk_streak_target', 5);
+    if v_streak >= v_target then
+      update public.coupons set status = 'reserved', claimed_by_kiosk = k.id
       where id = (
         select id from public.coupons where status = 'available'
         order by created_at limit 1 for update skip locked
       )
-      returning code into v_code;
-      if v_code is null then
+      returning id into v_coupon_id;
+      if v_coupon_id is null then
         -- pool empty: keep the streak so the visitor is not robbed; the kiosk tells the staff
         v_exhausted := true;
-        raise warning 'coupons_exhausted: kiosk % reached a 5-win streak with no codes left', k.id;
+        raise warning 'coupons_exhausted: kiosk % reached a %-win streak with no codes left', k.id, v_target;
       else
+        -- 32 base64url characters from 24 random bytes (ticket C9 decision 2): 24 bytes encodes
+        -- to exactly 32 base64 characters with no padding, so translate() alone (+/ -> -_) is
+        -- enough - there is never a trailing '=' to strip.
+        v_token := translate(encode(extensions.gen_random_bytes(24), 'base64'), '+/', '-_');
+        v_claim_expires_at := now() + interval '24 hours';
+        -- coupon_id is unique on this table (one row is this coupon's whole claim history, ticket
+        -- C9 decision 2): a coupon the sweep already released once carries an old, expired row
+        -- here already, so a later win on the very same coupon reopens that same row for its new
+        -- cycle instead of colliding with it - the prior cycle's own email/claimed_at/expired_at
+        -- are cleared, since they belong to the visitor who let the earlier link lapse, not this
+        -- one.
+        insert into public.claim_links (token, coupon_id, kiosk_id, expires_at)
+        values (v_token, v_coupon_id, k.id, v_claim_expires_at)
+        on conflict (coupon_id) do update set
+          token = excluded.token, kiosk_id = excluded.kiosk_id, created_at = now(),
+          expires_at = excluded.expires_at, email = null, claimed_at = null, claimed_ip = null, expired_at = null;
         v_streak := 0;
       end if;
     end if;
@@ -761,7 +829,7 @@ begin
     v_streak := 0;
   end if;
 
-  if v_code is not null then
+  if v_token is not null then
     v_state := 'won';
   elsif v_coins < 100 then
     v_state := 'broke';
@@ -775,8 +843,60 @@ begin
   where id = p_round;
 
   return json_build_object('outcome', v_outcome, 'delta', v_delta, 'mult', v_mult, 'coins', v_coins, 'streak', v_streak,
-    'coupon', v_code, 'coupons_exhausted', v_exhausted, 'state', v_state,
+    'claim_token', v_token, 'claim_expires_at', v_claim_expires_at, 'coupons_exhausted', v_exhausted, 'state', v_state,
     'start_price', r.start_price, 'end_price', p_end_price);
+end $$;
+
+-- ------------------------------------------------------------------------ prize claim links --
+
+-- One-time claim (ticket C9, docs/tickets/c9-qr-claim.md decision 4). Called directly with
+-- call() like verify_kiosk: the token itself is the caller's proof, there is no player session
+-- to set app.player_id for. p_email is validated by the caller (server/index.js, the same
+-- EMAIL_RE every other email entry point uses) before this ever runs.
+create function public.claim_prize(p_token text, p_email text, p_ip inet)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  cl public.claim_links%rowtype;
+  v_code text;
+begin
+  -- Distinct, unambiguous exception text (not the bare 'invalid'/'expired' the wire contract
+  -- shows the client): mapError (server/ledger.js) matches by substring, and a raw Postgres
+  -- error can legitimately contain the word "invalid" (e.g. "invalid input syntax") - D9's own
+  -- regression (docs/reports/redteam.md) is exactly a raw SQLSTATE leaking past that matcher.
+  -- server/index.js translates these to the ticket's public state names.
+  select * into cl from public.claim_links where token = p_token for update;
+  if not found then raise exception 'claim_invalid'; end if;
+  if cl.claimed_at is not null then raise exception 'already_claimed'; end if;
+  if cl.expired_at is not null or cl.expires_at <= now() then raise exception 'claim_link_expired'; end if;
+
+  update public.claim_links set claimed_at = now(), email = p_email, claimed_ip = p_ip
+  where token = p_token;
+
+  update public.coupons set status = 'claimed', claimed_at = now()
+  where id = cl.coupon_id
+  returning code into v_code;
+
+  return json_build_object('code', v_code);
+end $$;
+
+-- The 60 s kiosk sweep (server/kiosk.js) calls this every tick alongside its idle-session reset:
+-- any claim link whose 24 h window ran out with nobody claiming it releases its coupon back to
+-- 'available'. The link row itself is kept, expired_at marking it for the audit (ticket C9).
+create function public.release_expired_claims()
+returns int language plpgsql security definer set search_path = public as $$
+declare
+  v_count int;
+begin
+  with expired as (
+    update public.claim_links
+    set expired_at = now()
+    where claimed_at is null and expired_at is null and expires_at <= now()
+    returning coupon_id
+  )
+  update public.coupons set status = 'available'
+  where id in (select coupon_id from expired);
+  get diagnostics v_count = row_count;
+  return v_count;
 end $$;
 
 -- --------------------------------------------------------------------------- tasks --
@@ -1040,13 +1160,16 @@ end $$;
 -- No client writes, anywhere.
 revoke insert, update, delete, truncate, references, trigger
   on public.players, public.rounds, public.tasks, public.task_claims, public.kiosks, public.coupons,
-     public.tournaments, public.tournament_scores
+     public.tournaments, public.tournament_scores, public.settings, public.claim_links
   from anon, authenticated;
 
--- kiosks, coupons, tournaments and tournament_scores: not even readable by clients. Service
--- role only - the tournament header and the board reach the client through the SECURITY
--- DEFINER functions below, never a direct table read.
-revoke select on public.kiosks, public.coupons, public.tournaments, public.tournament_scores from anon, authenticated;
+-- kiosks, coupons, tournaments, tournament_scores, settings and claim_links: not even readable
+-- by clients. Service role only - the tournament header and the board reach the client through
+-- the SECURITY DEFINER functions below, never a direct table read; a claim link's own state
+-- reaches the /claim/<token> page through GET /api/claim/<token> (server/index.js), never a
+-- direct table read either.
+revoke select on public.kiosks, public.coupons, public.tournaments, public.tournament_scores,
+  public.settings, public.claim_links from anon, authenticated;
 
 -- dev_otps and otp_codes: service role only.
 revoke all on public.dev_otps, public.otp_codes from public, anon, authenticated;
@@ -1075,5 +1198,8 @@ revoke execute on function
   public.settle_kiosk_round(uuid, numeric),
   public.request_otp_code(uuid, text),
   public.verify_otp_code(uuid, text, text),
-  public.revoke_player_sessions(uuid)
+  public.revoke_player_sessions(uuid),
+  public.claim_prize(text, text, inet),
+  public.release_expired_claims(),
+  public.get_setting_int(text, int)
 from public, anon, authenticated;

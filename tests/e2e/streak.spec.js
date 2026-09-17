@@ -43,7 +43,7 @@ function resetKioskSession() {
     });
   });
 }
-const COUPON = 'B14-EXACT-COUPON-1234';
+const CLAIM_URL = 'http://localhost:5359/claim/b14-exact-claim-token-1234';
 
 function settledFrame(streak, extra = {}) {
   return {
@@ -54,7 +54,8 @@ function settledFrame(streak, extra = {}) {
     mult: streak >= 3 ? 3 : streak === 2 ? 2 : 1.5,
     coins: 1000 + streak * 100,
     streak,
-    coupon: null,
+    claim_url: null,
+    claim_expires_at: null,
     coupons_exhausted: false,
     state: 'playing',
     start_price: 2000,
@@ -87,7 +88,7 @@ test.describe.serial('five-win kiosk streak', () => {
     await resetKioskSession();
   });
 
-  test('shows the exact coupon on one line and Claim resets to ATTRACT', async ({ page }) => {
+  test('shows the QR claim screen with no code, and the button resets to ATTRACT', async ({ page }) => {
     await page.goto(KIOSK_URL);
     await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
     await page.locator('.btn-start').click();
@@ -98,29 +99,38 @@ test.describe.serial('five-win kiosk streak', () => {
       await expectDisplayedStreak(page, streak);
     }
 
-    await injectSettled(page, 5, { coupon: COUPON, state: 'won' });
-    await expect(page.getByText('You won!')).toBeVisible({ timeout: 5000 });
-    const code = page.getByText(COUPON, { exact: true });
-    await expect(code).toBeVisible();
-    await expect(code).toHaveText(COUPON);
+    await injectSettled(page, 0, {
+      claim_url: CLAIM_URL,
+      claim_expires_at: new Date(Date.now() + 86400000).toISOString(),
+      state: 'won',
+    });
+    await expect(
+      page.getByText('Congratulations! You won the xChief $100 bonus. Scan to claim your gift:'),
+    ).toBeVisible({ timeout: 5000 });
+    const qr = page.locator('.kiosk-qr');
+    await expect(qr).toBeVisible();
     await expect
-      .poll(() => code.evaluate((element) => element.getClientRects().length))
+      .poll(() => qr.evaluate((element) => element.getClientRects().length))
       .toBe(1);
-    await expect(page.getByRole('button', { name: 'Claim' })).toBeVisible();
+    await expect(page.getByRole('button', { name: "I've scanned it" })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Claim' }).click();
+    await page.getByRole('button', { name: "I've scanned it" }).click();
     await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
   });
 
-  test('does not hide the coupon modal before the 25-second contract window', async ({ page }) => {
+  test('does not hide the QR screen before its own 20-second contract window', async ({ page }) => {
     await page.goto(KIOSK_URL);
     await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
     await page.locator('.btn-start').click();
     await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 10000 });
 
-    await injectSettled(page, 5, { coupon: COUPON, state: 'won' });
-    await expect(page.getByText(COUPON, { exact: true })).toBeVisible({ timeout: 5000 });
-    await page.waitForTimeout(25000);
-    await expect(page.getByText(COUPON, { exact: true })).toBeVisible();
+    await injectSettled(page, 0, {
+      claim_url: CLAIM_URL,
+      claim_expires_at: new Date(Date.now() + 86400000).toISOString(),
+      state: 'won',
+    });
+    await expect(page.locator('.kiosk-qr')).toBeVisible({ timeout: 5000 });
+    await page.waitForTimeout(15000);
+    await expect(page.locator('.kiosk-qr')).toBeVisible();
   });
 });
