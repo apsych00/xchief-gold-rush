@@ -11,7 +11,7 @@ import { IS_KIOSK } from './api/kiosk.js';
 import KioskApp from './KioskApp.jsx';
 import { enabled as apiEnabled } from './api/client.js';
 import OtpModal, { IdentityBar } from './Identity.jsx';
-import Profile, { initialsOf } from './Profile.jsx';
+import Profile, { UserIcon } from './Profile.jsx';
 
 import { AdZone } from './ads.js';
 import { LEVERS, maxAffordableLever, stakeFor, useGame } from './useGame.js';
@@ -127,7 +127,6 @@ function CoinDot() {
 
 export function TopBar({ profile, actions, active }) {
   const { t, lang, setLang } = useLang();
-  const signup = readSignup();
   const level = levelFor(profile.record);
   return (
     <header className="topbar">
@@ -161,9 +160,7 @@ export function TopBar({ profile, actions, active }) {
             aria-label={t('profile.open')}
             aria-current={active ? 'page' : undefined}
           >
-            <span className="avatar-initials" aria-hidden="true">
-              {initialsOf(signup?.name)}
-            </span>
+            <UserIcon size={24} />
             {profile.streak > 0 && (
               <span className="avatar-flame" aria-hidden="true">
                 🔥
