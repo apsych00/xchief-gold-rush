@@ -1,22 +1,30 @@
-import { useState } from 'react';
-import { COMBO_MAX, comboMult, ECON, LEVELS, levelFor, nextLevel, SHARE_URL } from './config.js';
+import { COMBO_MAX, comboMult, LEVELS, levelFor, nextLevel, SHARE_URL } from './config.js';
 import { num, useLang } from './i18n.js';
 import { readLead, readSignup } from './leads.js';
 
 const BADGES = ['high_roller', 'hot_streak', 'comeback'];
 const BADGE_ICON = { high_roller: '◆', hot_streak: '🔥', comeback: '↺' };
 
-/** Two-letter initials for the avatar, from the signup name or "You". */
-export function initialsOf(name) {
-  const parts = String(name || '')
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (!parts.length) return 'Y';
-  return parts
-    .slice(0, 2)
-    .map((p) => p[0].toUpperCase())
-    .join('');
+/** The avatar glyph (ticket U1): one icon for the top bar and the profile disc. currentColor
+ * lets each host pick its own stroke - the top bar's --gold, the gold profile disc's own dark
+ * ink - with no new colour token and no initials left to compute. */
+export function UserIcon({ size = 24 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
 }
 
 function ProgressRing({ pct, size = 84, stroke = 7, children }) {
@@ -62,7 +70,6 @@ export default function Profile({ profile, actions, onToast }) {
   const pct = next ? (profile.record - from) / (to - from) : 1;
   const winRate = profile.rounds ? Math.round((profile.wins / profile.rounds) * 100) : 0;
   const name = signup?.name || t('profile.guest');
-  const [confirmReset, setConfirmReset] = useState(false);
 
   const share = () => {
     const text = t('profile.shareText', {
@@ -83,7 +90,7 @@ export default function Profile({ profile, actions, onToast }) {
       <div className="pf-head">
         <ProgressRing pct={pct}>
           <div className="pf-avatar" aria-hidden="true">
-            {initialsOf(signup?.name)}
+            <UserIcon size={48} />
           </div>
         </ProgressRing>
         <div className="pf-id">
@@ -194,24 +201,8 @@ export default function Profile({ profile, actions, onToast }) {
         <button type="button" className="btn-primary pf-btn" onClick={share}>
           {t('profile.share')}
         </button>
-        {confirmReset ? (
-          <button
-            type="button"
-            className="btn-ghost pf-btn pf-danger"
-            onClick={() => {
-              actions.resetProfile();
-              setConfirmReset(false);
-            }}
-          >
-            {t('profile.resetConfirm')}
-          </button>
-        ) : (
-          <button type="button" className="btn-ghost pf-btn" onClick={() => setConfirmReset(true)}>
-            {t('profile.reset')}
-          </button>
-        )}
       </div>
-      <div className="pf-foot">{t('profile.foot', { n: num(ECON.startCoins, lang) })}</div>
+      <div className="pf-foot">{t('profile.foot')}</div>
     </section>
   );
 }

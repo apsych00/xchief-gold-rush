@@ -16,6 +16,24 @@
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
+  /* Ticket U1: every scrollable region (leaderboard pages, task lists, modals) wears the app's
+     own scrollbar rather than the OS default - one global rule set, no new colour tokens. */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 html,
