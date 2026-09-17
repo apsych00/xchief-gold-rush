@@ -54,6 +54,11 @@ services:
       - ./dist:/srv/app:ro
       # The static operator page (ticket D1, ops/index.html). Also live-mounted.
       - ./ops:/srv/ops:ro
+      # The ad banner list (ticket B11, ads/banners.json) and its images. Also live-mounted
+      # so it can be edited without a rebuild; the Caddyfile's handle_path /ads* claims the
+      # whole path ahead of the SPA handle, so the images must live here too (duplicated from
+      # public/ads/, which only exists for the dev server and dist/ parity) or they 404.
+      - ./ads:/srv/ads:ro
       - caddy_data:/data
       - caddy_config:/config
 

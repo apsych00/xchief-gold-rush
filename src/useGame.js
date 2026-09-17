@@ -14,6 +14,21 @@ const TICK_MS = 60;
 const MAX_HISTORY = 90;
 const HOUR = 60 * 60 * 1000;
 
+// The web tour flag (ticket B10): an ISO timestamp set the moment the placeholder tour is
+// dismissed, its own localStorage key rather than a field on the profile object - it is not a
+// reward and has no server side at all (docs/tasks-marketing-lead.md A5). Kiosk mode never
+// reads or writes this key (docs/layers.md: kiosk never touches localStorage); its own once-
+// per-boot intro flag lives in src/useKioskFlow.js instead.
+const TOUR_SEEN_KEY = 'xchief.tour_seen';
+
+function readTourSeen() {
+  try {
+    return localStorage.getItem(TOUR_SEEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
 const OTHERS = [
   { name: 'GoldHunter', s: 3600 },
   { name: 'Alpha', s: 3200 },
@@ -56,6 +71,9 @@ const initialGame = {
 export function useGame() {
   const [state, setState] = useState(initialGame);
   const [profile, setProfile] = useState(loadProfile);
+  // IS_KIOSK is never true here for the web build, only defence in depth: the kiosk never reads
+  // or writes this key even if this hook is ever reached from a kiosk context.
+  const [tourSeen, setTourSeen] = useState(() => (IS_KIOSK ? 'kiosk' : readTourSeen()));
   const timer = useRef(null);
   const settlingTimer = useRef(null);
   const phaseRef = useRef(state.phase);
@@ -544,6 +562,19 @@ export function useGame() {
 
   const signOut = useCallback(() => sessionSignOut(), []);
 
+  /** Dismisses the web tour placeholder (ticket B10): stamps `xchief.tour_seen` with the
+   * dismissal time and never shows it again on this device. Never called from kiosk mode. */
+  const markTourSeen = useCallback(() => {
+    if (IS_KIOSK) return;
+    const iso = new Date().toISOString();
+    try {
+      localStorage.setItem(TOUR_SEEN_KEY, iso);
+    } catch {
+      /* storage unavailable: the tour will simply show again next load */
+    }
+    setTourSeen(iso);
+  }, []);
+
   /** Record that an automatic prompt was shown so it is never repeated. */
   const markPrompt = useCallback((id) => {
     const p = profileRef.current;
@@ -617,5 +648,5 @@ export function useGame() {
     signOut,
   };
 
-  return { state, profile, actions, trackRef, isKiosk: IS_KIOSK };
+  return { state, profile, actions, trackRef, isKiosk: IS_KIOSK, tourSeen, markTourSeen };
 }

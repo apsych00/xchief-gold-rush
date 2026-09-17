@@ -42,6 +42,12 @@ if (import.meta.env.DEV) {
 
 const TICK_MS = 250;
 
+// Ticket B10: the kiosk intro shows once per boot, never through localStorage (the kiosk is
+// anonymous by design, docs/layers.md). A module-level flag rather than component state so it
+// survives every ATTRACT -> playing -> ATTRACT cycle for as long as the page stays loaded, and
+// resets only on an actual reload - exactly what "per boot" means here.
+let introShownThisBoot = false;
+
 // Activity is anything a present human does anywhere on the page (ticket C2b): taps, clicks,
 // pointer moves, keys, touches. Passive listeners only - the game must never feel laggy because
 // the idle tracker is attached.
@@ -55,6 +61,7 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
   const [reconnecting, setReconnecting] = useState(false);
   const [abandonSecondsLeft, setAbandonSecondsLeft] = useState(null); // null = overlay hidden
   const [modalSecondsLeft, setModalSecondsLeft] = useState(null); // WON/BROKE countdown
+  const [showIntro, setShowIntro] = useState(false); // the once-per-boot placeholder (ticket B10)
 
   const screenRef = useRef(screen);
   screenRef.current = screen;
@@ -196,8 +203,23 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
     reconnecting,
     abandonSecondsLeft, // null while hidden
     modalSecondsLeft,
-    /** Tap-to-play on ATTRACT: purely local - the session itself only starts on the first `play`. */
+    showIntro, // ticket B10: the placeholder intro, shown between ATTRACT and the first play
+    /** Tap-to-play on ATTRACT: shows the once-per-boot intro first (ticket B10) instead of
+     * starting PLAYING directly; dismissIntro below is what actually starts it. Every later tap
+     * this boot skips straight to PLAYING. */
     startPlaying: () => {
+      if (!introShownThisBoot) {
+        setShowIntro(true);
+        return;
+      }
+      setScreen('playing');
+      lastActivityRef.current = Date.now();
+    },
+    /** The intro's single button. Counts as activity (docs/layers.md: "must not interfere with
+     * the idle countdown") since it is the moment PLAYING actually starts. */
+    dismissIntro: () => {
+      introShownThisBoot = true;
+      setShowIntro(false);
       setScreen('playing');
       lastActivityRef.current = Date.now();
     },

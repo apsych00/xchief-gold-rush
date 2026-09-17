@@ -13,6 +13,8 @@ import fs from 'node:fs';
 import { WebSocket } from 'ws';
 import pg from 'pg';
 
+import { dismissFirstVisit } from './first-visit.js';
+
 function readEnv() {
   const out = {};
   const text = fs.readFileSync(new URL('../../.env', import.meta.url), 'utf8');
@@ -23,7 +25,10 @@ function readEnv() {
   return out;
 }
 const ENV = readEnv();
-const GAME_WS = ENV.VITE_GAME_WS;
+// Overridable from the environment (same pattern as DATABASE_URL below, and as
+// tests/e2e/kiosk.spec.js already does) so the suite can target a dev server on a non-default
+// port when 8787 is taken by another worktree's stack; default stays exactly as .env has it.
+const GAME_WS = process.env.VITE_GAME_WS || ENV.VITE_GAME_WS;
 
 // Read the socket's player token off the page's dev-only hook the way the app itself holds it
 // (src/api/socket.js sets window.__xchief.token once `welcome` lands).
@@ -94,6 +99,10 @@ async function screenCoins(page) {
 
 async function startGame(page) {
   await page.goto('/');
+  // Web only: the tour placeholder (ticket B10) mounts as soon as Home does, before any tap, so
+  // it must be dismissed before .btn-start is even clickable - unlike the kiosk flows below,
+  // where the intro only appears as a result of the attract tap itself.
+  await dismissFirstVisit(page);
   await page.locator('.btn-start').click();
   // The direction buttons stay disabled until a live price is in.
   await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
@@ -194,6 +203,7 @@ test.describe('player-visible promises', () => {
   test('3. kiosk mode plays rounds with a verdict and never shows an email prompt', async ({ page }) => {
     await page.goto('/?k=dev-kiosk-secret-0001');
     await page.locator('.btn-start').click();
+    await dismissFirstVisit(page);
     await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
 
     // The email prompt is only observable once a win has happened, so play until
@@ -231,6 +241,7 @@ test.describe('player-visible promises', () => {
     // screen (App.jsx renders Nav only outside the 'game' screen) - see startGame() above for
     // the flow the other tests use instead.
     await page.goto('/');
+    await dismissFirstVisit(page);
     await expect
       .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
         message: 'window.__xchief.mode must be "server" - the client is not wired to the game socket',

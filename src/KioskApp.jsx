@@ -112,6 +112,24 @@ function KioskNoCodesModal() {
   );
 }
 
+// Ticket B10: a placeholder for the real kiosk intro (A6), shown once per boot between ATTRACT
+// and the first play. Reuses the same .modal-backdrop/.modal vocabulary as the web tour
+// placeholder in App.jsx.
+function KioskIntroModal({ onDone }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Welcome to Gold Rush">
+      <div className="modal kiosk-modal">
+        <div className="modal-title">Welcome to Gold Rush</div>
+        <div className="modal-actions">
+          <button type="button" className="btn-primary kiosk-modal-btn" onClick={onDone}>
+            Got it
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function KioskReconnecting() {
   return (
     <div className="modal-backdrop" role="status" aria-live="assertive">
@@ -143,6 +161,7 @@ export default function KioskApp({ state, profile, actions, trackRef }) {
       {flow.abandonSecondsLeft !== null && (
         <KioskAbandonOverlay secondsLeft={flow.abandonSecondsLeft} onTap={flow.cancelAbandon} />
       )}
+      {flow.showIntro && <KioskIntroModal onDone={flow.dismissIntro} />}
       {flow.reconnecting && <KioskReconnecting />}
     </>
   );

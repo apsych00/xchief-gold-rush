@@ -17,6 +17,8 @@ import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import { WebSocket } from 'ws';
 
+import { dismissFirstVisit } from './first-visit.js';
+
 const KIOSK_SECRET = 'dev-kiosk-secret-0001';
 const KIOSK_URL = `/?k=${KIOSK_SECRET}`;
 
@@ -97,6 +99,7 @@ async function tapToPlay(page) {
     .toBe('server');
   await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
   await page.locator('.btn-start').click();
+  await dismissFirstVisit(page);
   await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
 }
 
@@ -262,6 +265,7 @@ test.describe.serial('kiosk visitor flow', () => {
       await expect(page.getByText('All the prizes are gone')).toBeHidden({ timeout: 15000 });
       await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 15000 });
       await page.locator('.btn-start').click();
+      await dismissFirstVisit(page);
       await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
     } finally {
       if (availableBefore && availableBefore.length) {
