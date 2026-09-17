@@ -12,15 +12,15 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 | L1 game on the box | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 7/7 | 0 | complete, load-tested (100 sockets, p95 settle 5024 ms), rehearsed through compose + Caddy |
 | L1.5 client experience | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 15/19 | C9 QR claim 🔨, C11 tours ⏳, C4b animation ⏳, Q1 rest 🟡 | booth and web flows built and verified end to end; red team: every loophole fixed (C10) |
 | L2 hardening | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 7/18 | S1, S3, S5, S6, S8, S10, S11, S12, S14, S15 are M2 scope creep | S2 rate limits and S18 safe mode merged; production numbers under review with the owner |
-| MKT Part B | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 6/16 | B6+B7+B9 🔨, B10+B11 🔍, B2+B3 📋, B8 📋, B12 ⏳, B13 ⏳ | B1, B4, B5, B14, B15 (build), B16 done |
+| MKT Part B | 🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜ 8/16 | B6+B7+B9 🔨, B2+B3 🔨, B8 📋, B12 ⏳, B13 ⏳ | B1, B4, B5, B14, B15 (build), B16 done |
 | OPS | 🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜ 2/4 | D3 run on the box (M2), T1 Telegram bot 📋 (M4) | deploy scripts built; first real run happens on the box |
 | FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 
-**Demo milestone (M1):** 22 of 31 tickets done. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
+**Demo milestone (M1):** 24 of 31 tickets done. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
 
 ### Queue, in the exact order it is picked up
 
-1. 🔍 B10+B11 tour flag and ad banners: my full E2E run, then merge.
+1. ✅ B10+B11 merged.
 2. ✅ B15 merged (clean boot verified).
 3. 🔨 C9 QR claim flow (running) and 🔨 B6+B7+B9 rewards (running): verify and merge as they land.
 4. ✅ S18 safe mode merged.
@@ -123,8 +123,8 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | B7 | MKT | Reward: redirect and return (Trustpilot, YouTube, Telegram), 5 s window | | 📋 ready | in the B6 ticket; lenient until B13 | after B5 |
 | B8 | MKT | Reward: Instagram, bound to an OAuth-verified Instagram account once per account, device and email (Instagram exposes no follow check to third parties); env-driven, fake for tests, live the day the app id and secret arrive | | 📋 ready | ticket `docs/tickets/b8-instagram.md`; needs an Instagram app from the owner | after B6 |
 | B9 | MKT | Reward: email verified, released by the server on OTP success | | 📋 ready | in the B6 ticket; closes G1 | after B5 |
-| B10 | MKT | Tour-seen flag per device (web) and per boot (kiosk) | Sonnet (cbx) | 🔍 verifying | worker reports lint, unit, build, E2E 2/2 green; full suite running on my side | merge |
-| B11 | MKT | Ad banner list served to the client | Sonnet (cbx) | 🔍 verifying | `ads/banners.json`, `<AdZone/>`, Caddy `handle_path /ads*`; with B10 | merge |
+| B10 | MKT | Tour-seen flag per device (web) and per boot (kiosk) | Sonnet (cbx) | ✅ done | tour placeholder (web, localStorage) and kiosk intro (once per boot); shared `dismissFirstVisit` E2E helper; 19 E2E on my merged run; merged | C11 real tour content |
+| B11 | MKT | Ad banner list served to the client | Sonnet (cbx) | ✅ done | `ads/banners.json` + `public/ads/`, `<AdZone/>` bottom 40 %% of the leaderboard, Caddy `handle_path /ads*`; merged | marketing drops real banners into `ads/` |
 | B12 | MKT | Curate the YouTube list (under one minute each) | | ⏳ queued | content task | |
 | B13 | MKT | Hardening pass on rewards and device identity | | ⏳ queued | after B5-B9 | last in M1 |
 | A1-A8 | MKT | Screens and copy: ad zone, paged leaderboard, tournaments, profile, tours, rewards rework | us (owner's call 2026-09-17: nothing landed on `apsych/main`) | ⏳ queued | A1 in B11, A2 in B2, A3 in B1+B3, A4 exists (profile screen pulled earlier), A7 in B6-B9; A5+A6 real tour content is the only standalone piece: C11 | in Demo |
