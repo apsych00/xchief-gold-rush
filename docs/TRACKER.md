@@ -11,19 +11,19 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 |---|---|---|---|
 | L1 game on the box | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 7/7 | 0 | complete, load-tested (100 sockets, p95 settle 5024 ms), rehearsed through compose + Caddy |
 | L1.5 client experience | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 15/19 | C9 QR claim 🔨, C11 tours ⏳, C4b animation ⏳, Q1 rest 🟡 | booth and web flows built and verified end to end; red team: every loophole fixed (C10) |
-| L2 hardening | 🟩🟩🟩⬜⬜⬜⬜⬜⬜⬜ 6/18 | S18 safe mode 📋 (M1); S1, S3, S5, S6, S8, S10, S11, S12, S14, S15 are M2 scope creep | S2 rate limits merged; production numbers under review with the owner |
+| L2 hardening | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 7/18 | S1, S3, S5, S6, S8, S10, S11, S12, S14, S15 are M2 scope creep | S2 rate limits and S18 safe mode merged; production numbers under review with the owner |
 | MKT Part B | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 6/16 | B6+B7+B9 🔨, B10+B11 🔍, B2+B3 📋, B8 📋, B12 ⏳, B13 ⏳ | B1, B4, B5, B14, B15 (build), B16 done |
 | OPS | 🟩🟩🟩🟩🟩⬜⬜⬜⬜⬜ 2/4 | D3 run on the box (M2), T1 Telegram bot 📋 (M4) | deploy scripts built; first real run happens on the box |
 | FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin | Finnhub live with PAXG fallbacks, 3-decimal publishing |
 
-**Demo milestone (M1):** 21 of 31 tickets done. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
+**Demo milestone (M1):** 22 of 31 tickets done. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
 
 ### Queue, in the exact order it is picked up
 
 1. 🔍 B10+B11 tour flag and ad banners: my full E2E run, then merge.
 2. ✅ B15 merged (clean boot verified).
 3. 🔨 C9 QR claim flow (running) and 🔨 B6+B7+B9 rewards (running): verify and merge as they land.
-4. 📋 S18 safe mode: dispatch now that S2 is merged (constants revisited with the owner's venue numbers first).
+4. ✅ S18 safe mode merged.
 5. 📋 B2+B3 paged leaderboard and badges: dispatch now that B1 is merged.
 6. 📋 B8 Instagram: after B6+B7+B9 merges.
 7. ⏳ C11 tours with real content: after B10 merges (ticket to write).
@@ -113,7 +113,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | S14 | L2 | Kiosk hygiene: no player token on a kiosk, clean state between visitors | | ⏳ queued | red team D7: an empty `?k=` turns a booth into a web player | in C10 |
 | S15 | L2 | Least privilege, extended | | ⏳ queued | with S5 | |
 | S16 | L2 | Leaderboard integrity at prize time: one row per verified email | | ✅ done | `players.email` is unique and `leaderboard()` ranks verified emails only; the export becomes per-tournament with B1 | |
-| S18 | L2 | Safe mode: guarded and locked levels, automatic escalation on connection and signup spikes, operator command, Cloudflare Under Attack runbook | | 📋 ready | design in `docs/tickets/s18-safe-mode.md`; depends on S2; this is the "am I overwhelmed" answer on `/ops` | after S2 |
+| S18 | L2 | Safe mode: guarded and locked levels, automatic escalation on connection and signup spikes, operator command, Cloudflare Under Attack runbook | Sonnet (cbx) | ✅ done | `server/safemode.js`, `public.settings`, `scripts/safe-mode.mjs`, /ops banner, Cloudflare runbook; 98 unit, 68 integration, 17 E2E on my merged run; merged | thresholds revisited with the owner's venue numbers |
 | B1 | MKT | Tournaments as data (dates, prize image and title, broker bonus), adjustable without code | Sonnet (cbx) | ✅ done | tournaments table, no-overlap constraint, per-tournament records, SQL one-liners in the runbook; merged | B2, B3 |
 | B2 | MKT | Leaderboard API: 20 per page, own rank and row in every response, live top 20 | | 📋 ready | closes gap G3; ticket `docs/tickets/b2-b3-leaderboard-pages-badges.md` | after B1 |
 | B3 | MKT | Badge tiers and the legend endpoint | | 📋 ready | in the B2 ticket | after B1 |
