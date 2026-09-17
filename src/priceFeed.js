@@ -466,11 +466,18 @@ function startLocalPriceFeed({ onPrice, onStatus }) {
 function startServerPriceFeed({ onPrice, onStatus }) {
   let stopped = false;
   let mode = 'connecting';
+  // Ticket OD1: whether socket.js's own connectionRefused signature (see its comment) is
+  // currently up - reported alongside mode, but on its own change, not mode's: it can flip
+  // while mode stays 'connecting' the whole time, which report()'s mode-equality guard would
+  // otherwise swallow.
+  let connectionRefused = false;
+
+  const emit = () => onStatus({ mode, source: null, symbol: 'XAU/USD', quiet: mode === 'quiet', connectionRefused });
 
   const report = (next) => {
     if (stopped || mode === next) return;
     mode = next;
-    onStatus({ mode, source: null, symbol: 'XAU/USD', quiet: mode === 'quiet' });
+    emit();
   };
 
   const offPrice = onSocketPrice((price) => {
@@ -481,10 +488,15 @@ function startServerPriceFeed({ onPrice, onStatus }) {
 
   const offStatus = onSocketStatus((s) => {
     if (stopped) return;
-    report(!s.connected ? 'connecting' : s.quiet ? 'quiet' : 'live');
+    const nextMode = !s.connected ? 'connecting' : s.quiet ? 'quiet' : 'live';
+    const refused = Boolean(s.connectionRefused);
+    const changed = nextMode !== mode || refused !== connectionRefused;
+    mode = nextMode;
+    connectionRefused = refused;
+    if (changed) emit();
   });
 
-  onStatus({ mode, source: null, symbol: 'XAU/USD', quiet: false });
+  onStatus({ mode, source: null, symbol: 'XAU/USD', quiet: false, connectionRefused: false });
   connectSocket();
 
   return () => {
@@ -496,7 +508,7 @@ function startServerPriceFeed({ onPrice, onStatus }) {
 
 /**
  * @param {{ onPrice: (price:number, meta:{source:string, mode:'live'|'poll'|'demo'|'quiet'}) => void,
- *           onStatus: (s:{mode:'connecting'|'live'|'poll'|'demo', source:string|null, quiet:boolean}) => void }} opts
+ *           onStatus: (s:{mode:'connecting'|'live'|'poll'|'demo', source:string|null, quiet:boolean, connectionRefused?:boolean}) => void }} opts
  * @returns {() => void} stop
  */
 export function startPriceFeed(opts) {

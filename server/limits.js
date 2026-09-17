@@ -32,11 +32,22 @@ export const LIMITS = {
   MAX_SOCKETS_PER_IP: envInt('MAX_SOCKETS_PER_IP', 20),
   MAX_CONNECTIONS_PER_IP_PER_MIN: envInt('MAX_CONNECTIONS_PER_IP_PER_MIN', 30),
   MAX_ANON_PLAYERS_PER_IP_PER_10MIN: envInt('MAX_ANON_PLAYERS_PER_IP_PER_10MIN', 10),
-  MAX_OTP_REQUESTS_PER_IP_PER_10MIN: envInt('MAX_OTP_REQUESTS_PER_IP_PER_10MIN', 5),
+  // Ticket OD1: raised from 5 to a venue-safe 30. The owner's local-stack repro traced the
+  // literal 429 the browser console showed to this exact window on the WS upgrade path (S2's
+  // checkNewConnection), not to the OTP frames themselves - a shared venue IP (docs/TRACKER.md:
+  // "production numbers under review with the owner (venue NAT)") burns through this budget
+  // across every visitor behind it, and a fresh code request is exactly the kind of retry a
+  // frustrated single visitor also does. 30 per 10 minutes per IP is generous enough for a booth
+  // sharing one public address without opening the door to a real flood (MAX_CONNECTIONS_PER_IP_
+  // PER_MIN above still caps how fast any one IP can even reach this window).
+  MAX_OTP_REQUESTS_PER_IP_PER_10MIN: envInt('MAX_OTP_REQUESTS_PER_IP_PER_10MIN', 30),
   // The ticket names this "already exists in SQL: keep it" - db/schema.sql's
   // request_otp_code has no such check (grepped; nothing per-email anywhere in the schema).
-  // Implemented here instead, in memory, alongside the IP one; see the ticket report.
-  MAX_OTP_REQUESTS_PER_EMAIL_PER_10MIN: envInt('MAX_OTP_REQUESTS_PER_EMAIL_PER_10MIN', 3),
+  // Implemented here instead, in memory, alongside the IP one; see the ticket report. Raised
+  // from 3 to 5 (ticket OD1) alongside the IP window above - a legitimate resend after a typo
+  // plus one more attempt at the same email should never itself become the reason a visitor
+  // is refused.
+  MAX_OTP_REQUESTS_PER_EMAIL_PER_10MIN: envInt('MAX_OTP_REQUESTS_PER_EMAIL_PER_10MIN', 5),
   // POST /api/claim/* (ticket C9 decision 4): 5 per 10 minutes per IP, the same shape as the
   // OTP-per-IP window above - a claim page has no session of its own to rate-limit by socket.
   MAX_CLAIM_REQUESTS_PER_IP_PER_10MIN: envInt('MAX_CLAIM_REQUESTS_PER_IP_PER_10MIN', 5),

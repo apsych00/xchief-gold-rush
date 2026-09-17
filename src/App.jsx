@@ -401,6 +401,7 @@ function Display({ state, profile, actions }) {
         </button>
         <div className="feed-corner">
           <FeedBadge feed={feed} />
+          {feed.connectionRefused && <div className="lead-error feed-refused">{t('feed.tooManyConnections')}</div>}
         </div>
 
         {isIdle && (

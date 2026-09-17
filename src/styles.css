@@ -746,6 +746,14 @@ button:focus:not(:focus-visible) {
   letter-spacing: 0;
   color: rgba(255, 255, 255, 0.55);
 }
+/* Ticket OD1: the "too many connections" line under the feed badge - same corner, own line so
+   it never fights the badge's fixed height, capped so it never runs past the display's edge. */
+.feed-refused {
+  margin-top: 6px;
+  max-width: 200px;
+  text-align: end;
+  font: 700 11px var(--fa);
+}
 .feed-dot {
   width: 8px;
   height: 8px;

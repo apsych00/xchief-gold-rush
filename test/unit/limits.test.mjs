@@ -101,7 +101,7 @@ test('leaderboard/tasks/get_me each get their own once-a-second budget on the sa
 
 // --- OTP: per-IP and per-email --------------------------------------------------------------
 
-test('the 6th OTP request from one IP in 10 minutes is refused', () => {
+test(`the ${LIMITS.MAX_OTP_REQUESTS_PER_IP_PER_10MIN + 1}th OTP request from one IP in 10 minutes is refused`, () => {
   const clock = fakeClock();
   const limits = createLimits({ now: clock.now, log: () => {} });
   const ip = '10.0.0.3';
@@ -113,7 +113,7 @@ test('the 6th OTP request from one IP in 10 minutes is refused', () => {
   assert.ok(refused.retryMs > 0);
 });
 
-test('the 4th OTP request for one email in 10 minutes is refused, independent of IP', () => {
+test(`the ${LIMITS.MAX_OTP_REQUESTS_PER_EMAIL_PER_10MIN + 1}th OTP request for one email in 10 minutes is refused, independent of IP`, () => {
   const clock = fakeClock();
   const limits = createLimits({ now: clock.now, log: () => {} });
   const email = 'player@example.com';
