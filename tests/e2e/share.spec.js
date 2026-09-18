@@ -34,12 +34,12 @@ test.describe('share my record (U4)', () => {
     const shareUrl = await urlInput.inputValue();
 
     // Copy button writes the clipboard.
-    await page.getByRole('button', { name: /copy/i }).click();
+    await page.locator('.share-copy-btn').click();
     const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
     expect(clipboardText).toBe(shareUrl);
 
     // Telegram shortcut carries the URL.
-    const telegram = page.locator('a[aria-label="Telegram"]');
+    const telegram = page.locator('a[aria-label="Share to Telegram"]');
     const telegramHref = await telegram.getAttribute('href');
     expect(telegramHref).toMatch(/^https:\/\/t\.me\/share\/url\?url=/);
     expect(telegramHref).toContain(encodeURIComponent(shareUrl));
