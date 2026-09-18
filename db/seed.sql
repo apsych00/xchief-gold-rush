@@ -24,9 +24,7 @@ insert into public.tasks (id, title, reward, repeat_ms, requires_email, kind, ur
   ('youtube_2',         'YouTube mission 2',               150,  null,        false, 'youtube',  'VIDEO_ID_2'),
   ('youtube_3',         'YouTube mission 3',               150,  null,        false, 'youtube',  'VIDEO_ID_3'),
   ('story',             'Share your record',               300,  86400000,    false, 'manual',   null),
-  ('review_trustpilot', 'Review on Trustpilot',            500,  null,        false, 'redirect', 'https://www.trustpilot.com/review/xchief.com'),
-  ('review_google',     'Review on Google',                500,  null,        false, 'redirect', 'https://www.google.com/search?q=xchief+reviews'),
-  ('review_fpa',        'Review on Forex Peace Army',      500,  null,        false, 'redirect', 'https://www.forexpeacearmy.com/forex-reviews/xchief')
+  ('review_trustpilot', 'Review on Trustpilot',            500,  null,        false, 'redirect', 'https://www.trustpilot.com/review/xchief.com')
 on conflict (id) do update set
   title = excluded.title, reward = excluded.reward, repeat_ms = excluded.repeat_ms, requires_email = excluded.requires_email,
   kind = excluded.kind, url = excluded.url;
