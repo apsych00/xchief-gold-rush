@@ -14,18 +14,25 @@ setInvocation('npm run coupons:export');
 init(process.argv.slice(2));
 
 const sql = `
-  select c.code, c.status, c.claimed_at, cl.email as claim_email, cl.claimed_at as claim_time
+  select c.code, c.status, c.claimed_at, cl.email as claim_email, cl.claimed_at as claim_time,
+         k.label as kiosk_label
   from public.coupons c
   left join public.claim_links cl on cl.coupon_id = c.id
+  left join public.kiosks k on k.id = cl.kiosk_id
   order by c.created_at;
 `;
 
 const rows = await runQuery(sql);
-console.log('code,status,claimed_at,claim_email,claim_time');
+console.log('code,status,claimed_at,claim_email,claim_time,kiosk_label');
 for (const r of rows) {
   console.log(
-    [csvField(r.code), csvField(r.status), csvField(r.claimed_at), csvField(r.claim_email), csvField(r.claim_time)].join(
-      ',',
-    ),
+    [
+      csvField(r.code),
+      csvField(r.status),
+      csvField(r.claimed_at),
+      csvField(r.claim_email),
+      csvField(r.claim_time),
+      csvField(r.kiosk_label),
+    ].join(','),
   );
 }

@@ -788,6 +788,37 @@ begin
   return json_build_object('coins', k.session_coins, 'streak', k.streak, 'state', k.session_state, 'codes_left', v_codes_left);
 end $$;
 
+-- Open kiosk route (ticket K1): provision a kiosk on demand for the exhibition. The raw secret
+-- is returned once to the caller and never stored; only its bcrypt hash lives in the row. The
+-- label starts with 'open-' so operators can tell auto-provisioned kiosks apart from seeded
+-- ones. p_max caps the total number of active open kiosks; exceeding it raises 'kiosk_cap'.
+create function public.create_open_kiosk(p_max int default 50)
+returns json language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_secret text;
+  v_id uuid;
+  v_label text;
+  v_suffix text;
+  v_count int;
+begin
+  select count(*)::int into v_count
+    from public.kiosks
+    where status = 'active' and label like 'open-%';
+  if v_count >= p_max then raise exception 'kiosk_cap'; end if;
+
+  -- 32 base64url chars from 24 random bytes, same as the claim-link token (ticket C9).
+  v_secret := translate(encode(extensions.gen_random_bytes(24), 'base64'), '+/', '-_');
+  -- 4 base64url chars from 3 random bytes for the label suffix.
+  v_suffix := translate(encode(extensions.gen_random_bytes(3), 'base64'), '+/', '-_');
+  v_label := 'open-' || to_char(now(), 'YYYYMMDD') || '-' || v_suffix;
+
+  insert into public.kiosks (label, secret_hash)
+  values (v_label, extensions.crypt(v_secret, extensions.gen_salt('bf')))
+  returning id into v_id;
+
+  return json_build_object('id', v_id, 'secret', v_secret, 'label', v_label);
+end $$;
+
 -- The same orphan-round self-healing as open_round, plus the box rule that a session that has
 -- idled for 60 s, or was never started (session_state 'idle'), belongs to a new visitor: it is
 -- restarted fresh before this round is considered. A session already ended (won its coupon or
@@ -1582,9 +1613,10 @@ revoke execute on function
   public.void_round(uuid),
   public.verify_kiosk(text),
   public.start_kiosk_session(uuid),
-  public.reset_kiosk_session(uuid),
-  public.open_kiosk_round(uuid, text, numeric, text, int),
-  public.settle_kiosk_round(uuid, numeric),
+   public.reset_kiosk_session(uuid),
+   public.open_kiosk_round(uuid, text, numeric, text, int),
+   public.settle_kiosk_round(uuid, numeric),
+   public.create_open_kiosk(int),
   public.request_otp_code(uuid, text),
   public.verify_otp_code(uuid, text, text),
   public.revoke_player_sessions(uuid),
