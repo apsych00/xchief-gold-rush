@@ -4,42 +4,42 @@ What's live, what's cooking, what's next. Product view. Updated as things land.
 
 **Legend:** ✅ live · 🔨 building now · 🕓 awaiting your sign-off · 📋 next up · ⏳ later · 🎨 owner handling
 
-Walk the dev build: web http://localhost:5173 · kiosk http://localhost:5173/?k=dev-kiosk-secret-0001
+Walk the dev build: web http://localhost:5173 · kiosk http://localhost:5173/kiosk (self-provisioning, no secret)
 
-## Awaiting your sign-off
+## Cooking now (workers)
 
 | Status | What | Notes |
 |---|---|---|
-| 🕓 | iPad Air kiosk layout | Booth screens now fill the 13" iPad; phone unchanged. Please eyeball and approve |
+| 🔨 | English everywhere | Removing the leftover Persian text/layout from every screen |
+| 🔨 | iPad Air layout - web screens | Home, leaderboard, profile, missions, share sized for the 13" iPad; phone unchanged |
+| 🔨 | iPad kiosk play screen | Refining the console body height and countdown fit on the booth iPad |
 | 🎨 | Play buttons look | You're redoing the Up/Down button styling |
 
 ## Just landed (verified, on dev)
 
 | Status | What | Notes |
 |---|---|---|
-| ✅ | Share your score | Popup + public share page; X / Telegram / copy-link with working icons and link |
-| ✅ | Missions tab | Coins tab is now Missions - no-skip YouTube missions |
-| ✅ | Register-at-xChief mission | Opens the registration page (goldrush UTM), no email modal, with a 1h timer that survives closing the app |
-| ✅ | Open kiosk link | `/kiosk` starts a booth session without the secret in the URL |
-| ✅ | Logo + background | Logo links home; animated drifting glow background instead of pitch black |
-| ✅ | Ads | Only the two real banners, looping; dark padding around them removed |
-| ✅ | Missions trim | Removed Google and Forex Peace Army reviews |
+| ✅ | Kiosk = open link | Booth opens `/kiosk` and self-binds, no secret; intro is now a clean English card |
+| ✅ | iPad kiosk - first pass | Booth screens fill the tablet to a small edge |
+| ✅ | Share your score | Popup + public page; X / Telegram / copy-link with working icons and link |
+| ✅ | Missions tab | No-skip YouTube missions; removed Google and Forex Peace Army reviews |
+| ✅ | Register-at-xChief mission | Opens the registration page (goldrush UTM), no email modal, 1h timer that survives closing the app |
+| ✅ | Logo + background | Logo links home; animated drifting glow background |
+| ✅ | Ads | Only the two real banners looping; padding around them removed |
 | ✅ | Deployment plan + repo | Go-live runbook (Cloudflare tunnel) + private deploy repo the box can pull from |
-| ✅ | Cleanup | Removed dead Supabase code, unused packages, and old test screenshots |
+| ✅ | Cleanup | Removed dead Supabase code, unused packages, old test screenshots |
 
 ## Next up
 
 | Status | What | Notes |
 |---|---|---|
-| 📋 | English everywhere | Remove the leftover Persian text (app already shows English only; this deletes the dead copy) |
-| 📋 | Kiosk welcome | Three intro cards ending on a QR to the web version |
-| 📋 | iPad Air layout - web | The rest of the screens, after the kiosk pass is signed off |
+| 📋 | Kiosk welcome | Three intro cards ending on a QR to the web version (starts once the kiosk play refine lands) |
 
 ## Later
 
 | Status | What | Notes |
 |---|---|---|
-| ⏳ | Go live | Deploy to goldrush.xchief.academy |
+| ⏳ | Go live | Deploy to goldrush.xchief.academy (separate deployment session) |
 | ⏳ | Booth deploy | Stand up the kiosk at the venue right after we're live |
 | ⏳ | Instagram mission | Follow-to-earn via the data API - last item, token in hand |
 
