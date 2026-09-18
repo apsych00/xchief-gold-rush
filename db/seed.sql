@@ -37,8 +37,8 @@ on conflict (id) do update set
 -- in Asia/Dubai (UTC+4, no DST) and stored as timestamptz; adjusting these in production is a
 -- SQL one-liner (docs/box-deploy.md "Daily habits"), never a code change.
 insert into public.tournaments (id, title, starts_at, ends_at, prize_title, prize_image, broker_bonus) values
-  ('t1', 'Gold Rush Week 1', '2026-09-16 00:00:00+04', '2026-09-21 00:00:00+04', 'First prize', '/prizes/week1.png', null),
-  ('t2', 'Gold Rush Week 2', '2026-09-21 00:00:00+04', '2026-09-24 00:00:00+04', 'First prize', '/prizes/week2.png', null)
+  ('t1', 'Gold Rush Week 1', '2026-09-16 00:00:00+04', '2026-09-21 00:00:00+04', '$3,000 broker bonus', '/prizes/week1.png', 'Credited to your xChief broker account'),
+  ('t2', 'Gold Rush Week 2', '2026-09-21 00:00:00+04', '2026-09-24 00:00:00+04', '$3,000 broker bonus', '/prizes/week2.png', 'Credited to your xChief broker account')
 on conflict (id) do update set
   title = excluded.title, starts_at = excluded.starts_at, ends_at = excluded.ends_at,
   prize_title = excluded.prize_title, prize_image = excluded.prize_image, broker_bonus = excluded.broker_bonus;
