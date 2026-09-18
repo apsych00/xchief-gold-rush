@@ -18,6 +18,22 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 
 **Demo milestone (M1):** 33 of 33 tickets merged. Gate: showcase run on the compose build, then the `demo-1` tag. MT5 Docker bridge is live on the local stack with the broker demo account. Building now: C9, B6+B7+B9. Verifying: B10+B11, B15 (M3, off the Demo path).
 
+### 2026-09-18 final push (owner-directed, product-first)
+
+Strategy this day: ship maximum visible product with minimum effort; looks/features over hardening. Work fanned out to Sonnet builders and OpenCode Go workers in isolated worktrees; orchestrator reviews and merges with surgical (not full-suite) gates. See `docs/STATUS.md` for the live board. Landed on `dev` (and pushed to `origin`, `apsych`, and the new private deploy repo `nightmareinc/xchief-gold-rush`):
+
+- **Share your score** (U4) - modal with record card, copyable `/s/<token>` link, and X / Telegram / copy-link shortcuts (correct brand icons, working intents); public share page. Verified E2E.
+- **Missions tab** (K4) - Coins tab becomes Missions with a non-seekable YouTube watch-progress player; server-released rewards. Removed the Google and Forex Peace Army review tasks (owner).
+- **Register-at-xChief mission** - signup task is now a redirect task: opens `https://my.xchief.com/registration?utm_source=goldrush&utm_campaign=goldrush` (no email modal) with a 1-hour countdown persisted in localStorage (survives closing the app); reward releases via the existing redirect-return path (no upper time bound, so a 1h-late return still releases). Verified on the live preview.
+- **Open kiosk route** (K1) - `/kiosk` self-provisions and binds the device, no secret in the URL; this is now the booth's kiosk mechanism (gated by `KIOSK_OPEN_PROVISION`). Fixed the provision CORS, a kiosk render crash, and back-to-back round flow.
+- **iPad Air 13" kiosk layout** - booth screens fill the tablet to a thin edge, console/countdown/body sized for a stand; phones proven pixel-unchanged (all rules scoped to `.app-kiosk` behind a min-1000px-both-axes media query). Web-screen iPad pass in flight.
+- **English only** (U5) - deleted the Persian dictionary, RTL, digit conversion, and the language toggle across every screen; i18n plumbing kept for a future switcher. `src/af/` Afghanistan landing page intentionally left in Persian.
+- **Client polish** - logo links home; app background is an animated drifting green/gold glow (no more pitch black); ad zone shows only the two real banners looping with the dark padding cropped.
+- **Deployment runbook** (`docs/deploy-shared-box.md` + `docker-compose.box.yml`) - Cloudflare Tunnel origin (zero inbound ports, sidesteps the shared box's occupied ports 8000/62789/2112/2224/53/22334/80/11111/443/2096/54321/8443/49628); DNS already set proxied for goldrush.xchief.academy. Deploy source repo `nightmareinc/xchief-gold-rush` created.
+- **Cleanup** - removed the dead Supabase edge functions and legacy docs, the unused `@supabase/*` packages and `test:db` script, and 70 tracked E2E screenshot artifacts (now git-ignored).
+
+Note: the play Up/Down buttons were restyled to 3D keycaps then reverted at the owner's request (owner is redoing them). Kiosk welcome cards (3-card + QR) and the Instagram follow mission remain queued; box deploy is a separate session.
+
 ### Landed on dev today (newest first)
 
 Live view: https://github.com/AIT-ERP/xChief-Gold-Rush/commits/dev (every merge below is a push there; `dev` is also pushed to the marketing lead's repo `apsych` since 2026-09-17 evening, never its `main` unless the owner says so). Local stack: http://localhost:8080 rebuilt from dev after every merge; second instance without MT5 at http://localhost:5361 while the demo walk lasts. Each row is added the moment the merge commit is pushed, after the orchestrator's own gate run on the merged tree.
