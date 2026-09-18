@@ -34,3 +34,4 @@ docker-compose.override.yml
 # plain-named env copies handed to sandboxed workers (never committed)
 ENV_*.txt
 design/screens/
+.claude/worktrees/
