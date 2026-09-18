@@ -80,6 +80,14 @@ export function AdZone() {
     return () => ro.disconnect();
   }, [current]);
 
+  // The iframe's own document paints white until its HTML/CSS finishes loading. Keep the frame
+  // hidden behind the zone's dark background (styles.css .ad-zone-frame) until onLoad fires, then
+  // fade it in - white never shows. Reset on every rotation since the frame remounts via key={src}.
+  const [frameLoaded, setFrameLoaded] = useState(false);
+  useEffect(() => {
+    setFrameLoaded(false);
+  }, [current?.src]);
+
   if (!current) return null;
 
   return (
@@ -104,13 +112,14 @@ export function AdZone() {
             style={{ transform: `translate(-50%, -50%) scale(${scale * OVERSCAN})` }}
           >
             <iframe
-              className="ad-zone-frame"
+              className={`ad-zone-frame${frameLoaded ? ' is-loaded' : ''}`}
               src={current.src}
               title="xChief"
               loading="lazy"
               tabIndex={-1}
               width={BANNER_W}
               height={BANNER_H}
+              onLoad={() => setFrameLoaded(true)}
             />
           </div>
           <a

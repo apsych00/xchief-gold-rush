@@ -1460,7 +1460,10 @@ button:focus:not(:focus-visible) {
   border-radius: 14px;
   overflow: hidden;
   position: relative;
-  background: transparent;
+  /* Was transparent, which let the iframe's own white document background show through while
+     its HTML/CSS was still loading. Matches html/body's app background so the zone never shows
+     white, loaded or not. */
+  background: #04070a;
 }
 .ad-zone-link {
   display: block;
@@ -1473,8 +1476,7 @@ button:focus:not(:focus-visible) {
   height: 100%;
   object-fit: cover;
 }
-.ad-zone-img,
-.ad-zone-frame {
+.ad-zone-img {
   /* The nearest existing fade-style keyframe (styles.css has no plain opacity-only "fade") -
      reused here for the 400ms cross-fade the ticket calls for. key={src} in src/ads.jsx remounts
      the element so the animation replays on every rotation. */
@@ -1497,11 +1499,20 @@ button:focus:not(:focus-visible) {
   width: 1072px;
   height: 310px;
   transform-origin: center;
+  background: #04070a;
 }
 .ad-zone-frame {
   display: block;
   border: 0;
-  background: #000;
+  background: #04070a;
+  /* Hidden until src/ads.jsx's onLoad fires (the iframe document has painted its own HTML/CSS),
+     so the browser's default white document background is never visible - only the dark
+     placeholder behind it, then the loaded creative. */
+  opacity: 0;
+  transition: opacity 0.25s ease-out;
+}
+.ad-zone-frame.is-loaded {
+  opacity: 1;
 }
 
 .lb-badge {
@@ -2647,8 +2658,9 @@ button:focus:not(:focus-visible) {
     --nav-h: 84px;
   }
   .app:not(.app-kiosk) .phone {
-    /* A comfortably wide app column, not a stranded 430px phone; still framed. */
-    max-width: min(90vw, 760px);
+    /* Fill the tablet to a small edge, same as the kiosk block above (owner 2026-09-18) -
+       the old min(90vw,760px) left wide empty margins either side. */
+    max-width: min(97vw, 1000px);
     height: min(100%, 1300px);
     border-radius: 44px;
     border-width: 2px;
@@ -3143,7 +3155,9 @@ button:focus:not(:focus-visible) {
     --s: 1.4;
   }
   .app:not(.app-kiosk) .phone {
-    max-width: min(74vw, 880px);
+    /* Fill the tablet to a small edge, same as the kiosk landscape block above - the old
+       min(74vw,880px) left wide empty margins either side. */
+    max-width: min(94vw, 1320px);
     height: min(100%, 980px);
   }
   .app:not(.app-kiosk) .hero {
