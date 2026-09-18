@@ -163,6 +163,39 @@ test('claim_task grants the reward, reports it on the me reply, and rejects a re
   ws.close();
 });
 
+test('task_progress accepts kind=youtube and releases at 90% like a video task', async () => {
+  // K4: youtube missions share the same server-side release path as video tasks.
+  await pool.query(
+    "insert into public.tasks (id, title, reward, kind, url) values ('youtube_k4_test', 'K4 YouTube test', 150, 'youtube', 'VIDEO_ID_TEST') on conflict (id) do update set kind = 'youtube', reward = 150, url = 'VIDEO_ID_TEST'",
+  );
+
+  const ws = connect();
+  await whenOpen(ws);
+  const welcome = await authAnonymous(ws);
+
+  try {
+    send(ws, { type: 'task_progress', task: 'youtube_k4_test', seconds: 5, duration: 60 });
+    const below = await nextFrame(ws, (f) => f.type === 'me');
+    assert.equal(below.reward, undefined, 'no reward field below 90%');
+
+    await pool.query(
+      "update public.video_progress set updated_at = now() - interval '60 seconds' where task_id = 'youtube_k4_test' and player_id = $1",
+      [welcome.me.id],
+    );
+    await new Promise((r) => setTimeout(r, 1100));
+    send(ws, { type: 'task_progress', task: 'youtube_k4_test', seconds: 55, duration: 60 });
+    const above = await nextFrame(ws, (f) => f.type === 'me');
+    assert.equal(above.task, 'youtube_k4_test', 'the me reply names the youtube task once rewarded');
+    assert.equal(typeof above.reward, 'number', 'the me reply carries the youtube reward');
+    assert.equal(above.reward, 150, 'youtube reward matches the seeded value');
+  } finally {
+    ws.close();
+    await pool.query("delete from public.task_claims where task_id = 'youtube_k4_test'");
+    await pool.query("delete from public.video_progress where task_id = 'youtube_k4_test'");
+    await pool.query("delete from public.tasks where id = 'youtube_k4_test'");
+  }
+});
+
 test('claim_task refuses a non-manual task kind with not_claimable', async () => {
   const ws = connect();
   await whenOpen(ws);

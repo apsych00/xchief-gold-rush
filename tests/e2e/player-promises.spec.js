@@ -18,7 +18,9 @@ import pg from 'pg';
 
 import { dismissFirstVisit } from './first-visit.js';
 const REPORT_DIR = path.join(fileURLToPath(new URL('../..', import.meta.url)), 'docs', 'reports', 'b6-b9');
+const K4_REPORT_DIR = path.join(fileURLToPath(new URL('../..', import.meta.url)), 'docs', 'reports', 'k4');
 fs.mkdirSync(REPORT_DIR, { recursive: true });
+fs.mkdirSync(K4_REPORT_DIR, { recursive: true });
 
 function readEnv() {
   const out = {};
@@ -391,7 +393,7 @@ test.describe('player-visible promises', () => {
     await expect.poll(() => screenCoins(page), { timeout: 5000 }).toBe(after.coins);
   });
 
-  test('7. a redirect task opens its destination, refuses the reward before the 5 s window and grants it after (ticket B7)', async ({
+  test('7. a redirect task opens its destination and releases the reward within 1 s after the timer ends, with no focus event (ticket B7 / K4)', async ({
     page,
     context,
   }) => {
@@ -408,28 +410,14 @@ test.describe('player-visible promises', () => {
     const telegramTask = page.locator('.task').filter({ hasText: 'Join the Telegram channel' });
     await expect(telegramTask).toBeVisible();
 
-    // Returning (the tab regaining focus) under the 5 s window must grant nothing: the client
-    // dispatches its own focus listener deterministically here rather than depending on a real
-    // OS-level window-switch under headless Chromium, but the promise under test is the
-    // server's return_task_visit refusal (db/schema.sql), not the browser's focus plumbing.
-    // One window only - src/Tasks.jsx never re-arms it on a refused return (statusOf keeps
-    // showing the same disabled "waiting" countdown from the original click until the real
-    // window passes), so this is one task_start, two returns against the same window.
     const [popup] = await Promise.all([context.waitForEvent('page'), telegramTask.locator('.task-btn').click()]);
     await popup.waitForLoadState('domcontentloaded').catch(() => {});
 
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await page.waitForTimeout(500);
-    const tooEarly = await getMe(page);
-    expect(tooEarly.coins, 'returning under the 5 s window must not grant the reward').toBe(before.coins);
-    await page.screenshot({ path: path.join(REPORT_DIR, '03-redirect-task-waiting.png') });
-
-    await popup.close();
-    await page.waitForTimeout(5200);
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-
-    await expect(telegramTask.locator('.task-state')).toBeVisible({ timeout: 5000 });
-    await page.screenshot({ path: path.join(REPORT_DIR, '04-redirect-task-claimed.png') });
+    // K4: the client now sends task_return automatically when the 5 s window ends; no focus event
+    // is needed. Wait the full window plus a small margin and assert the row flips to claimed.
+    await page.screenshot({ path: path.join(K4_REPORT_DIR, '01-redirect-task-waiting.png') });
+    await expect(telegramTask.locator('.task-state')).toBeVisible({ timeout: 6500 });
+    await page.screenshot({ path: path.join(K4_REPORT_DIR, '02-redirect-task-claimed.png') });
     const after = await getMe(page);
     expect(after.coins, 'past the 5 s window, the server must have released the reward').toBeGreaterThan(
       before.coins,
@@ -437,7 +425,69 @@ test.describe('player-visible promises', () => {
     await expect.poll(() => screenCoins(page), { timeout: 5000 }).toBe(after.coins);
   });
 
-  test('8. signing in with OTP releases the email (and first-time signup) reward from the server (ticket B9, gap G1)', async ({
+  test('8. the tasks tab is labelled Missions (ticket K4)', async ({ page }) => {
+    await page.goto('/');
+    await dismissFirstVisit(page);
+    // Nav order is fixed (home, game, tasks, lb).
+    await expect(page.locator('.nav-btn').nth(2)).toHaveText(/Missions/);
+    await page.screenshot({ path: path.join(K4_REPORT_DIR, '03-missions-tab-title.png') });
+  });
+
+  test('9. a YouTube mission opens the IFrame player and reports progress (ticket K4)', async ({ page }) => {
+    await page.goto('/');
+    await dismissFirstVisit(page);
+    await expect
+      .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), { timeout: 10000 })
+      .toBe('server');
+
+    await page.locator('.nav-btn').nth(2).click();
+    await expect(page.locator('.tasks')).toBeVisible({ timeout: 5000 });
+
+    const youtubeTask = page.locator('.task').filter({ hasText: 'Watch xChief video 1' });
+    await expect(youtubeTask).toBeVisible();
+
+    // Stub the YouTube IFrame API so the test needs no network and no real video id.
+    await page.evaluate(() => {
+      window.YT = {
+        PlayerState: { PLAYING: 1, ENDED: 0, PAUSED: 2 },
+        Player: class {
+          constructor(el, opts) {
+            this._opts = opts;
+            this._time = 0;
+            this._duration = 55;
+            setTimeout(() => {
+              opts.events.onReady();
+              opts.events.onStateChange({ data: window.YT.PlayerState.PLAYING });
+              const iv = setInterval(() => {
+                this._time += 1;
+                if (this._time >= this._duration) {
+                  clearInterval(iv);
+                  opts.events.onStateChange({ data: window.YT.PlayerState.ENDED });
+                }
+              }, 50);
+            }, 10);
+          }
+          playVideo() {}
+          getCurrentTime() {
+            return this._time;
+          }
+          getDuration() {
+            return this._duration;
+          }
+          destroy() {}
+        },
+      };
+    });
+
+    await youtubeTask.locator('.task-btn').click();
+    await expect(page.locator('.youtube-player')).toBeVisible({ timeout: 5000 });
+    await page.screenshot({ path: path.join(K4_REPORT_DIR, '04-youtube-modal-player.png') });
+
+    // The stub ends after ~2.8 s; the modal closes on ENDED and reports progress.
+    await expect(page.locator('.modal-backdrop')).toHaveCount(0, { timeout: 15000 });
+  });
+
+  test('10. signing in with OTP releases the email (and first-time signup) reward from the server (ticket B9, gap G1)', async ({
     page,
   }) => {
     await page.goto('/');

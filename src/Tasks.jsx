@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { PROMO_VIDEO_SECONDS, PROMO_VIDEO_URL, STAFF_PIN, TASK_ICONS, VERIFY_MODE } from './config.js';
+import { accumulateWatchTime } from './watchTime.js';
 import { num, useLang } from './i18n.js';
 import { apiUrl } from './api/client.js';
 import { getStoredToken } from './api/socket.js';
@@ -52,15 +53,104 @@ function PinModal({ onOk, onCancel }) {
 }
 
 /**
- * The video reward (ticket B6): reports {seconds, duration} to the server at most every 5 s
- * while it plays and once on ended (or, with no PROMO_VIDEO_URL configured, from the same
- * fallback countdown this modal always had) - the server decides when 90% has been crossed and
- * releases the reward itself; this component never grants anything on its own.
+ * Load the YouTube IFrame Player API once per page lifetime. The script is added only when a
+ * YouTube mission is opened, and only on the web build (kiosk never reaches this screen).
  */
-function VideoModal({ onProgress, onDone, onCancel }) {
+let youtubeApiPromise = null;
+function loadYouTubeApi() {
+  if (typeof document === 'undefined') return Promise.reject(new Error('no document'));
+  if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
+  if (!youtubeApiPromise) {
+    youtubeApiPromise = new Promise((resolve, reject) => {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      tag.onerror = () => reject(new Error('youtube_api_load_failed'));
+      document.body.appendChild(tag);
+      const prev = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        if (prev) prev();
+        resolve(window.YT);
+      };
+      setTimeout(() => reject(new Error('youtube_api_timeout')), 15000);
+    });
+  }
+  return youtubeApiPromise;
+}
+
+/**
+ * Accumulated watched time for the YouTube player. Reads getCurrentTime() once per second while
+ * the video is playing and adds the delta to the running total, capping each tick at 1.5 s so a
+ * programmatic seek cannot credit skipped time. Reports {seconds, duration} at most every 5 s and
+ * once on ENDED.
+ */
+function useYouTubeWatch({ getCurrentTime, playerState, duration, onProgress, onDone }) {
+  const watched = useRef(0);
+  const lastCurrent = useRef(0);
+  const lastReportAt = useRef(0);
+  const reportedDone = useRef(false);
+
+  const report = useCallback(
+    (force) => {
+      const now = Date.now();
+      if (!force && now - lastReportAt.current < 5000) return;
+      lastReportAt.current = now;
+      onProgress(Math.round(watched.current), Math.round(duration || 0));
+    },
+    [onProgress, duration],
+  );
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (playerState !== window.YT?.PlayerState?.PLAYING) return;
+      const current = getCurrentTime() || 0;
+      watched.current = accumulateWatchTime({
+        current,
+        previous: lastCurrent.current,
+        accumulated: watched.current,
+      });
+      lastCurrent.current = current;
+      report(false);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [playerState, getCurrentTime, report]);
+
+  useEffect(() => {
+    if (playerState === window.YT?.PlayerState?.ENDED && !reportedDone.current) {
+      reportedDone.current = true;
+      report(true);
+      onDone();
+    }
+  }, [playerState, onDone, report]);
+
+  // Reset when the hook is re-created (task changes).
+  useEffect(() => {
+    watched.current = 0;
+    lastCurrent.current = 0;
+    lastReportAt.current = 0;
+    reportedDone.current = false;
+  }, []);
+}
+
+/**
+ * The video reward modal (ticket B6 / K4). Supports three modes:
+ *   - YouTube mission: the task row carries kind='youtube' and url=videoId; the IFrame Player API
+ *     is loaded and an accumulated-watch timer reports progress.
+ *   - Promo video: a hosted <video> asset reports currentTime directly.
+ *   - Fallback countdown: used when no video asset is configured.
+ *
+ * The server decides when the reward releases; this component never grants anything on its own.
+ */
+function VideoModal({ task, onProgress, onDone, onCancel }) {
   const { t } = useLang();
   const [left, setLeft] = useState(PROMO_VIDEO_SECONDS);
   const lastSentAt = useRef(0);
+  const containerRef = useRef(null);
+  const [player, setPlayer] = useState(null);
+  const [playerState, setPlayerState] = useState(-1);
+  const [playerError, setPlayerError] = useState(null);
+
+  const isYouTube = task?.kind === 'youtube';
+  const isHostedVideo = !isYouTube && PROMO_VIDEO_URL;
 
   const report = (seconds, duration, force) => {
     const now = Date.now();
@@ -69,13 +159,15 @@ function VideoModal({ onProgress, onDone, onCancel }) {
     onProgress(Math.round(seconds), Math.round(duration));
   };
 
+  // Hosted <video> / fallback countdown paths (unchanged from B6).
   useEffect(() => {
-    if (PROMO_VIDEO_URL) return undefined;
+    if (isYouTube || isHostedVideo) return undefined;
     const id = setInterval(() => setLeft((s) => s - 1), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [isYouTube, isHostedVideo]);
+
   useEffect(() => {
-    if (PROMO_VIDEO_URL) return;
+    if (isYouTube || isHostedVideo) return undefined;
     if (left <= 0) {
       report(PROMO_VIDEO_SECONDS, PROMO_VIDEO_SECONDS, true);
       onDone();
@@ -83,13 +175,73 @@ function VideoModal({ onProgress, onDone, onCancel }) {
       report(PROMO_VIDEO_SECONDS - left, PROMO_VIDEO_SECONDS, false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [left, onDone]);
+  }, [left, onDone, isYouTube, isHostedVideo]);
 
-  const pct = PROMO_VIDEO_URL ? 0 : ((PROMO_VIDEO_SECONDS - left) / PROMO_VIDEO_SECONDS) * 100;
+  // YouTube IFrame Player setup.
+  useEffect(() => {
+    if (!isYouTube) return undefined;
+    let destroyed = false;
+    let ytPlayer = null;
+    loadYouTubeApi()
+      .then((YT) => {
+        if (destroyed || !containerRef.current) return;
+        ytPlayer = new YT.Player(containerRef.current, {
+          videoId: task.url,
+          playerVars: {
+            controls: 0,
+            disablekb: 1,
+            modestbranding: 1,
+            rel: 0,
+            playsinline: 1,
+          },
+          events: {
+            onReady: () => {
+              if (!destroyed) {
+                ytPlayer.playVideo();
+                setPlayer(ytPlayer);
+              }
+            },
+            onStateChange: (e) => {
+              if (!destroyed) setPlayerState(e.data);
+            },
+            onError: (e) => {
+              if (!destroyed) setPlayerError(String(e.data));
+            },
+          },
+        });
+      })
+      .catch((err) => setPlayerError(err?.message || 'youtube_load_failed'));
+    return () => {
+      destroyed = true;
+      try {
+        ytPlayer?.destroy?.();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [isYouTube, task.url]);
+
+  useYouTubeWatch({
+    getCurrentTime: () => player?.getCurrentTime?.() || 0,
+    playerState,
+    duration: player?.getDuration?.() || 0,
+    onProgress,
+    onDone,
+  });
+
+  const pct = isHostedVideo
+    ? 0
+    : ((PROMO_VIDEO_SECONDS - left) / PROMO_VIDEO_SECONDS) * 100;
+
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
       <div className="modal modal-video">
-        {PROMO_VIDEO_URL ? (
+        {isYouTube ? (
+          <div className="youtube-player-wrap">
+            <div ref={containerRef} className="youtube-player" />
+            {playerError && <div className="lead-error">{t('tasks.videoSub')}</div>}
+          </div>
+        ) : isHostedVideo ? (
           <video
             className="promo-video"
             src={PROMO_VIDEO_URL}
@@ -130,16 +282,15 @@ function VideoModal({ onProgress, onDone, onCancel }) {
 }
 
 /**
- * The rewards screen (docs/layers.md C5; ticket B6+B7+B9). Renders entirely from tasksRows -
- * public.get_tasks()'s own id/title/reward/claimed/kind/url - never a client-side task table:
- * decision 1 removed src/config.js's old TASKS constant along with the last client-computed
- * reward numbers. What "start" does depends only on `kind`:
- *   - 'video': opens the video modal above; progress reports go to the server as they happen.
+ * The rewards screen (docs/layers.md C5; ticket B6+B7+B9 / K4). Renders entirely from tasksRows -
+ * public.get_tasks()'s own id/title/reward/claimed/kind/url - never a client-side task table.
+ * What "start" does depends only on `kind`:
+ *   - 'video' / 'youtube': opens the video modal; progress reports go to the server as they happen.
  *   - 'redirect': opens the destination after telling the server the visit started, then reports
- *     the return when this tab regains focus.
- *   - 'email' / 'signup': both are released by verify_otp_code once an email is verified
- *     (decision 4), not by anything claimed here - "start" opens the OTP screen instead.
- *   - 'instagram': B8's own ticket, not built yet - shown with no action.
+ *     the return when the 5 s window ends (a timer, not only a focus event).
+ *   - 'email' / 'signup': both are released by verify_otp_code once an email is verified, not by
+ *     anything claimed here - "start" opens the OTP screen instead.
+ *   - 'instagram': B8's own ticket - shown with no action.
  *   - 'manual' (kept for future use; none seeded): the old instant-claim / PIN-gated path.
  */
 export default function Tasks({
@@ -159,6 +310,7 @@ export default function Tasks({
   const [videoTask, setVideoTask] = useState(null);
   const [igStatus, setIgStatus] = useState(() => new URLSearchParams(window.location.search).get('ig'));
   const pendingReturns = useRef(new Set());
+  const returnTimers = useRef(new Map());
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -188,37 +340,55 @@ export default function Tasks({
     return () => clearInterval(id);
   }, [onRefreshTasks]);
 
-  // Redirect and return (ticket B7 decision 3): once a visit is open, the tab regaining focus is
-  // the "return" signal. Lenient by design - a wrong-early return just gets `not_yet` back and
-  // stays pending for the next focus, since the client has no better way to know the server's
-  // exact clock than to ask again.
+  const finishReturn = (taskId) => {
+    pendingReturns.current.delete(taskId);
+    returnTimers.current.delete(taskId);
+    setWaiting((w) => {
+      const n = { ...w };
+      delete n[taskId];
+      return n;
+    });
+  };
+
+  const tryReturn = useCallback(
+    (taskId) => {
+      onReturnTaskVisit(taskId)
+        .then(() => finishReturn(taskId))
+        .catch((err) => {
+          if (err?.code === 'not_yet' && typeof err?.retry_ms === 'number') {
+            const timer = setTimeout(() => tryReturn(taskId), err.retry_ms);
+            returnTimers.current.set(taskId, timer);
+            return;
+          }
+          finishReturn(taskId);
+          onToast?.(err?.code || 'error');
+        });
+    },
+    [onReturnTaskVisit, onToast],
+  );
+
+  // Redirect and return (ticket B7 / K4): once a visit is open, the tab regaining focus is one
+  // return signal, but the primary signal is the 5 s window ending. A wrong-early return gets
+  // `not_yet` back and is retried after retry_ms.
   useEffect(() => {
     const onFocus = () => {
       for (const taskId of pendingReturns.current) {
-        onReturnTaskVisit(taskId)
-          .then(() => {
-            pendingReturns.current.delete(taskId);
-            setWaiting((w) => {
-              const n = { ...w };
-              delete n[taskId];
-              return n;
-            });
-          })
-          .catch((err) => {
-            if (err?.code === 'not_yet') return; // still inside the window: try again next focus
-            pendingReturns.current.delete(taskId);
-            setWaiting((w) => {
-              const n = { ...w };
-              delete n[taskId];
-              return n;
-            });
-            onToast?.(err?.code || 'error');
-          });
+        // Avoid duplicate in-flight returns.
+        if (returnTimers.current.has(taskId)) continue;
+        tryReturn(taskId);
       }
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [onReturnTaskVisit, onToast]);
+  }, [tryReturn]);
+
+  useEffect(() => {
+    const timers = returnTimers.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
 
   const statusOf = (row) => {
     if (row.claimed) return { kind: 'claimed' };
@@ -230,15 +400,23 @@ export default function Tasks({
   const beginRedirect = (row) => {
     onStartTaskVisit(row.id)
       .then((res) => {
+        const windowMs = res?.window_ms ?? 5000;
+        const until = Date.now() + windowMs;
         pendingReturns.current.add(row.id);
-        setWaiting((w) => ({ ...w, [row.id]: Date.now() + (res?.window_ms ?? 5000) }));
+        setWaiting((w) => ({ ...w, [row.id]: until }));
         window.open(row.url, '_blank', 'noopener');
+        // K4: when the window ends, send task_return immediately without waiting for focus.
+        const timer = setTimeout(() => {
+          returnTimers.current.delete(row.id);
+          if (pendingReturns.current.has(row.id)) tryReturn(row.id);
+        }, windowMs);
+        returnTimers.current.set(row.id, timer);
       })
       .catch((err) => onToast?.(err?.code || 'error'));
   };
 
   const begin = (row) => {
-    if (row.kind === 'video') {
+    if (row.kind === 'video' || row.kind === 'youtube') {
       setVideoTask(row);
       return;
     }
@@ -306,7 +484,7 @@ export default function Tasks({
               className={`task ${row.id === 'signup' ? 'task-featured' : ''} ${done ? 'task-done' : ''}`}
             >
               <div className="task-icon" aria-hidden="true">
-                {TASK_ICONS[row.id] || '•'}
+                {TASK_ICONS[row.id] || TASK_ICONS[row.kind] || '•'}
               </div>
               <div className="task-body">
                 <div className="task-title">{t(`${item}.title`)}</div>
@@ -348,6 +526,7 @@ export default function Tasks({
       )}
       {videoTask && (
         <VideoModal
+          task={videoTask}
           onProgress={(seconds, duration) => onReportVideoProgress(videoTask.id, seconds, duration)}
           onDone={() => setVideoTask(null)}
           onCancel={() => setVideoTask(null)}

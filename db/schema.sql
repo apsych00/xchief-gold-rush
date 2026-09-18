@@ -227,7 +227,7 @@ create table public.tasks (
   repeat_ms bigint, -- null = one-time
   requires_email boolean not null default false,
   kind text not null default 'manual'
-    check (kind in ('video', 'redirect', 'email', 'signup', 'instagram', 'manual')),
+    check (kind in ('video', 'youtube', 'redirect', 'email', 'signup', 'instagram', 'manual')),
   url text
 );
 
@@ -1251,7 +1251,7 @@ declare
 begin
   if v_uid is null then raise exception 'unauthenticated'; end if;
   select * into t from public.tasks where id = p_task;
-  if not found or t.kind <> 'video' then raise exception 'unknown_task'; end if;
+  if not found or t.kind not in ('video', 'youtube') then raise exception 'unknown_task'; end if;
   if p_duration is null or p_duration <= 0 or p_seconds is null or p_seconds < 0 then
     raise exception 'bad_progress';
   end if;
