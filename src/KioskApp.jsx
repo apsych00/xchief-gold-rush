@@ -81,10 +81,7 @@ function KioskWonModal({ claimUrl, secondsLeft, onScanned }) {
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t('kioskWin.qrTitleEn')}>
       <div className="modal kiosk-modal kiosk-qr-modal">
-        <div className="modal-title" dir="rtl">
-          {t('kioskWin.qrTitleFa')}
-        </div>
-        <div className="modal-sub">{t('kioskWin.qrTitleEn')}</div>
+        <div className="modal-title">{t('kioskWin.qrTitleEn')}</div>
         <div className="kiosk-qr-wrap">
           {qrSrc ? (
             <img className="kiosk-qr" src={qrSrc} alt="" width={200} height={200} />
@@ -97,7 +94,7 @@ function KioskWonModal({ claimUrl, secondsLeft, onScanned }) {
         </div>
         <div className="modal-actions">
           <button type="button" className="btn-primary kiosk-modal-btn" onClick={onScanned}>
-            {t('kioskWin.scannedBtnFa')} / {t('kioskWin.scannedBtnEn')}
+            {t('kioskWin.scannedBtnEn')}
           </button>
         </div>
       </div>

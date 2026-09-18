@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { COMBO_MAX, comboMult, ECON, levelFor, nextLevel, SIGNUP_PROMPT_LEVEL } from './config.js';
-import { ENABLED_LANGS, LANG_KEY, LangContext, makeT, money, num, readStoredLang, useLang } from './i18n.js';
+import { LANG_KEY, LangContext, makeT, money, num, readStoredLang, useLang } from './i18n.js';
 import UpdateBanner from './UpdateBanner.jsx';
 import LeadCapture from './LeadCapture.jsx';
 import { readLead, readSignup } from './leads.js';
@@ -126,7 +126,7 @@ function CoinDot() {
 /* ---------- chrome ---------- */
 
 export function TopBar({ profile, actions, active }) {
-  const { t, lang, setLang } = useLang();
+  const { t, lang } = useLang();
   const level = levelFor(profile.record);
   return (
     <header className="topbar">
@@ -140,17 +140,6 @@ export function TopBar({ profile, actions, active }) {
         >
           <Logo height={26} />
         </button>
-        {ENABLED_LANGS.length > 1 && (
-          <button
-            type="button"
-            className="lang-btn"
-            onClick={() => setLang(lang === 'fa' ? 'en' : 'fa')}
-            aria-label={lang === 'fa' ? 'Switch to English' : 'تغییر به فارسی'}
-            lang={lang === 'fa' ? 'en' : 'fa'}
-          >
-            {t('langToggle')}
-          </button>
-        )}
       </div>
       <div className="topbar-end">
         <div className="balance-chip" aria-live="polite">
@@ -810,7 +799,7 @@ export function Console({ state, profile, actions, trackRef, onOpenIdentity }) {
 // the full list every chip is drawn from. No new colours, fonts or components: the chips reuse
 // `.lang-btn`, the title/sub reuse `.screen-*`.
 function LeaderboardHeader({ tournament, tournaments, selectedId, onSelect }) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const [, forceTick] = useState(0);
   useEffect(() => {
     if (!tournament) return undefined;
@@ -818,8 +807,7 @@ function LeaderboardHeader({ tournament, tournaments, selectedId, onSelect }) {
     return () => clearInterval(id);
   }, [tournament]);
 
-  const fmtDate = (iso) =>
-    new Date(iso).toLocaleDateString(lang === 'fa' ? 'fa-IR' : 'en-US', { month: 'short', day: 'numeric' });
+  const fmtDate = (iso) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   const timeLeft = () => {
     if (!tournament) return null;
@@ -1135,11 +1123,10 @@ export default function App() {
     return { lang, t: makeT(lang), setLang };
   }, [lang]);
 
-  const dir = lang === 'fa' ? 'rtl' : 'ltr';
   useEffect(() => {
     document.documentElement.lang = lang;
-    document.documentElement.dir = dir;
-  }, [lang, dir]);
+    document.documentElement.dir = 'ltr';
+  }, [lang]);
 
   // Scale factor for the fixed-pixel console art: the design is 390×844, so
   // anything smaller (short Androids, landscape, small frames) shrinks it
@@ -1165,7 +1152,7 @@ export default function App() {
 
   return (
     <LangContext.Provider value={langCtx}>
-      <div className={IS_KIOSK ? 'app app-kiosk' : 'app'} dir={dir} data-lang={lang}>
+      <div className={IS_KIOSK ? 'app app-kiosk' : 'app'} dir="ltr" data-lang={lang}>
         <div className="phone" ref={phoneRef}>
           {IS_KIOSK ? (
             // The booth visitor flow is a separate tree, not a screen among the web's home/
