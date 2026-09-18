@@ -330,6 +330,11 @@ function openInstagram(appUrl, profileUrl) {
   window.open(url, '_blank', 'noopener');
 }
 
+// Fallback wait before a background re-check when the server rate-limits one (ticket K3). The
+// server usually hands back its own retry_ms; this only covers a response that omits it. Kept
+// under the server's own 20 s per-player window so a genuine follow is picked up promptly.
+const INSTAGRAM_RETRY_MS = 5000;
+
 /**
  * Instagram follow reward (ticket K3). Two steps in one modal:
  *   1. The player enters their handle. onStart stores it server-side and returns the follow URLs
@@ -338,6 +343,9 @@ function openInstagram(appUrl, profileUrl) {
  *      them). onCheck asks the server to read BoxAPI and decide; the reward is released there.
  *
  * The server decides every outcome; this modal only reports what it observed and shows the copy.
+ * Checks are single-flight and latch on success: only one check is ever in flight, and once the
+ * server confirms the follow nothing a later check returns (a rate-limit, a stale not_following)
+ * can pull the modal back out of its done state.
  */
 function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel }) {
   const { t } = useLang();
@@ -347,6 +355,14 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel })
   const [busy, setBusy] = useState(false);
   const inputRef = useRef(null);
   const urlsRef = useRef({ appUrl: null, profileUrl: null });
+  // Single-flight and success latch (ticket K3): checkingRef blocks a second overlapping check so
+  // the focus auto-check and the explicit button can never fire two reads at once; doneRef stays
+  // set once the server confirms, so any check still settling afterwards is ignored.
+  const checkingRef = useRef(false);
+  const doneRef = useRef(false);
+  const retryTimerRef = useRef(null);
+  // Lets the retry timer and the focus listener call the latest check() without re-subscribing.
+  const checkRef = useRef(() => {});
 
   useEffect(() => {
     if (phase === 'handle') inputRef.current?.focus();
@@ -407,34 +423,91 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel })
       });
   };
 
-  const check = useCallback(() => {
-    setBusy(true);
-    setError(null);
-    onCheck()
-      .then((res) => {
-        setBusy(false);
-        if (res?.ok) {
-          onDone();
-          return;
-        }
-        setError(reasonKey(res?.reason));
-      })
-      .catch((err) => {
-        setBusy(false);
-        setError(errorKeyFor(err?.code));
-      });
-  }, [onCheck, onDone]);
+  const clearRetry = useCallback(() => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleRetry = useCallback(
+    (retryMs) => {
+      clearRetry();
+      const wait = Math.min(Math.max(Number(retryMs) || INSTAGRAM_RETRY_MS, 1000), 30000);
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null;
+        checkRef.current(true);
+      }, wait);
+    },
+    [clearRetry],
+  );
+
+  // Ask the server to read BoxAPI and decide. `auto` marks a background check (the tab regaining
+  // focus, or a rate-limit retry) as opposed to the player's explicit "I followed, check" tap.
+  // Single-flight: a check already in flight, or a follow already confirmed, is a no-op.
+  const check = useCallback(
+    (auto = false) => {
+      if (doneRef.current || checkingRef.current) return;
+      checkingRef.current = true;
+      clearRetry();
+      setBusy(true);
+      setError(null);
+      onCheck()
+        .then((res) => {
+          if (res?.ok) {
+            // The server confirmed the follow and released the reward. Latch it: nothing a later
+            // in-flight or retried check returns can undo done.
+            doneRef.current = true;
+            clearRetry();
+            setBusy(false);
+            onDone();
+            return;
+          }
+          setBusy(false);
+          // A follow we cannot see yet, or a handle not stored yet, is not a hard failure. On the
+          // explicit tap, show the soft "not yet" hint; a background focus check stays silent so
+          // returning to the tab before following never flashes a refusal.
+          if (res?.reason === 'not_following' || res?.reason === 'no_handle') {
+            if (!auto) setError(reasonKey(res.reason));
+            return;
+          }
+          setError(reasonKey(res?.reason));
+        })
+        .catch((err) => {
+          setBusy(false);
+          if (doneRef.current) return; // a success already settled; a later error never stomps it
+          if (err?.code === 'rate_limited') {
+            // "you just checked" - not a failure. Keep the follow UI clean and try again after
+            // the server's own window (or a short fallback) instead of showing an error.
+            setError(null);
+            scheduleRetry(err?.retryMs);
+            return;
+          }
+          setError(errorKeyFor(err?.code));
+        })
+        .finally(() => {
+          checkingRef.current = false;
+        });
+    },
+    [onCheck, onDone, clearRetry, scheduleRetry],
+  );
+
+  useEffect(() => {
+    checkRef.current = check;
+  }, [check]);
+
+  // Clear any pending retry when the modal closes.
+  useEffect(() => () => clearRetry(), [clearRetry]);
 
   // The tab regaining focus during the follow step is one "I came back" signal, same idea as the
-  // redirect-and-return tasks; the explicit Check button is the other.
+  // redirect-and-return tasks; the explicit Check button is the other. Both funnel through the
+  // single-flight check(), so the focus signal can never double-fire alongside the button.
   useEffect(() => {
     if (phase !== 'follow') return undefined;
-    const onFocus = () => {
-      if (!busy) check();
-    };
+    const onFocus = () => checkRef.current(true);
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, [phase, busy, check]);
+  }, [phase]);
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
@@ -489,7 +562,7 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel })
             <button type="button" className="btn-ghost" onClick={onCancel}>
               {t('tasks.cancel')}
             </button>
-            <button type="button" className="btn-primary" onClick={check} disabled={busy}>
+            <button type="button" className="btn-primary" onClick={() => check(false)} disabled={busy}>
               {busy ? t('tasks.instagramChecking') : t('tasks.instagramCheckCta')}
             </button>
           </div>
