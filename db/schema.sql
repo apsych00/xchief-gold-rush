@@ -1347,10 +1347,13 @@ end $$;
 -- updated_at moves) and is capped at duration + 5. The one hard rejection is a jump faster than
 -- 2x the wall-clock time since the LAST REPORT (not since started_at, so the very first report
 -- of a mid-video seconds value is never mistaken for a fast-forward): a client cannot claim to
--- have watched more than it could have in the time between two reports. Crossing 90% (and a
--- duration of at least 10 s, so a near-zero-length "video" cannot be claimed instantly) releases
--- the reward itself, through release_task_reward - never through claim_task, which refuses this
--- task's kind.
+-- have watched more than it could have in the time between two reports. The release threshold
+-- depends on the kind: the hosted 'video' task releases at 90% of its own duration (ticket B6),
+-- while a 'youtube' mission video (ticket K4 rework) releases at a fixed 30 s of validated watch -
+-- "watch for 30 seconds or more to get the reward" - regardless of the clip's full length. Both
+-- still require a duration of at least 10 s, so a near-zero-length "video" cannot be claimed
+-- instantly, and both release through release_task_reward - never through claim_task, which
+-- refuses this task's kind.
 create function public.report_video_progress(p_task text, p_seconds int, p_duration int)
 returns json language plpgsql security definer set search_path = public as $$
 declare
@@ -1390,7 +1393,10 @@ begin
     update public.video_progress set updated_at = now() where player_id = v_uid and task_id = p_task;
   end if;
 
-  if v_capped >= 0.9 * p_duration and p_duration >= 10 then
+  if p_duration >= 10 and (
+       (t.kind = 'youtube' and v_capped >= 30)
+       or (t.kind = 'video' and v_capped >= 0.9 * p_duration)
+     ) then
     v_release := public.release_task_reward(v_uid, p_task);
   end if;
 

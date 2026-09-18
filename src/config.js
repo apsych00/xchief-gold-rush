@@ -71,6 +71,7 @@ export const TASK_ICONS = {
   instagram: '◎',
   telegram: '✈',
   youtube: '▷',
+  youtube_videos: '▷',
   story: '↗',
   review_trustpilot: '★',
   review_google: '★',
