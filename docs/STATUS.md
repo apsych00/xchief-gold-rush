@@ -10,17 +10,20 @@ Walk the dev build: web http://localhost:5173 · kiosk http://localhost:5173/kio
 
 | Status | What | Notes |
 |---|---|---|
-| 🔨 | English everywhere | Removing the leftover Persian text/layout from every screen |
-| 🔨 | iPad Air layout - web screens | Home, leaderboard, profile, missions, share sized for the 13" iPad; phone unchanged |
-| 🔨 | iPad kiosk play screen | Refining the console body height and countdown fit on the booth iPad |
+| 🔨 | Share = image | Rebuilding share as a rendered badge image + native share sheet; dropping the page/copy-link |
+| 🔨 | Video missions | One row cycling 3 YouTube videos, watch 30s to earn, next unlocks after 3 min, "x of 3" |
+| 🔨 | Instagram mission | Follow-verify via BoxAPI; not_configured until the token is set |
 | 🎨 | Play buttons look | You're redoing the Up/Down button styling |
 
 ## Just landed (verified, on dev)
 
 | Status | What | Notes |
 |---|---|---|
-| ✅ | Kiosk = open link | Booth opens `/kiosk` and self-binds, no secret; intro is now a clean English card |
-| ✅ | iPad kiosk - first pass | Booth screens fill the tablet to a small edge |
+| ✅ | Kiosk = open link | Booth opens `/kiosk` and self-binds, no secret; clean English intro; "Play on web" QR on the attract screen |
+| ✅ | Kiosk gameplay + layout | Up/Down now lock like the web (Play Again to continue); console body shorter, countdown fits the iPad |
+| ✅ | English everywhere | Persian text/layout removed from every screen |
+| ✅ | iPad Air layout | Kiosk and web screens fill the 13" iPad; phone unchanged |
+| ✅ | Ads clickable | Both banners open xchief.com with the goldrush UTM |
 | ✅ | Share your score | Popup + public page; X / Telegram / copy-link with working icons and link |
 | ✅ | Missions tab | No-skip YouTube missions; removed Google and Forex Peace Army reviews |
 | ✅ | Register-at-xChief mission | Opens the registration page (goldrush UTM), no email modal, 1h timer that survives closing the app |
