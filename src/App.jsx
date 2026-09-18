@@ -135,7 +135,7 @@ export function TopBar({ profile, actions, active }) {
           type="button"
           className="logo logo-home"
           onClick={actions?.goHome}
-          aria-label={t('nav.home')}
+          aria-label="xChief home"
           dir="ltr"
         >
           <Logo height={26} />
