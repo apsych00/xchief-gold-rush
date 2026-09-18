@@ -1,18 +1,21 @@
 -- Dev seed. Production uses real coupon codes and a generated kiosk secret (see docs/switch-environment.md).
 
--- Task rewards mirror src/config.js. 'signup' is the email verification itself, so it needs a confirmed email.
-insert into public.tasks (id, reward, repeat_ms, requires_email) values
-  ('signup',            1000, null,        true),
-  ('video',             100,  300000,      false),
-  ('email',             200,  null,        false),
-  ('instagram',         300,  null,        false),
-  ('telegram',          300,  null,        false),
-  ('youtube',           300,  null,        false),
-  ('story',             300,  86400000,    false),
-  ('review_trustpilot', 500,  null,        false),
-  ('review_google',     500,  null,        false),
-  ('review_fpa',        500,  null,        false)
-on conflict (id) do update set reward = excluded.reward, repeat_ms = excluded.repeat_ms, requires_email = excluded.requires_email;
+-- Task rewards mirror src/config.js. 'signup' is now a redirect task: tapping it opens the
+-- xChief registration page in a new tab and a 1-hour persisted countdown releases the reward.
+-- The other tasks keep their previous default kind ('manual', null url) so this seed does not
+-- change their behavior; db/seed.sql is the canonical task definition for the box build.
+insert into public.tasks (id, reward, repeat_ms, requires_email, kind, url) values
+  ('signup',            1000, null,        false, 'redirect', 'https://my.xchief.com/registration?utm_source=goldrush&utm_campaign=goldrush'),
+  ('video',             100,  300000,      false, 'manual',   null),
+  ('email',             200,  null,        false, 'manual',   null),
+  ('instagram',         300,  null,        false, 'manual',   null),
+  ('telegram',          300,  null,        false, 'manual',   null),
+  ('youtube',           300,  null,        false, 'manual',   null),
+  ('story',             300,  86400000,    false, 'manual',   null),
+  ('review_trustpilot', 500,  null,        false, 'manual',   null),
+  ('review_google',     500,  null,        false, 'manual',   null),
+  ('review_fpa',        500,  null,        false, 'manual',   null)
+on conflict (id) do update set reward = excluded.reward, repeat_ms = excluded.repeat_ms, requires_email = excluded.requires_email, kind = excluded.kind, url = excluded.url;
 
 -- 100 generated promo codes, e.g. XG-7F3A9C2B1D. Export the list for marketing with:
 --   select code from public.coupons order by created_at;

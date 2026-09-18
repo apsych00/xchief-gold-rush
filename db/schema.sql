@@ -219,7 +219,8 @@ on conflict (tier) do update set
 -- copy keyed by id, the same way it already does for every other piece of task copy.
 -- kind (ticket B6+B7+B9, docs/tickets/b6-b7-b9-rewards.md decision 1) drives which release path a
 -- task takes and what the client renders: 'video' (B6, progress-reported, released by the server
--- at 90%), 'redirect' (B7, task_start/task_return window), 'email' and 'signup' (B9, released by
+-- at 90%), 'redirect' (B7, task_start/task_return window; signup is a redirect task with a
+-- persisted 1-hour window and the broker registration URL), 'email' (B9, released by
 -- verify_otp_code on the socket that verified), 'instagram' (B8, not built here), 'manual' (the
 -- only kind claim_task still accepts from the client - none seeded, kept for future use). url is
 -- the redirect destination; null for every other kind.
