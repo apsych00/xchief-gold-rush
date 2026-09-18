@@ -134,7 +134,7 @@ export function TopBar({ profile, actions, active }) {
         <button
           type="button"
           className="logo logo-home"
-          onClick={actions.goHome}
+          onClick={actions?.goHome}
           aria-label={t('nav.home')}
           dir="ltr"
         >
