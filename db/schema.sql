@@ -218,7 +218,8 @@ on conflict (tier) do update set
 -- task takes and what the client renders: 'video' (B6, progress-reported, released by the server
 -- at 90%), 'redirect' (B7, task_start/task_return window; signup is a redirect task with a
 -- persisted 1-hour window and the broker registration URL), 'email' (B9, released by
--- verify_otp_code on the socket that verified), 'instagram' (B8, not built here), 'manual' (the
+-- verify_otp_code on the socket that verified), 'instagram' (K3, released by verify_instagram
+-- once the server proves the follow through BoxAPI), 'manual' (the
 -- only kind claim_task still accepts from the client - none seeded, kept for future use). url is
 -- the redirect destination; null for every other kind.
 create table public.tasks (
@@ -274,17 +275,19 @@ create table public.task_visits (
   primary key (player_id, task_id)
 );
 
--- Instagram-verified accounts (ticket B8): one row per Instagram user_id that has claimed the
--- reward. player_id/device_id record who claimed it; a duplicate ig_user_id is refused.
+-- Instagram follow reward (ticket K3, replacing B8's OAuth model): one row per player, holding
+-- the handle they entered before being sent to Instagram to follow. verified_at is null until
+-- the server proves the follow through the BoxAPI data API (server/instagram.js); handle is
+-- unique so one handle can be claimed by one player only. device_id records the player's device
+-- at start time. The reward itself is still granted through release_task_reward, so the
+-- once-per-device/email guards apply unchanged.
 create table public.instagram_accounts (
-  ig_user_id text primary key,
-  username text not null,
-  player_id uuid not null references public.players (id) on delete cascade,
+  player_id uuid primary key references public.players (id) on delete cascade,
+  handle text not null unique,
   device_id uuid references public.devices (id),
-  verified_at timestamptz not null default now()
+  verified_at timestamptz,
+  created_at timestamptz not null default now()
 );
-
-create index instagram_accounts_player on public.instagram_accounts (player_id);
 
 -- The $100 codes. Claimed atomically, once each.
 -- 'reserved' (ticket C9, docs/tickets/c9-qr-claim.md decision 2): a coupon a 5th win just
@@ -1283,6 +1286,65 @@ begin
   return json_build_object('coins', v_coins, 'reward', t.reward);
 end $$;
 
+-- Instagram follow reward, step 1 (ticket K3): the player enters their handle before being sent
+-- to Instagram to follow. Stores the handle on the player's own row with verified_at still null;
+-- the follow is proven later by the server through BoxAPI, never asserted by the client. A handle
+-- already held by another player is refused (instagram_handle_taken - the unique index makes this
+-- atomic under concurrent claims), and a player who already verified cannot switch to a different
+-- handle (instagram_already_verified). Re-entering the same handle, verified or not, is a no-op.
+create function public.start_instagram(p_player uuid, p_handle text)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  v_existing public.instagram_accounts%rowtype;
+  v_device uuid;
+begin
+  perform public.ensure_player(p_player);
+  perform 1 from public.players where id = p_player for update;
+
+  select device_id into v_device from public.players where id = p_player;
+  select * into v_existing from public.instagram_accounts where player_id = p_player;
+
+  if found and v_existing.verified_at is not null then
+    if v_existing.handle <> p_handle then
+      raise exception 'instagram_already_verified';
+    end if;
+    return json_build_object('handle', v_existing.handle, 'verified', true);
+  end if;
+
+  begin
+    insert into public.instagram_accounts (player_id, handle, device_id)
+      values (p_player, p_handle, v_device)
+    on conflict (player_id) do update set handle = excluded.handle;
+  exception when unique_violation then
+    raise exception 'instagram_handle_taken';
+  end;
+
+  return json_build_object('handle', p_handle, 'verified', false);
+end $$;
+
+-- Instagram follow reward, step 2 (ticket K3): the server has just proven the follow through
+-- BoxAPI (server/instagram.js) and now records it and releases the reward - one atomic step, so
+-- the client can never wedge itself half-verified. Marks verified_at (idempotent: a second call
+-- once verified releases nothing more) and returns whatever release_task_reward granted, which
+-- is null when the once-per-player/device/email guards already covered it.
+create function public.verify_instagram(p_player uuid, p_handle text)
+returns json language plpgsql security definer set search_path = public as $$
+declare
+  v_release json;
+begin
+  perform 1 from public.players where id = p_player for update;
+
+  update public.instagram_accounts
+    set verified_at = coalesce(verified_at, now()), handle = p_handle
+    where player_id = p_player;
+
+  v_release := public.release_task_reward(p_player, 'instagram');
+  return json_build_object(
+    'coins', case when v_release is not null then (v_release->>'coins')::int else null end,
+    'reward', case when v_release is not null then (v_release->>'reward')::int else null end
+  );
+end $$;
+
 -- Video watch progress (ticket B6 decision 2), client-callable via auth.uid(). Progress never
 -- moves backwards in storage (a rewind is a silent no-op, not an error - only the touched
 -- updated_at moves) and is capped at duration + 5. The one hard rejection is a jump faster than
@@ -1651,5 +1713,7 @@ revoke execute on function
   public.claim_prize(text, text, inet),
   public.release_expired_claims(),
   public.get_setting_int(text, int),
-  public.release_task_reward(uuid, text)
+  public.release_task_reward(uuid, text),
+  public.start_instagram(uuid, text),
+  public.verify_instagram(uuid, text)
 from public, anon, authenticated;

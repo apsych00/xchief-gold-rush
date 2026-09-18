@@ -14,8 +14,8 @@ const GAME_SERVER_PORT = process.env.PORT || '8787';
 // The Vite port follows BASE_URL so parallel checkouts can each run the suite on their own port.
 const VITE_PORT = new URL(BASE_URL).port || '5173';
 const GAME_SERVER_URL = `http://localhost:${GAME_SERVER_PORT}/health`;
-const FAKE_INSTAGRAM_PORT = process.env.FAKE_INSTAGRAM_PORT || '9876';
-const FAKE_INSTAGRAM_URL = `http://localhost:${FAKE_INSTAGRAM_PORT}`;
+const FAKE_BOXAPI_PORT = process.env.FAKE_BOXAPI_PORT || '9877';
+const FAKE_BOXAPI_URL = `http://localhost:${FAKE_BOXAPI_PORT}`;
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -49,12 +49,11 @@ export default defineConfig({
         MAX_CONNECTIONS_PER_IP_PER_MIN: '1000',
         MAX_SOCKETS_PER_IP: '1000',
         MAX_OTP_REQUESTS_PER_IP_PER_10MIN: '1000',
-        // Instagram reward fake (ticket B8). Leave empty to test the real Instagram flow; the
-        // E2E suite uses the fake server defined below.
-        INSTAGRAM_APP_ID: process.env.INSTAGRAM_APP_ID || 'fake-app-id',
-        INSTAGRAM_APP_SECRET: process.env.INSTAGRAM_APP_SECRET || 'fake-app-secret',
-        INSTAGRAM_REDIRECT_URI: process.env.INSTAGRAM_REDIRECT_URI || `${BASE_URL}/api/instagram/callback`,
-        INSTAGRAM_API_BASE: process.env.INSTAGRAM_API_BASE || FAKE_INSTAGRAM_URL,
+        // Instagram follow reward via BoxAPI (ticket K3). The E2E suite points the adapter at the
+        // fake BoxAPI server defined below; our own handle is the account the fake seeds as 'xchief'.
+        BOXAPI_TOKEN: process.env.BOXAPI_TOKEN || 'fake-token',
+        BOXAPI_BASE: process.env.BOXAPI_BASE || `${FAKE_BOXAPI_URL}/`,
+        INSTAGRAM_HANDLE: process.env.INSTAGRAM_HANDLE || 'xchief',
         // Ticket B13: the no-device reward window (legacy clients only; a fresh browser is bound to
         // the device minted at auth). Raised here like the four per-IP budgets above so the suite's
         // shared loopback address can never trip it.
@@ -75,13 +74,13 @@ export default defineConfig({
       },
     },
     {
-      // Fake Instagram OAuth server for ticket B8 E2E tests.
-      command: 'node test/fakes/instagram.mjs',
-      url: `${FAKE_INSTAGRAM_URL}/health`,
+      // Fake BoxAPI Instagram data-API server for ticket K3 E2E tests.
+      command: 'node test/fakes/boxapi.mjs',
+      url: `${FAKE_BOXAPI_URL}/health`,
       reuseExistingServer: true,
       timeout: 10_000,
       env: {
-        FAKE_INSTAGRAM_PORT: String(FAKE_INSTAGRAM_PORT),
+        FAKE_BOXAPI_PORT: String(FAKE_BOXAPI_PORT),
       },
     },
   ],

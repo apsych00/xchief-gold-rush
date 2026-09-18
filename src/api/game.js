@@ -31,3 +31,8 @@ export const returnTaskVisit = (task) => socket.returnTaskVisit(task);
  * list, the pager and this player's own row (tickets B1, B2). `opts.tournament` (past or
  * upcoming id) and `opts.page` both default to the current tournament's first page. */
 export const getLeaderboard = (opts) => socket.getLeaderboard(opts);
+
+/** Instagram follow reward (ticket K3): step 1 stores the handle and returns the follow URLs;
+ * step 2 asks the server to verify the follow through BoxAPI and release the reward itself. */
+export const instagramStart = (handle) => socket.instagramStart(handle);
+export const instagramCheck = () => socket.instagramCheck();

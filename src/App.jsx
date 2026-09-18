@@ -1205,6 +1205,8 @@ export default function App() {
                   onReportVideoProgress={actions.reportVideoProgress}
                   onStartTaskVisit={actions.startTaskVisit}
                   onReturnTaskVisit={actions.returnTaskVisit}
+                  onInstagramStart={actions.instagramStart}
+                  onInstagramCheck={actions.instagramCheck}
                   onOpenIdentity={() => setOtpOpen(true)}
                   onToast={(txt) => actions.toast?.(txt)}
                 />

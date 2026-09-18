@@ -50,6 +50,10 @@ const TOKEN_RENEW_AFTER_SECONDS = 7 * 24 * 60 * 60; // sliding renewal: reissue 
 
 const LEADERBOARD_DEBOUNCE_MS = 1000; // docs/layers.md C4: "debounced to at most once per second"
 
+// Ticket K3 decision 2: at most one Instagram follow check per 20 s per player, tracked in
+// memory - a BoxAPI read is not free and a player mashing "check" gains nothing by it.
+const INSTAGRAM_CHECK_INTERVAL_MS = 20000;
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 // /api/claim/<token>: the token is the base64url string settle_kiosk_round mints (ticket C9),
@@ -172,38 +176,16 @@ export function verifyDeviceToken(token) {
   return id;
 }
 
-/**
- * Instagram OAuth state (ticket B8): a signed player id so the callback can recover who started
- * the flow without keeping server-side state. The state is `<playerId>.<hmac>` - the HMAC proves
- * the id was minted by this server, and the id itself is what the callback needs.
- */
-export function signInstagramState(playerId) {
-  const sig = crypto.createHmac('sha256', tokenSecret()).update(playerId).digest('hex');
-  return `${playerId}.${sig}`;
-}
-
-export function readInstagramState(state) {
-  if (typeof state !== 'string') return null;
-  const parts = state.split('.');
-  if (parts.length !== 2) return null;
-  const [id, sigHex] = parts;
-  if (!UUID_RE.test(id)) return null;
-  const expectedHex = crypto.createHmac('sha256', tokenSecret()).update(id).digest('hex');
-  let given;
-  let expected;
-  try {
-    given = Buffer.from(sigHex, 'hex');
-    expected = Buffer.from(expectedHex, 'hex');
-  } catch {
-    return null;
-  }
-  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
-  return id;
-}
-
-function redirect(res, location) {
-  res.writeHead(302, { Location: location });
-  res.end();
+// Instagram handle (ticket K3): trimmed, lowercased, a leading @ stripped, then 1-30 chars of
+// [a-z0-9._] - Instagram's own username charset. Validated identically on the client (src/Tasks.jsx).
+// Returns the normalized handle or null when it does not fit.
+const IG_HANDLE_RE = /^[a-z0-9._]{1,30}$/;
+export function normalizeHandle(raw) {
+  const handle = String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, '');
+  return IG_HANDLE_RE.test(handle) ? handle : null;
 }
 
 /**
@@ -338,6 +320,7 @@ export function createApp({
 } = {}) {
   const playerSockets = new Map(); // playerId -> ws
   const kioskSockets = new Map(); // kioskId -> ws
+  const instagramCheckAt = new Map(); // playerId -> last instagram_check timestamp (ticket K3)
   let statusCache = null; // { at, aggregates } - see STATUS_CACHE_MS
   // Assigned once, after `limits` and `alerts` exist below - declared here so
   // effectiveLeaderboardDebounceMs and handleAuth (defined ahead of that point) close over the
@@ -632,93 +615,6 @@ export function createApp({
     }
   }
 
-  function parseQuery(url) {
-    const idx = url.indexOf('?');
-    return idx === -1 ? new URLSearchParams() : new URLSearchParams(url.slice(idx));
-  }
-
-  /**
-   * GET /api/instagram/start?token=<player token> (ticket B8): verifies the player token, signs
-   * the player's id into the OAuth state, and redirects to Instagram's authorize URL. Missing or
-   * invalid tokens redirect back to the SPA as unauthenticated; an unconfigured adapter redirects
-   * as not_configured.
-   */
-  async function handleInstagramStart(req, res) {
-    const query = parseQuery(req.url);
-    const token = query.get('token');
-    if (!token) {
-      redirect(res, '/?ig=unauthenticated');
-      return;
-    }
-    const playerId = await verifyToken(token);
-    if (!playerId) {
-      redirect(res, '/?ig=unauthenticated');
-      return;
-    }
-    const state = signInstagramState(playerId);
-    const auth = instagram.authorizeUrl({ state });
-    if (!auth.ok) {
-      redirect(res, `/?ig=${auth.code}`);
-      return;
-    }
-    redirect(res, auth.url);
-  }
-
-  /**
-   * GET /api/instagram/callback (ticket B8): Instagram sends back `code` and `state`. The state
-   * is verified to recover the player id; the code is exchanged for an access token, the token
-   * is used to read the user's id/username, the account is stored, and the instagram task reward
-   * is released server-side. Every failure redirects to `/?ig=<code>` so the SPA can show the
-   * right state.
-   */
-  async function handleInstagramCallback(req, res) {
-    const query = parseQuery(req.url);
-    const error = query.get('error');
-    if (error) {
-      redirect(res, `/?ig=${encodeURIComponent(error)}`);
-      return;
-    }
-    const code = query.get('code');
-    const state = query.get('state');
-    if (!code || !state) {
-      redirect(res, '/?ig=invalid_request');
-      return;
-    }
-    const playerId = readInstagramState(state);
-    if (!playerId) {
-      redirect(res, '/?ig=invalid_state');
-      return;
-    }
-    const exchanged = await instagram.exchangeCode({ code });
-    if (!exchanged.ok) {
-      redirect(res, `/?ig=${exchanged.code}`);
-      return;
-    }
-    const me = await instagram.readMe({ token: exchanged.access_token });
-    if (!me.ok) {
-      redirect(res, `/?ig=${me.code}`);
-      return;
-    }
-    try {
-      const deviceId = await ledger.getPlayerDeviceId(playerId);
-      await ledger.storeInstagramAccount(playerId, me.id, me.username, deviceId);
-    } catch (err) {
-      if (err && err.code === '23505') {
-        redirect(res, '/?ig=already_claimed');
-        return;
-      }
-      console.error('[instagram] store account error', err);
-      redirect(res, '/?ig=internal');
-      return;
-    }
-    const reward = await ledger.releaseTaskReward(playerId, 'instagram');
-    if (!reward) {
-      redirect(res, '/?ig=already_claimed');
-      return;
-    }
-    redirect(res, '/?ig=done');
-  }
-
   const kioskIdleSweep = createKioskIdleSweep({
     ledger,
     getSocket,
@@ -788,30 +684,6 @@ export function createApp({
           return;
         }
         res.writeHead(405, { Allow: 'GET, POST', 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: 'method_not_allowed' }));
-        return;
-      }
-      if (req.url.startsWith('/api/instagram/start')) {
-        if (req.method === 'GET') {
-          handleInstagramStart(req, res).catch((err) => {
-            console.error('[instagram] start error', err);
-            redirect(res, '/?ig=internal');
-          });
-          return;
-        }
-        res.writeHead(405, { Allow: 'GET', 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: 'method_not_allowed' }));
-        return;
-      }
-      if (req.url.startsWith('/api/instagram/callback')) {
-        if (req.method === 'GET') {
-          handleInstagramCallback(req, res).catch((err) => {
-            console.error('[instagram] callback error', err);
-            redirect(res, '/?ig=internal');
-          });
-          return;
-        }
-        res.writeHead(405, { Allow: 'GET', 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: 'method_not_allowed' }));
         return;
       }
@@ -1198,6 +1070,103 @@ export function createApp({
           send(ws, { type: 'tasks', rows: await ledger.getTasks(id) });
           break;
         }
+        case 'instagram_start': {
+          // Ticket K3 step 1: the player enters their handle before being sent to Instagram to
+          // follow. The server stores the handle (unverified) and answers with the URLs to open;
+          // it never trusts the client's word on the follow - that is proven in instagram_check.
+          if (kind !== 'player') {
+            send(ws, { type: 'error', code: 'not_available' });
+            break;
+          }
+          const budget = limits.checkQueryRate(ws.socketId, 'instagram_start');
+          if (!budget.allowed) {
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: budget.retryMs });
+            break;
+          }
+          // No token yet: behave exactly like B8's not_configured (the row shows "coming soon"),
+          // never crash. Checked before handle validation so the coming-soon path needs no input.
+          if (instagram.status() === 'not_configured') {
+            send(ws, { type: 'instagram_started', status: 'not_configured' });
+            break;
+          }
+          const handle = normalizeHandle(frame.handle);
+          if (!handle) {
+            send(ws, { type: 'error', code: 'invalid_handle' });
+            break;
+          }
+          await ledger.startInstagram(id, handle); // may raise instagram_handle_taken / _already_verified
+          const ourHandle = instagram.ourHandle();
+          const profileUrl =
+            process.env.INSTAGRAM_PROFILE_URL || (ourHandle ? `https://www.instagram.com/${ourHandle}/` : null);
+          const appUrl = ourHandle ? `instagram://user?username=${ourHandle}` : null;
+          send(ws, { type: 'instagram_started', handle, profile_url: profileUrl, app_url: appUrl });
+          break;
+        }
+        case 'instagram_check': {
+          // Ticket K3 step 2: the player says "I followed, check". The server reads our own id and
+          // the player's following list off BoxAPI (server/instagram.js) and decides - the client
+          // never asserts the follow. On a proven follow the reward releases through the same
+          // release_task_reward path every other task uses (once per player/device/email, B13).
+          if (kind !== 'player') {
+            send(ws, { type: 'error', code: 'not_available' });
+            break;
+          }
+          // instagram_check counts against S2's per-socket query budget (ticket K3 decision 3).
+          const queryBudget = limits.checkQueryRate(ws.socketId, 'instagram_check');
+          if (!queryBudget.allowed) {
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: queryBudget.retryMs });
+            break;
+          }
+          if (instagram.status() === 'not_configured') {
+            send(ws, { type: 'instagram_result', ok: false, reason: 'not_configured' });
+            break;
+          }
+          const account = await ledger.getInstagramAccount(id);
+          if (!account) {
+            // No handle stored: the player never ran instagram_start. Not an error - the row just
+            // asks for the handle again.
+            send(ws, { type: 'instagram_result', ok: false, reason: 'no_handle' });
+            break;
+          }
+          if (account.verified_at) {
+            // Already proven on an earlier check - nothing more to read from BoxAPI.
+            send(ws, { type: 'instagram_result', ok: true });
+            break;
+          }
+          // At most one BoxAPI read per 20 s per player (ticket K3 decision 2), tracked in memory.
+          // Only a real read consumes the window; not_configured / no_handle / already-verified
+          // above return before this point.
+          const last = instagramCheckAt.get(id) || 0;
+          const sinceLast = Date.now() - last;
+          if (sinceLast < INSTAGRAM_CHECK_INTERVAL_MS) {
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: INSTAGRAM_CHECK_INTERVAL_MS - sinceLast });
+            break;
+          }
+          instagramCheckAt.set(id, Date.now());
+          const verdict = await instagram.verifyFollow({ handle: account.handle });
+          // Log the handle and the outcome, never the token (ticket K3 decision 2).
+          console.log(`[instagram] check handle=${account.handle} player=${id} outcome=${verdict.ok ? 'ok' : verdict.reason}`);
+          if (!verdict.ok) {
+            send(ws, { type: 'instagram_result', ok: false, reason: verdict.reason });
+            break;
+          }
+          const rewardBudget = limits.checkRewardClaimIp(ws.clientIp, ws.hasDevice);
+          if (!rewardBudget.allowed) {
+            logRewardRefusal(ws, 'instagram_check', 'rate_limited');
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: rewardBudget.retryMs });
+            break;
+          }
+          const released = await ledger.verifyInstagram(id, account.handle, ws.clientIp);
+          if (released.reward != null) limits.recordRewardClaim(ws.clientIp, ws.hasDevice);
+          const me = await ledger.getMe(id);
+          send(ws, {
+            type: 'instagram_result',
+            ok: true,
+            ...(released.reward != null ? { reward: released.reward } : {}),
+            me,
+          });
+          break;
+        }
         case 'leaderboard': {
           // D8 (docs/reports/redteam.md): a kiosk has no email and is never ranked; guarded the
           // same way every other player-only frame already is. Ticket B2 decision 2: the
@@ -1390,7 +1359,10 @@ export function createApp({
     });
 
     ws.on('close', () => {
-      if (ws.kind === 'player' && playerSockets.get(ws.identity) === ws) playerSockets.delete(ws.identity);
+      if (ws.kind === 'player' && playerSockets.get(ws.identity) === ws) {
+        playerSockets.delete(ws.identity);
+        instagramCheckAt.delete(ws.identity); // ticket K3: forget the per-player check window
+      }
       if (ws.kind === 'kiosk' && kioskSockets.get(ws.identity) === ws) kioskSockets.delete(ws.identity);
       limits.trackSocketClose(ws.clientIp);
       limits.forgetSocket(ws.socketId);

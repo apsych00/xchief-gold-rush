@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { PROMO_VIDEO_SECONDS, PROMO_VIDEO_URL, STAFF_PIN, TASK_ICONS, VERIFY_MODE } from './config.js';
 import { accumulateWatchTime } from './watchTime.js';
 import { num, useLang } from './i18n.js';
-import { apiUrl } from './api/client.js';
-import { getStoredToken } from './api/socket.js';
 import { clearSignupTimer, readSignupTimer, writeSignupTimer } from './signupTimer.js';
 import { clearYoutubeCooldown, readYoutubeCooldown, writeYoutubeCooldown } from './youtubeMissionTimer.js';
 import Logo from './Logo.jsx';
@@ -309,6 +307,199 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
   );
 }
 
+// Instagram handle validation, mirrored from server/index.js normalizeHandle (ticket K3): trim,
+// lowercase, drop a leading @, then 1-30 chars of Instagram's own [a-z0-9._] charset.
+const IG_HANDLE_RE = /^[a-z0-9._]{1,30}$/;
+function normalizeHandle(raw) {
+  const handle = String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, '');
+  return IG_HANDLE_RE.test(handle) ? handle : null;
+}
+
+/**
+ * Open Instagram to our profile (ticket K3): try the app deep link first, and if the app did not
+ * take the tab over within 1.5 s, send that same tab to the web profile. Reusing the one tab
+ * keeps a desktop browser (where the app scheme does nothing) from stacking blank tabs.
+ */
+function openInstagram(appUrl, profileUrl) {
+  const first = appUrl || profileUrl;
+  if (!first) return;
+  const win = window.open(first, '_blank');
+  if (appUrl && profileUrl && win) {
+    setTimeout(() => {
+      try {
+        if (!win.closed) win.location.href = profileUrl;
+      } catch {
+        /* cross-origin after the app took over: nothing to fall back to */
+      }
+    }, 1500);
+  }
+}
+
+/**
+ * Instagram follow reward (ticket K3). Two steps in one modal:
+ *   1. The player enters their handle. onStart stores it server-side and returns the follow URLs
+ *      (or a not_configured signal). The client then opens Instagram - it never claims the follow.
+ *   2. The player follows, comes back, and taps Check (or the tab regaining focus checks for
+ *      them). onCheck asks the server to read BoxAPI and decide; the reward is released there.
+ *
+ * The server decides every outcome; this modal only reports what it observed and shows the copy.
+ */
+function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel }) {
+  const { t } = useLang();
+  const [phase, setPhase] = useState('handle'); // 'handle' | 'follow'
+  const [handle, setHandle] = useState('');
+  const [error, setError] = useState(null); // i18n key for a refusal shown to the player
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef(null);
+  const urlsRef = useRef({ appUrl: null, profileUrl: null });
+
+  useEffect(() => {
+    if (phase === 'handle') inputRef.current?.focus();
+  }, [phase]);
+
+  const reasonKey = (reason) => {
+    switch (reason) {
+      case 'not_following':
+        return 'tasks.instagramNotFollowing';
+      case 'private':
+        return 'tasks.instagramPrivate';
+      case 'not_found':
+        return 'tasks.instagramNotFound';
+      default:
+        return 'tasks.instagramFailed';
+    }
+  };
+
+  const errorKeyFor = (code) => {
+    switch (code) {
+      case 'invalid_handle':
+        return 'tasks.instagramInvalidHandle';
+      case 'instagram_handle_taken':
+        return 'tasks.instagramHandleTaken';
+      case 'instagram_already_verified':
+        return 'tasks.instagramAlreadyVerified';
+      case 'rate_limited':
+        return 'tasks.instagramRateLimited';
+      default:
+        return 'tasks.instagramFailed';
+    }
+  };
+
+  const submitHandle = (e) => {
+    e.preventDefault();
+    const clean = normalizeHandle(handle);
+    if (!clean) {
+      setError('tasks.instagramInvalidHandle');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    onStart(clean)
+      .then((res) => {
+        setBusy(false);
+        if (res?.status === 'not_configured') {
+          onNotConfigured();
+          onCancel();
+          return;
+        }
+        urlsRef.current = { appUrl: res?.app_url || null, profileUrl: res?.profile_url || null };
+        setPhase('follow');
+        openInstagram(res?.app_url, res?.profile_url);
+      })
+      .catch((err) => {
+        setBusy(false);
+        setError(errorKeyFor(err?.code));
+      });
+  };
+
+  const check = useCallback(() => {
+    setBusy(true);
+    setError(null);
+    onCheck()
+      .then((res) => {
+        setBusy(false);
+        if (res?.ok) {
+          onDone();
+          return;
+        }
+        setError(reasonKey(res?.reason));
+      })
+      .catch((err) => {
+        setBusy(false);
+        setError(errorKeyFor(err?.code));
+      });
+  }, [onCheck, onDone]);
+
+  // The tab regaining focus during the follow step is one "I came back" signal, same idea as the
+  // redirect-and-return tasks; the explicit Check button is the other.
+  useEffect(() => {
+    if (phase !== 'follow') return undefined;
+    const onFocus = () => {
+      if (!busy) check();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [phase, busy, check]);
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      {phase === 'handle' ? (
+        <form className="modal" onSubmit={submitHandle}>
+          <div className="modal-title">{t('tasks.instagramHandleTitle')}</div>
+          <div className="modal-sub">
+            {error ? <span className="lead-error">{t(error)}</span> : t('tasks.instagramHandleSub')}
+          </div>
+          <div className="ig-handle-field">
+            <span className="ig-handle-at" aria-hidden="true">
+              @
+            </span>
+            <input
+              ref={inputRef}
+              className="ig-handle-input"
+              type="text"
+              inputMode="text"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              maxLength={30}
+              value={handle}
+              onChange={(e) => setHandle(e.target.value.replace(/^@+/, ''))}
+              placeholder={t('tasks.instagramHandlePlaceholder')}
+              aria-label={t('tasks.instagramHandleTitle')}
+            />
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn-ghost" onClick={onCancel}>
+              {t('tasks.cancel')}
+            </button>
+            <button type="submit" className="btn-primary" disabled={busy || !handle.trim()}>
+              {t('tasks.instagramFollowCta')}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="modal">
+          <div className="modal-title">{t('tasks.instagramFollowTitle')}</div>
+          <div className="modal-sub">
+            {error ? <span className="lead-error">{t(error)}</span> : t('tasks.instagramFollowSub')}
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn-ghost" onClick={() => openInstagram(urlsRef.current.appUrl, urlsRef.current.profileUrl)}>
+              {t('tasks.instagramOpenAgain')}
+            </button>
+            <button type="button" className="btn-primary" onClick={check} disabled={busy}>
+              {busy ? t('tasks.instagramChecking') : t('tasks.instagramCheckCta')}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * The rewards screen (docs/layers.md C5; ticket B6+B7+B9 / K4). Renders entirely from tasksRows -
  * public.get_tasks()'s own id/title/reward/claimed/kind/url - never a client-side task table.
@@ -318,7 +509,8 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
  *     the return when the window ends (a timer, not only a focus event). The signup mission is a
  *     redirect task with a persisted 1-hour window and its own external registration URL.
  *   - 'email': released by verify_otp_code once an email is verified; "start" opens the OTP screen.
- *   - 'instagram': B8's own ticket - shown with no action.
+ *   - 'instagram': ticket K3 - opens the handle-then-follow-then-check modal; the server proves
+ *     the follow through BoxAPI and releases the reward, never the client.
  *   - 'manual' (kept for future use; none seeded): the old instant-claim / PIN-gated path.
  */
 export default function Tasks({
@@ -328,6 +520,8 @@ export default function Tasks({
   onReportVideoProgress,
   onStartTaskVisit,
   onReturnTaskVisit,
+  onInstagramStart,
+  onInstagramCheck,
   onOpenIdentity,
   onToast,
 }) {
@@ -337,24 +531,14 @@ export default function Tasks({
   const [pinFor, setPinFor] = useState(null);
   const [videoTask, setVideoTask] = useState(null);
   const [ytCooldownUntil, setYtCooldownUntil] = useState(() => readYoutubeCooldown());
-  const [igStatus, setIgStatus] = useState(() => new URLSearchParams(window.location.search).get('ig'));
+  // Instagram (ticket K3): the modal is open while the player enters a handle / follows / checks;
+  // igNotConfigured latches once the server says the BoxAPI token is missing (the B8 "coming
+  // soon" state). The done state is read straight off the task row's `claimed`, not tracked here.
+  const [igModalOpen, setIgModalOpen] = useState(false);
+  const [igNotConfigured, setIgNotConfigured] = useState(false);
   const pendingReturns = useRef(new Set());
   const returnTimers = useRef(new Map());
   const ytClaimedBaseline = useRef(null);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const ig = params.get('ig');
-    if (ig) {
-      setIgStatus(ig);
-      params.delete('ig');
-      const qs = params.toString();
-      window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
-      // A successful return should refresh the task list so the instagram row shows claimed.
-      if (ig === 'done') onRefreshTasks?.();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 250);
@@ -501,13 +685,8 @@ export default function Tasks({
       return;
     }
     if (row.kind === 'instagram') {
-      const token = getStoredToken();
-      if (!token) {
-        onToast?.('unauthenticated');
-        return;
-      }
-      setIgStatus('connecting');
-      window.location.href = apiUrl(`/api/instagram/start?token=${encodeURIComponent(token)}`);
+      if (igNotConfigured) return; // coming soon: the button is disabled anyway
+      setIgModalOpen(true);
       return;
     }
     // 'manual' (none seeded, kept for future use): the same instant-claim / PIN-gated path this
@@ -519,16 +698,13 @@ export default function Tasks({
     onClaim(row.id);
   };
 
-  const instagramBannerText =
-    igStatus === 'done'
-      ? t('tasks.instagramDone')
-      : igStatus === 'not_configured'
-        ? t('tasks.instagramComingSoon')
-        : igStatus === 'connecting'
-          ? t('tasks.instagramPending')
-          : igStatus
-            ? t('tasks.instagramFailed')
-            : null;
+  const instagramRow = tasksRows.find((r) => r.id === 'instagram');
+  const instagramDone = Boolean(instagramRow?.claimed);
+  const instagramBannerText = instagramDone
+    ? t('tasks.instagramDone')
+    : igNotConfigured
+      ? t('tasks.instagramComingSoon')
+      : null;
 
   // The three YouTube reward rows, collapsed into one "x of 3" mission. They complete in id order;
   // the current video is the first unclaimed one, and the whole mission is done when all are
@@ -576,7 +752,7 @@ export default function Tasks({
       </div>
       {instagramBannerText && (
         <div
-          className={`instagram-status ${igStatus === 'done' ? 'instagram-status-done' : igStatus === 'not_configured' ? 'instagram-status-soon' : 'instagram-status-pending'}`}
+          className={`instagram-status ${instagramDone ? 'instagram-status-done' : 'instagram-status-soon'}`}
           role="status"
         >
           {instagramBannerText}
@@ -629,7 +805,7 @@ export default function Tasks({
           const st = statusOf(row);
           const item = `tasks.items.${row.id}`;
           const done = st.kind === 'claimed';
-          const notConfigured = row.kind === 'instagram' && igStatus === 'not_configured';
+          const notConfigured = row.kind === 'instagram' && igNotConfigured;
           return (
             <div
               key={row.id}
@@ -684,6 +860,18 @@ export default function Tasks({
           onProgress={(seconds, duration) => onReportVideoProgress(videoTask.id, seconds, duration)}
           onDone={() => setVideoTask(null)}
           onCancel={() => setVideoTask(null)}
+        />
+      )}
+      {igModalOpen && (
+        <InstagramModal
+          onStart={onInstagramStart}
+          onCheck={onInstagramCheck}
+          onNotConfigured={() => setIgNotConfigured(true)}
+          onDone={() => {
+            setIgModalOpen(false);
+            onRefreshTasks?.();
+          }}
+          onCancel={() => setIgModalOpen(false)}
         />
       )}
     </section>

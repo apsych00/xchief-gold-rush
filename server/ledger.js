@@ -65,6 +65,13 @@ export const KNOWN_ERROR_CODES = [
   'bad_progress',
   'progress_too_fast',
   'not_yet',
+  // Ticket K3: start_instagram()'s own refusals - a handle already held by another player, or a
+  // player trying to switch handle after a successful verify. 'invalid_handle' is sent directly
+  // by server/index.js's handle validation, listed here as documentation of every code a client
+  // may legitimately see (like feed_stale/safe_mode above).
+  'instagram_handle_taken',
+  'instagram_already_verified',
+  'invalid_handle',
 ];
 
 function mapError(err) {
@@ -637,26 +644,31 @@ export async function getDeviceCreatedAt(deviceId) {
   return rows[0] ? rows[0].created_at : null;
 }
 
-/** Instagram account storage (ticket B8). Called by the OAuth callback after the adapter has
- * verified the account. Throws on duplicate ig_user_id (the caller maps unique_violation to
- * already_claimed). */
-export async function storeInstagramAccount(playerId, igUserId, username, deviceId = null) {
-  await getPool().query(
-    'insert into public.instagram_accounts (ig_user_id, username, player_id, device_id) values ($1, $2, $3, $4)',
-    [igUserId, username, playerId, deviceId],
-  );
+/**
+ * Instagram follow reward, step 1 (ticket K3): store the handle the player entered before being
+ * sent to Instagram to follow. Throws instagram_handle_taken (handle held by another player) or
+ * instagram_already_verified (player switching handle after a verify). Returns
+ * {handle, verified}.
+ */
+export async function startInstagram(playerId, handle) {
+  return call('start_instagram', playerId, handle);
 }
 
-/** Look up an Instagram account by its user id. */
-export async function findInstagramAccount(igUserId) {
-  const { rows } = await getPool().query('select * from public.instagram_accounts where ig_user_id = $1', [igUserId]);
+/** The player's stored Instagram row, or null. The server reads the handle from here at check
+ * time - never from anything the client sent on the check frame. */
+export async function getInstagramAccount(playerId) {
+  const { rows } = await getPool().query('select * from public.instagram_accounts where player_id = $1', [playerId]);
   return rows[0] || null;
 }
 
-/** The device_id currently stored on the player's row, or null. */
-export async function getPlayerDeviceId(playerId) {
-  const { rows } = await getPool().query('select device_id from public.players where id = $1', [playerId]);
-  return rows[0] ? rows[0].device_id : null;
+/**
+ * Instagram follow reward, step 2 (ticket K3): the server has proven the follow through BoxAPI;
+ * mark the row verified and release the reward atomically. `ip` stamps task_claims.claimed_ip
+ * through release_task_reward (ticket B13). Returns {coins, reward}, reward null when the
+ * once-per-player/device/email guards already covered it.
+ */
+export async function verifyInstagram(playerId, handle, ip) {
+  return callWithIp('verify_instagram', ip, playerId, handle);
 }
 
 /** Process start: nobody is left to honestly settle a round still marked open. */
