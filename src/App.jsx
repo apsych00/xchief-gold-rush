@@ -374,7 +374,8 @@ function Display({ state, profile, actions }) {
   // Ask for the email once, right after the first win: the player now has a
   // score worth saving. Never shown again after it has been answered/skipped.
   // Kiosk visitors are anonymous by design (docs/layers.md): no email prompt ever.
-  const emailPrompt = !IS_KIOSK && isResult && !readLead() && !profile.prompts.email_win && profile.wins >= 1;
+  const emailPrompt =
+    !IS_KIOSK && isResult && !profile.emailVerified && !readLead() && !profile.prompts.email_win && profile.wins >= 1;
   // Once shown it counts as asked, even if the player just moves on.
   const markPromptRef = useRef(actions.markPrompt);
   markPromptRef.current = actions.markPrompt;
@@ -1052,7 +1053,7 @@ function Leaderboard({
           ))}
         </div>
       )}
-      {me != null && me.rank <= 10 && !readLead() && (
+      {me != null && me.rank <= 10 && !profile.emailVerified && !readLead() && (
         <LeadCapture
           source="leaderboard"
           balance={profile.coins}
