@@ -6,7 +6,7 @@ What's live, what's cooking, what's next. Product view. Updated as things land.
 
 Walk the dev build: web http://localhost:5173 · kiosk http://localhost:5173/kiosk (self-provisioning, no secret)
 
-## Cooking now (workers)
+## Cooking now
 
 | Status | What | Notes |
 |---|---|---|
@@ -16,14 +16,20 @@ Walk the dev build: web http://localhost:5173 · kiosk http://localhost:5173/kio
 
 | What | Notes |
 |---|---|
-| BoxAPI token | Put `BOXAPI_TOKEN` in `.env.box` (and swap the old Instagram OAuth vars for the K3 block) to turn the Instagram mission live; it shows "coming soon" until then |
 | Box deploy | You're running it - runbook + deploy repo are ready |
+| Kiosk streak target | Preview is temporarily set to 1 win (for testing the claim flow); say the word and I set it back to 5 |
 
 ## Just landed (verified, on dev)
 
 | Status | What | Notes |
 |---|---|---|
-| ✅ | Share = image | A rendered badge/pass image + native share sheet (phone) or download + join link (desktop); no page, no copy-link; the "something went wrong" bug is gone |
+| ✅ | Instagram mission - working | Follow-verify via BoxAPI is live and fixed end to end (base URL, response parsing, web deep-link, Close button, check-flow race) |
+| ✅ | Missions icons + tidy | Proper Telegram/YouTube/Instagram/review icons; the leftover solo video row removed |
+| ✅ | YouTube embed hardened | Nocookie domain, correct origin, user-gesture playback, and an "open on YouTube" fallback if the anti-bot check ever blocks it |
+| ✅ | Kiosk self-heal | A stale kiosk secret (after any DB reset/redeploy) no longer bricks the booth - it clears and re-provisions itself |
+| ✅ | Ads + iPad edges | Ad white-flash gone; iPad web screens fill to a thin edge like the kiosk |
+| ✅ | Tournament prize | $3,000 broker-bonus prize on the leaderboard |
+| ✅ | Share = image | A rendered badge/pass image (real xChief logo) + native share sheet (phone) or download + join link (desktop); no page, no copy-link |
 | ✅ | Video missions | One row cycling 3 YouTube videos, watch 30s to earn, next unlocks after 3 min, "x of 3", white overlay note + Skip |
 | ✅ | Instagram mission | Follow-verify via BoxAPI, server-decided; "coming soon" until the token is set |
 | ✅ | Email prompts sync | The "add your email" prompts vanish the moment you verify; guests still see them |
