@@ -1,6 +1,8 @@
-import { COMBO_MAX, comboMult, LEVELS, levelFor, nextLevel, SHARE_URL } from './config.js';
+import { useState } from 'react';
+import { COMBO_MAX, comboMult, LEVELS, levelFor, nextLevel } from './config.js';
 import { num, useLang } from './i18n.js';
 import { readLead, readSignup } from './leads.js';
+import ShareModal from './ShareModal.jsx';
 
 const BADGES = ['high_roller', 'hot_streak', 'comeback'];
 const BADGE_ICON = { high_roller: '◆', hot_streak: '🔥', comeback: '↺' };
@@ -70,20 +72,7 @@ export default function Profile({ profile, actions, onToast }) {
   const pct = next ? (profile.record - from) / (to - from) : 1;
   const winRate = profile.rounds ? Math.round((profile.wins / profile.rounds) * 100) : 0;
   const name = signup?.name || t('profile.guest');
-
-  const share = () => {
-    const text = t('profile.shareText', {
-      record: num(profile.record, lang),
-      level: t(`level.${level.id}`),
-      url: SHARE_URL,
-    });
-    if (navigator.share) navigator.share({ text }).catch(() => {});
-    else
-      navigator.clipboard
-        ?.writeText(text)
-        .then(() => onToast(t('tasks.copied')))
-        .catch(() => {});
-  };
+  const [shareOpen, setShareOpen] = useState(false);
 
   return (
     <section className="pf">
@@ -198,11 +187,18 @@ export default function Profile({ profile, actions, onToast }) {
       </div>
 
       <div className="pf-actions">
-        <button type="button" className="btn-primary pf-btn" onClick={share}>
+        <button type="button" className="btn-primary pf-btn" onClick={() => setShareOpen(true)}>
           {t('profile.share')}
         </button>
       </div>
       <div className="pf-foot">{t('profile.foot')}</div>
+      {shareOpen && (
+        <ShareModal
+          profile={profile}
+          onClose={() => setShareOpen(false)}
+          onToast={(txt) => onToast?.(txt)}
+        />
+      )}
     </section>
   );
 }
