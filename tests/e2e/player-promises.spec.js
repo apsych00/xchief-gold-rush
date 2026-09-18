@@ -443,7 +443,7 @@ test.describe('player-visible promises', () => {
     await page.locator('.nav-btn').nth(2).click();
     await expect(page.locator('.tasks')).toBeVisible({ timeout: 5000 });
 
-    const youtubeTask = page.locator('.task').filter({ hasText: 'Watch xChief video 1' });
+    const youtubeTask = page.locator('.task').filter({ hasText: 'Watch xChief videos' });
     await expect(youtubeTask).toBeVisible();
 
     // Stub the YouTube IFrame API so the test needs no network and no real video id.
