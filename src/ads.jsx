@@ -22,6 +22,9 @@ import { adDurationMs, hasIframeAds, nextAd, pickRandomAd } from './adsPicker.js
 export { adDurationMs, hasIframeAds, nextAd, pickRandomAd };
 
 const BANNERS_URL = '/ads/banners.json';
+// Both banners (image and iframe) point here. Single constant so the destination changes in one
+// place; the image-banner path can still override per-entry via banners.json's `href`.
+const XCHIEF_AD_URL = 'https://www.xchief.com/?utm_source=goldrush&utm_campaign=goldrush';
 // Native canvas of the two HTML banners (ads/banners/README.md); .ad-zone keeps the same ratio.
 const BANNER_W = 1072;
 const BANNER_H = 310;
@@ -86,28 +89,46 @@ export function AdZone() {
         // minimum content height below ~800 px wide, so a frame sized to the zone clips their
         // bottom. The frame is therefore always the native canvas size and is scaled down as one
         // block to the zone's width (transform-origin top left), like any fixed-size creative.
-        // Clicks belong to the banner itself, so there is no wrapping anchor here. tabIndex -1
-        // keeps the frame out of the keyboard tab order; loading="lazy" defers the offscreen
-        // load until the zone is near the viewport.
+        // tabIndex -1 keeps the frame out of the keyboard tab order; loading="lazy" defers the
+        // offscreen load until the zone is near the viewport.
         // The scale lives on a wrapper: .ad-zone-frame keeps the gr-rise entrance animation, whose
         // fill-mode would otherwise overwrite an inline transform on the frame itself.
-        <div
-          key={current.src}
-          className="ad-zone-scale"
-          style={{ transform: `translate(-50%, -50%) scale(${scale * OVERSCAN})` }}
-        >
-          <iframe
-            className="ad-zone-frame"
-            src={current.src}
-            title="xChief"
-            loading="lazy"
-            tabIndex={-1}
-            width={BANNER_W}
-            height={BANNER_H}
+        // The banner's own HTML has no click target of its own, so a transparent anchor is layered
+        // on top of the whole zone (after the scale wrapper in source order, so it paints above the
+        // iframe) and carries the click instead. It sits outside .ad-zone-scale so it isn't affected
+        // by that wrapper's scale/overscan transform and always covers the full visible zone.
+        <>
+          <div
+            key={current.src}
+            className="ad-zone-scale"
+            style={{ transform: `translate(-50%, -50%) scale(${scale * OVERSCAN})` }}
+          >
+            <iframe
+              className="ad-zone-frame"
+              src={current.src}
+              title="xChief"
+              loading="lazy"
+              tabIndex={-1}
+              width={BANNER_W}
+              height={BANNER_H}
+            />
+          </div>
+          <a
+            className="ad-zone-click"
+            href={current.href || XCHIEF_AD_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="xChief"
           />
-        </div>
+        </>
       ) : (
-        <a key={current.src} className="ad-zone-link" href={current.href} target="_blank" rel="noopener noreferrer">
+        <a
+          key={current.src}
+          className="ad-zone-link"
+          href={current.href || XCHIEF_AD_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           <img className="ad-zone-img" src={current.src} alt={current.alt || ''} draggable={false} />
         </a>
       )}
