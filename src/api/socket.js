@@ -181,6 +181,7 @@ let reconnectTimer = null;
 
 let connected = false; // true once `welcome` lands, false again on close
 let quiet = false;
+let lastFrameQuiet = false; // the server's movement-based quiet flag from the last price frame
 let lastTickAt = null;
 let isKiosk = false;
 let token = null;
@@ -219,7 +220,8 @@ export function state() {
 }
 
 function evaluateQuiet() {
-  const next = connected && lastTickAt !== null && Date.now() - lastTickAt > QUIET_AFTER_MS;
+  const arrivalStale = connected && lastTickAt !== null && Date.now() - lastTickAt > QUIET_AFTER_MS;
+  const next = arrivalStale || lastFrameQuiet;
   if (next !== quiet) {
     quiet = next;
     notifyStatus();
@@ -323,6 +325,10 @@ function handleMe(frame) {
 
 function handleTick(frame) {
   lastTickAt = Date.now();
+  // The server decides "quiet" by price movement (server/feed.js): when the real quote is stale it
+  // synthesizes gentle movement and flags the tick quiet:true. Honor that flag; the arrival-based
+  // heuristic below only still covers a feed that goes fully silent (no frames at all).
+  if (typeof frame.quiet === 'boolean') lastFrameQuiet = frame.quiet;
   evaluateQuiet();
   priceEmitter.emit(frame.price, { t: frame.t });
 }
