@@ -1165,7 +1165,7 @@ export default function App() {
 
   return (
     <LangContext.Provider value={langCtx}>
-      <div className="app" dir={dir} data-lang={lang}>
+      <div className={IS_KIOSK ? 'app app-kiosk' : 'app'} dir={dir} data-lang={lang}>
         <div className="phone" ref={phoneRef}>
           {IS_KIOSK ? (
             // The booth visitor flow is a separate tree, not a screen among the web's home/
