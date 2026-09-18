@@ -2,48 +2,52 @@
 
 What's live, what's cooking, what's next. Product view. Updated as things land.
 
-**Legend:** ✅ live · 🔨 building now · 🧪 in testing · 📋 next up · ⏳ later · 🎨 owner handling · ⛔ blocked
+**Legend:** ✅ live · 🔨 building now · 🕓 awaiting your sign-off · 📋 next up · ⏳ later · 🎨 owner handling
 
-## Cooking now
+Walk the dev build: web http://localhost:5173 · kiosk http://localhost:5173/?k=dev-kiosk-secret-0001
 
-| Status | What | Notes |
-|---|---|---|
-| 🔨 | English everywhere | Stripping the second language from every screen, one clean sweep |
-| 🔨 | iPad Air layout - kiosk | Making the booth/kiosk screens fill and look premium on the 13" iPad Air; phone stays exactly as-is |
-| 🔨 | Open kiosk link | A `/kiosk` web link that starts a booth session without the secret in the URL - server wiring being finished; off by default until it works |
-| 🎨 | Play buttons look | Owner is redoing the Up/Down button styling |
-
-## Just landed
+## Awaiting your sign-off
 
 | Status | What | Notes |
 |---|---|---|
-| ✅ | Logo + background | Logo now links home; app background has a cohesive gradient instead of pitch black |
-| ✅ | Share your score | Share popup with preview + copy link, and a public share page that invites people to play - verified |
-| ✅ | Missions tab | The Coins tab is now Missions - watch-to-earn YouTube missions with a no-skip player - verified |
-| ✅ | Deployment plan | Exact steps to go live on the shared server via a Cloudflare tunnel, around the ports we can't touch - drafted |
+| 🕓 | iPad Air kiosk layout | Booth screens now fill the 13" iPad; phone unchanged. Please eyeball and approve |
+| 🎨 | Play buttons look | You're redoing the Up/Down button styling |
+
+## Just landed (verified, on dev)
+
+| Status | What | Notes |
+|---|---|---|
+| ✅ | Share your score | Popup + public share page; X / Telegram / copy-link with working icons and link |
+| ✅ | Missions tab | Coins tab is now Missions - no-skip YouTube missions |
+| ✅ | Register-at-xChief mission | Opens the registration page (goldrush UTM), no email modal, with a 1h timer that survives closing the app |
+| ✅ | Open kiosk link | `/kiosk` starts a booth session without the secret in the URL |
+| ✅ | Logo + background | Logo links home; animated drifting glow background instead of pitch black |
+| ✅ | Ads | Only the two real banners, looping; dark padding around them removed |
+| ✅ | Missions trim | Removed Google and Forex Peace Army reviews |
+| ✅ | Deployment plan + repo | Go-live runbook (Cloudflare tunnel) + private deploy repo the box can pull from |
+| ✅ | Cleanup | Removed dead Supabase code, unused packages, and old test screenshots |
 
 ## Next up
 
 | Status | What | Notes |
 |---|---|---|
-| 📋 | Kiosk welcome | Three intro cards, ending on a QR to the web version - starts once English-only lands |
-| 📋 | iPad Air layout - web | The rest of the screens, after the kiosk pass ships |
+| 📋 | English everywhere | Remove the leftover Persian text (app already shows English only; this deletes the dead copy) |
+| 📋 | Kiosk welcome | Three intro cards ending on a QR to the web version |
+| 📋 | iPad Air layout - web | The rest of the screens, after the kiosk pass is signed off |
 
 ## Later
 
 | Status | What | Notes |
 |---|---|---|
-| ⏳ | Go live | Deploy to the server at goldrush.xchief.academy |
+| ⏳ | Go live | Deploy to goldrush.xchief.academy |
 | ⏳ | Booth deploy | Stand up the kiosk at the venue right after we're live |
 | ⏳ | Instagram mission | Follow-to-earn via the data API - last item, token in hand |
 
-## Already live
+## Already live (core)
 
 | Status | What |
 |---|---|
 | ✅ | The game - predict gold up/down in 5s, scoring, streaks |
 | ✅ | Web sign-in (email + code), leaderboard, tournaments, badges |
-| ✅ | Rewards: watch a video, visit-and-return, verify email |
 | ✅ | Kiosk: play, win, gift-card-by-QR to the phone, idle reset, out-of-prizes screen |
-| ✅ | First-visit tour, ad banners, avatar and polish, email masking |
-| ✅ | Live gold price feed, operator alerts, safe mode, rate limits |
+| ✅ | Live gold price feed, operator alerts, safe mode, rate limits, email masking |
