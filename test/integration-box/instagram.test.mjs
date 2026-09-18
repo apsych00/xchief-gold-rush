@@ -84,6 +84,8 @@ function send(ws, frame) {
   ws.send(JSON.stringify(frame));
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function authAnonymous(ws) {
   send(ws, { type: 'auth' });
   return nextFrame(ws, (f) => f.type === 'welcome');
@@ -103,7 +105,12 @@ before(async () => {
   fake = await startFakeBoxApi(0);
   process.env.BOXAPI_TOKEN = 'fake-token';
   process.env.BOXAPI_BASE = `${fake.url}/`;
-  process.env.INSTAGRAM_HANDLE = 'xchief';
+  process.env.INSTAGRAM_HANDLE = 'xchief.global';
+  // Run the freshness-retry loop instantly, and shrink the per-player check window so the
+  // second-try grant test can make two genuine checks without a 20 s wait (both env vars are read
+  // at call time by server/instagram.js and server/index.js).
+  process.env.INSTAGRAM_RETRY_DELAY_MS = '0';
+  process.env.INSTAGRAM_CHECK_INTERVAL_MS = '50';
   instagram.resetCache();
 
   app = createApp({ finnhubToken: null });
@@ -126,12 +133,15 @@ after(async () => {
   delete process.env.BOXAPI_TOKEN;
   delete process.env.BOXAPI_BASE;
   delete process.env.INSTAGRAM_HANDLE;
+  delete process.env.INSTAGRAM_RETRY_DELAY_MS;
+  delete process.env.INSTAGRAM_CHECK_INTERVAL_MS;
 });
 
 test('happy path: a follower is verified and the reward is released once', async () => {
   const { ws, welcome, started } = await startedPlayer('follower');
   assert.ok(started.app_url && started.app_url.includes('instagram://'), 'instagram_started carries the app_url');
   assert.ok(started.profile_url, 'instagram_started carries the profile_url');
+  assert.equal(started.our_handle, 'xchief.global', 'instagram_started carries the configured handle to follow');
 
   send(ws, { type: 'instagram_check' });
   const result = await nextFrame(ws, (f) => f.type === 'instagram_result');
@@ -238,6 +248,91 @@ test('the client cannot spoof a follow: instagram_check always reads the stored 
   const result = await nextFrame(ws, (f) => f.type === 'instagram_result');
   assert.equal(result.ok, false, 'the injected handle/ok fields are ignored');
   assert.equal(result.reason, 'not_following');
+  ws.close();
+});
+
+test('a private player who is in our followers is verified (our-followers path, immune to privacy)', async () => {
+  const { ws, welcome } = await startedPlayer('privatefollower');
+  send(ws, { type: 'instagram_check' });
+  const result = await nextFrame(ws, (f) => f.type === 'instagram_result');
+  assert.equal(result.ok, true, 'a private account in our follower list still verifies');
+  assert.equal(result.reward, 300);
+
+  const { rows: claims } = await pool.query(
+    "select * from public.task_claims where player_id = $1 and task_id = 'instagram'",
+    [welcome.me.id],
+  );
+  assert.equal(claims.length, 1, 'the reward was released once');
+  ws.close();
+});
+
+test('second-try grant: a first failed check is refused, the second grants the reward anyway', async () => {
+  // Owner policy (ticket K3): a genuine follower can still fail our read (freshness lag, privacy,
+  // paging). We count genuine attempts on the player's row and grant on the second, server-side.
+  // Here nonfollower never confirms, which is the strictest case the policy is meant to forgive.
+  const { ws, welcome } = await startedPlayer('nonfollower');
+
+  send(ws, { type: 'instagram_check' });
+  const first = await nextFrame(ws, (f) => f.type === 'instagram_result');
+  assert.equal(first.ok, false, 'the first genuine check is refused');
+  assert.equal(first.reason, 'not_following');
+
+  let claims = await pool.query(
+    "select * from public.task_claims where player_id = $1 and task_id = 'instagram'",
+    [welcome.me.id],
+  );
+  assert.equal(claims.rows.length, 0, 'no reward on the first check');
+
+  // Wait past the 1/s query budget and the (shrunk) per-player check window so the next check is a
+  // genuine second BoxAPI read, not a rate-limited no-op.
+  await sleep(1100);
+
+  send(ws, { type: 'instagram_check' });
+  const second = await nextFrame(ws, (f) => f.type === 'instagram_result');
+  assert.equal(second.ok, true, 'the second genuine check grants the reward');
+  assert.equal(second.reward, 300);
+
+  claims = await pool.query(
+    "select * from public.task_claims where player_id = $1 and task_id = 'instagram'",
+    [welcome.me.id],
+  );
+  assert.equal(claims.rows.length, 1, 'the reward was released once, on the second try');
+
+  const { rows: accounts } = await pool.query(
+    'select verified_at, check_attempts from public.instagram_accounts where player_id = $1',
+    [welcome.me.id],
+  );
+  assert.equal(accounts[0].check_attempts, 2, 'both genuine attempts were counted on the row');
+  assert.ok(accounts[0].verified_at, 'the row is marked verified by the grant');
+  ws.close();
+});
+
+test('second-try grant needs two GENUINE attempts: rate-limited retries never count', async () => {
+  const { ws, welcome } = await startedPlayer('nonfollower');
+
+  send(ws, { type: 'instagram_check' });
+  const first = await nextFrame(ws, (f) => f.type === 'instagram_result');
+  assert.equal(first.ok, false);
+  assert.equal(first.reason, 'not_following');
+
+  // A second check inside the per-player window is a rate_limited no-op - it must not count as a
+  // genuine attempt, so it neither grants nor increments check_attempts.
+  send(ws, { type: 'instagram_check' });
+  const rateLimited = await nextFrame(ws, (f) => f.type === 'error' || f.type === 'instagram_result');
+  assert.equal(rateLimited.type, 'error');
+  assert.equal(rateLimited.code, 'rate_limited');
+
+  const claims = await pool.query(
+    "select * from public.task_claims where player_id = $1 and task_id = 'instagram'",
+    [welcome.me.id],
+  );
+  assert.equal(claims.rows.length, 0, 'a rate-limited retry never grants');
+
+  const { rows: accounts } = await pool.query(
+    'select check_attempts from public.instagram_accounts where player_id = $1',
+    [welcome.me.id],
+  );
+  assert.equal(accounts[0].check_attempts, 1, 'only the one genuine read counted');
   ws.close();
 });
 

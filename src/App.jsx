@@ -1207,6 +1207,7 @@ export default function App() {
                   onReturnTaskVisit={actions.returnTaskVisit}
                   onInstagramStart={actions.instagramStart}
                   onInstagramCheck={actions.instagramCheck}
+                  ourInstagramHandle={state.ourInstagramHandle}
                   onOpenIdentity={() => setOtpOpen(true)}
                   onToast={(txt) => actions.toast?.(txt)}
                 />

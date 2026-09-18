@@ -180,6 +180,10 @@ let backoffMs = MIN_BACKOFF_MS;
 let reconnectTimer = null;
 
 let connected = false; // true once `welcome` lands, false again on close
+// Ticket K3: the Instagram account the player must follow, taken from the server's `welcome`
+// (INSTAGRAM_HANDLE). The client shows whatever the server provides here rather than a handle
+// baked into the bundle; null until a welcome that carries one lands.
+let instagramHandle = null;
 let quiet = false;
 let lastFrameQuiet = false; // the server's movement-based quiet flag from the last price frame
 let lastTickAt = null;
@@ -305,7 +309,15 @@ function handleWelcome(frame) {
   if (!isKiosk && frame.device) {
     storeDeviceToken(frame.device);
   }
+  // Ticket K3: remember the account to follow so the tasks UI can render it (see getInstagramHandle).
+  if (frame.our_handle) instagramHandle = frame.our_handle;
   notifyStatus();
+}
+
+/** Ticket K3: the Instagram handle the server told this client to follow, or null before a
+ * welcome carrying one has landed. */
+export function getInstagramHandle() {
+  return instagramHandle;
 }
 
 /**

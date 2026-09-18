@@ -1,39 +1,99 @@
 /**
  * Fake BoxAPI Instagram data-API server for ticket K3 tests (replaces the B8 OAuth fake in
- * test/fakes/instagram.mjs). Mirrors the two endpoints server/instagram.js calls, in the
- * documented shape: POST JSON with a Bearer token (docs/boxapi-instagram-data-api.md).
+ * test/fakes/instagram.mjs). Mirrors the endpoints server/instagram.js calls, in the documented
+ * shape: POST JSON with a Bearer token (docs/boxapi-instagram-data-api.md).
  *
  * Usage:
  *   const fake = await startFakeBoxApi(0);
  *   process.env.BOXAPI_TOKEN = 'fake-token';
  *   process.env.BOXAPI_BASE = `${fake.url}/`;
- *   process.env.INSTAGRAM_HANDLE = 'xchief';
+ *   process.env.INSTAGRAM_HANDLE = 'xchief.global';
  *   // run tests
  *   await fake.stop();
  *
  * Endpoints (all POST JSON, Authorization: Bearer required):
  *   POST /user/get_info_by_username { username } -> { data: { user: { id, username, is_private } } }
  *     404 when the handle names no seeded account.
+ *   POST /user/get_followers { id, count, max_id? } -> { data: { users, user_count, has_more, next_max_id } }
+ *     Newest-first, paged with a small fixed page size so a handful of seeded rows still exercises
+ *     the adapter's multi-page scan. max_id is the start index of the next page.
  *   POST /user/get_following { id, count } -> { data: { users: [ { id, username }, ... ] } }
  *   GET  /health -> { ok: true } (for Playwright/ready checks)
  *
- * Seeded accounts (override or extend with addAccount): our own handle, a public follower, a
- * public non-follower, and a private account. An unregistered handle answers 404 so the adapter
- * yields 'not_found'.
+ * Follower model (ticket K3 primary path): our own account carries an ordered `followers` list
+ * (newest-first). A brand-new follower lands at the top. `pending` marks a handle that BoxAPI has
+ * not surfaced yet - it is withheld from get_followers until our follower list has been read
+ * `appearAfterReads` times, modelling the freshness lag the adapter retries through.
+ *
+ * Seeded accounts (override or extend with addAccount / setFollowers / setPendingFollower):
+ *   xchief.global   - our own account. INSTAGRAM_HANDLE in tests points here.
+ *   follower        - public, sits on page 1 of our followers AND follows us back (both paths).
+ *   privatefollower - private, sits on page 1 of our followers (the our-followers path is immune
+ *                     to a private player account, since we read OUR list, never theirs).
+ *   deeppager       - public, sits on page 3 of our followers (exercises paging).
+ *   beyondcap       - public, sits past the scan cap (proves the cap holds - not confirmed).
+ *   secondaryonly   - public, NOT in our followers but follows us (exercises the secondary path).
+ *   nonfollower     - public, in neither list (not_following).
+ *   privateuser     - private, in neither list (private).
+ *   freshfollower   - public, only surfaced after a couple of reads (exercises the retry).
+ * An unregistered handle answers 404 so the adapter yields 'not_found'.
  */
 
 import { createServer } from 'node:http';
 import { URL } from 'node:url';
 
+// Our own handle in tests. The default follower list below hangs off this account.
+const OUR_HANDLE = 'xchief.global';
+
+// A deliberately small page so a handful of seeded followers still spans several pages and the
+// adapter's newest-first, capped, paged scan is genuinely exercised.
+const FAKE_FOLLOWERS_PAGE_SIZE = 3;
+
 const DEFAULT_ACCOUNTS = [
-  // Our own account. INSTAGRAM_HANDLE in tests points here.
-  { username: 'xchief', id: '1000', is_private: false, following: [] },
-  // A public account that follows us: get_following returns our account in its list.
-  { username: 'follower', id: '2001', is_private: false, following: ['xchief'] },
-  // A public account that does not follow us.
+  // Our own account. Its `followers` list is what the primary check reads, newest-first.
+  {
+    username: OUR_HANDLE,
+    id: '1000',
+    is_private: false,
+    following: [],
+    // Newest-first. Page size 3: page 1 = idx 0-2, page 2 = idx 3-5, page 3 = idx 6-8, ...
+    // deeppager is on page 3 (found within the 3-page cap); beyondcap is on page 4 (not).
+    followers: [
+      'privatefollower',
+      'follower',
+      'filler1',
+      'filler2',
+      'filler3',
+      'filler4',
+      'deeppager',
+      'filler5',
+      'filler6',
+      'beyondcap',
+    ],
+  },
+  // Public, page 1 of our followers, and follows us back.
+  { username: 'follower', id: '2001', is_private: false, following: [OUR_HANDLE] },
+  // Public, in neither list.
   { username: 'nonfollower', id: '2002', is_private: false, following: ['someoneelse'] },
-  // A private account: the adapter refuses before ever reading the (hidden) following list.
-  { username: 'privateuser', id: '2003', is_private: true, following: ['xchief'] },
+  // Private, in neither list -> 'private'.
+  { username: 'privateuser', id: '2003', is_private: true, following: [OUR_HANDLE] },
+  // Private, but ON page 1 of our followers -> confirmed by the our-followers path despite privacy.
+  { username: 'privatefollower', id: '2004', is_private: true, following: [] },
+  // Public, NOT in our followers, but follows us -> confirmed by the secondary path.
+  { username: 'secondaryonly', id: '2005', is_private: false, following: [OUR_HANDLE] },
+  // Public, page 3 of our followers -> confirmed only by paging.
+  { username: 'deeppager', id: '2006', is_private: false, following: ['someoneelse'] },
+  // Public, page 4 of our followers -> past the scan cap, never confirmed.
+  { username: 'beyondcap', id: '2007', is_private: false, following: ['someoneelse'] },
+  // Public; the retry test seeds it as a pending follower to model BoxAPI freshness lag.
+  { username: 'freshfollower', id: '2008', is_private: false, following: ['someoneelse'] },
+  // Filler followers, only there to push deeppager/beyondcap onto later pages.
+  { username: 'filler1', id: '3001', is_private: false, following: [] },
+  { username: 'filler2', id: '3002', is_private: false, following: [] },
+  { username: 'filler3', id: '3003', is_private: false, following: [] },
+  { username: 'filler4', id: '3004', is_private: false, following: [] },
+  { username: 'filler5', id: '3005', is_private: false, following: [] },
+  { username: 'filler6', id: '3006', is_private: false, following: [] },
 ];
 
 function norm(username) {
@@ -62,6 +122,8 @@ export function createFakeBoxApi() {
   let url = null;
   const byUsername = new Map(); // normalized username -> account
   const byId = new Map(); // id -> account
+  const pending = new Map(); // normalized handle -> appearAfterReads (get_followers read count)
+  const readCounts = new Map(); // account id -> how many times its follower list's page 1 was read
 
   function addAccount(account) {
     const username = norm(account.username);
@@ -70,6 +132,7 @@ export function createFakeBoxApi() {
       id: String(account.id),
       is_private: Boolean(account.is_private),
       following: (account.following || []).map(norm),
+      followers: (account.followers || []).map(norm),
     };
     byUsername.set(username, resolved);
     byId.set(resolved.id, resolved);
@@ -79,13 +142,28 @@ export function createFakeBoxApi() {
   function reset() {
     byUsername.clear();
     byId.clear();
+    pending.clear();
+    readCounts.clear();
     for (const account of DEFAULT_ACCOUNTS) addAccount(account);
   }
 
-  // Build the {id, username} rows for one account's following list, fabricating an id for any
-  // handle that has no seeded account of its own (its exact id does not matter to the adapter).
-  function followingRows(account) {
-    return account.following.map((handle) => {
+  // Replace an account's ordered (newest-first) follower list. Used by the retry test to isolate a
+  // single follower from the default paging fixture.
+  function setFollowers(username, handles) {
+    const account = byUsername.get(norm(username));
+    if (account) account.followers = (handles || []).map(norm);
+  }
+
+  // Mark a handle as not yet surfaced by BoxAPI: it is withheld from get_followers until our
+  // follower list has been read `appearAfterReads` times (models the freshness lag).
+  function setPendingFollower(handle, appearAfterReads) {
+    pending.set(norm(handle), Number(appearAfterReads) || 0);
+  }
+
+  // {id, username} rows, fabricating an id for any handle with no seeded account (its exact id
+  // does not matter to the adapter).
+  function rowsFor(handles) {
+    return handles.map((handle) => {
       const target = byUsername.get(handle);
       return { id: target ? target.id : `x-${handle}`, username: handle };
     });
@@ -134,13 +212,45 @@ export function createFakeBoxApi() {
           return;
         }
 
+        if (parsed.pathname === '/user/get_followers') {
+          const account = byId.get(String(params.id));
+          if (!account) {
+            sendJson(res, 404, { error: 'not_found' });
+            return;
+          }
+          // A first page (no max_id) counts as one read of this account's follower list; that read
+          // count is what a pending follower's appearAfterReads is measured against.
+          const firstPage = params.max_id == null;
+          const priorReads = readCounts.get(account.id) || 0;
+          if (firstPage) readCounts.set(account.id, priorReads + 1);
+          // Withhold any follower still pending at this read count (freshness lag).
+          const visible = account.followers.filter((handle) => {
+            const threshold = pending.get(handle);
+            return threshold == null || priorReads >= threshold;
+          });
+          const size = Math.min(Number(params.count) || FAKE_FOLLOWERS_PAGE_SIZE, FAKE_FOLLOWERS_PAGE_SIZE);
+          const start = firstPage ? 0 : Number(params.max_id) || 0;
+          const slice = visible.slice(start, start + size);
+          const nextStart = start + size;
+          const hasMore = nextStart < visible.length;
+          sendJson(res, 200, {
+            data: {
+              users: rowsFor(slice),
+              user_count: visible.length,
+              has_more: hasMore,
+              ...(hasMore ? { next_max_id: String(nextStart) } : {}),
+            },
+          });
+          return;
+        }
+
         if (parsed.pathname === '/user/get_following') {
           const account = byId.get(String(params.id));
           if (!account) {
             sendJson(res, 404, { error: 'not_found' });
             return;
           }
-          sendJson(res, 200, { data: { users: followingRows(account) } });
+          sendJson(res, 200, { data: { users: rowsFor(account.following) } });
           return;
         }
 
@@ -172,12 +282,16 @@ export function createFakeBoxApi() {
     url = null;
     byUsername.clear();
     byId.clear();
+    pending.clear();
+    readCounts.clear();
   }
 
   return {
     start,
     stop,
     addAccount,
+    setFollowers,
+    setPendingFollower,
     reset,
     get url() {
       return url;

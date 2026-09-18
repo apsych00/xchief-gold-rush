@@ -51,8 +51,15 @@ const TOKEN_RENEW_AFTER_SECONDS = 7 * 24 * 60 * 60; // sliding renewal: reissue 
 const LEADERBOARD_DEBOUNCE_MS = 1000; // docs/layers.md C4: "debounced to at most once per second"
 
 // Ticket K3 decision 2: at most one Instagram follow check per 20 s per player, tracked in
-// memory - a BoxAPI read is not free and a player mashing "check" gains nothing by it.
-const INSTAGRAM_CHECK_INTERVAL_MS = 20000;
+// memory - a BoxAPI read is not free and a player mashing "check" gains nothing by it. Read at
+// call time (not frozen at module load) so tests can shrink the window via env before a check.
+function instagramCheckIntervalMs() {
+  return Number(process.env.INSTAGRAM_CHECK_INTERVAL_MS) || 20000;
+}
+// verifyFollow reasons that mean "the check could not run" (transport/config), as opposed to a
+// definite "we read the lists and did not find the follow". Only the latter counts as a genuine
+// attempt for the second-try grant policy below (ticket K3).
+const UPSTREAM_INSTAGRAM_ERRORS = ['not_configured', 'network_error', 'unauthorized', 'api_error'];
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -883,6 +890,10 @@ export function createApp({
       const token = currentToken && !needsRenewal(currentToken) ? currentToken : signToken(playerId, version);
       const welcome = { type: 'welcome', token, me };
       if (deviceId) welcome.device = signDeviceToken(deviceId);
+      // Ticket K3: hand the client the account it must follow so every user-facing mention of the
+      // handle comes from the configured INSTAGRAM_HANDLE, never a value baked into the client.
+      const ourInstagramHandle = instagram.ourHandle();
+      if (ourInstagramHandle) welcome.our_handle = ourInstagramHandle;
       send(ws, welcome);
       await sendHelloAndPending(ws, 'player', playerId);
     } catch (err) {
@@ -1099,7 +1110,13 @@ export function createApp({
           const profileUrl =
             process.env.INSTAGRAM_PROFILE_URL || (ourHandle ? `https://www.instagram.com/${ourHandle}/` : null);
           const appUrl = ourHandle ? `instagram://user?username=${ourHandle}` : null;
-          send(ws, { type: 'instagram_started', handle, profile_url: profileUrl, app_url: appUrl });
+          send(ws, {
+            type: 'instagram_started',
+            handle,
+            our_handle: ourHandle || null,
+            profile_url: profileUrl,
+            app_url: appUrl,
+          });
           break;
         }
         case 'instagram_check': {
@@ -1138,15 +1155,39 @@ export function createApp({
           // above return before this point.
           const last = instagramCheckAt.get(id) || 0;
           const sinceLast = Date.now() - last;
-          if (sinceLast < INSTAGRAM_CHECK_INTERVAL_MS) {
-            send(ws, { type: 'error', code: 'rate_limited', retry_ms: INSTAGRAM_CHECK_INTERVAL_MS - sinceLast });
+          const windowMs = instagramCheckIntervalMs();
+          if (sinceLast < windowMs) {
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: windowMs - sinceLast });
             break;
           }
           instagramCheckAt.set(id, Date.now());
           const verdict = await instagram.verifyFollow({ handle: account.handle });
           // Log the handle and the outcome, never the token (ticket K3 decision 2).
           console.log(`[instagram] check handle=${account.handle} player=${id} outcome=${verdict.ok ? 'ok' : verdict.reason}`);
-          if (!verdict.ok) {
+
+          // Second-try grant (ticket K3 - an intentional UX-over-strictness policy, owner
+          // decision). BoxAPI's follower list can lag a just-made follow, a player's account may
+          // be private, or the follow may sit past the page cap - all cases where a genuine
+          // follower still fails our read. So we count genuine verification attempts on the
+          // player's row (past the check window above), and on the SECOND (or later) genuine
+          // attempt we grant the reward even when the read could not confirm the follow. The
+          // server still decides and releases through the same verify_instagram / release path
+          // (once per player/device/email, B13) - the client never asserts its own outcome.
+          // Only a definite verdict counts as a genuine attempt; a transport/config failure means
+          // the check never really ran, so it neither counts nor grants.
+          const GRANTABLE_REASONS = ['not_following', 'private'];
+          const definiteVerdict = verdict.ok || !UPSTREAM_INSTAGRAM_ERRORS.includes(verdict.reason);
+          let secondTryGrant = false;
+          if (definiteVerdict) {
+            const attempts = await ledger.bumpInstagramAttempt(id);
+            if (!verdict.ok) {
+              secondTryGrant = attempts >= 2 && GRANTABLE_REASONS.includes(verdict.reason);
+              if (secondTryGrant) {
+                console.log(`[instagram] second-try grant handle=${account.handle} player=${id} attempts=${attempts}`);
+              }
+            }
+          }
+          if (!verdict.ok && !secondTryGrant) {
             send(ws, { type: 'instagram_result', ok: false, reason: verdict.reason });
             break;
           }
