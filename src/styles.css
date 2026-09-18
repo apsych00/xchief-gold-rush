@@ -1831,6 +1831,34 @@ button:focus:not(:focus-visible) {
   text-shadow: 0 1px 5px rgba(0, 0, 0, 0.75);
   pointer-events: none;
 }
+/* Graceful fallback when the embed stalls or errors (e.g. YouTube's bot-check interstitial
+   loads inside the frame instead of the video): a short hint plus a link to open the same
+   video on YouTube directly, so the mission never looks bricked. */
+.youtube-fallback {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.youtube-fallback .lead-error {
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.75);
+}
+.youtube-fallback-link {
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font: 600 12px var(--fa);
+  padding: 6px 14px;
+  text-decoration: none;
+}
+.youtube-fallback-link:hover {
+  background: rgba(0, 0, 0, 0.78);
+}
 
 /* ---------- lead capture ---------- */
 
