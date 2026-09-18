@@ -104,9 +104,6 @@ create table public.players (
   -- (server/index.js) requires an exact match. revoke_player_sessions() below bumps it, which
   -- is the only way it ever changes - every token issued before the bump stops verifying.
   token_version int not null default 1,
-  -- Share-my-record token (ticket U4): minted once on first share, 12 base64url chars from
-  -- 9 random bytes, never rotated. Nullable until the player (or anonymous guest) shares.
-  share_token text unique,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -633,62 +630,6 @@ create function public.revoke_player_sessions(p_player uuid)
 returns void language sql security definer set search_path = public as $$
   update public.players set token_version = token_version + 1, updated_at = now() where id = p_player;
 $$;
-
--- Share-my-record token (ticket U4): mints a 12-char base64url token the first time this
--- player asks for a share link, then returns the same token forever. Called by the server
--- inside the share_link frame handler, after it has already verified the socket's identity.
-create function public.get_or_create_share_token(p_player uuid)
-returns text language plpgsql security definer set search_path = public, extensions as $$
-declare
-  v_token text;
-begin
-  update public.players
-  set share_token = coalesce(share_token, translate(encode(gen_random_bytes(9), 'base64'), '+/', '-_'))
-  where id = p_player
-  returning share_token into v_token;
-  if v_token is null then raise exception 'unknown_player'; end if;
-  return v_token;
-end $$;
-
--- Public share-page payload for one share token (ticket U4). Returns null when the token
--- names no player; callers turn that into a 404. Exposes only display (masked email, or
--- "Guest" for anonymous players), all-time record, current-tournament rank/tier (when ranked),
--- and the current tournament title - never a raw email or any other player column.
-create function public.get_share_by_token(p_token text)
-returns jsonb language plpgsql security definer stable set search_path = public as $$
-declare
-  p public.players%rowtype;
-  v_tournament public.tournaments%rowtype;
-  v_rank bigint;
-  v_tier text;
-  v_display text;
-begin
-  select * into p from public.players where share_token = p_token;
-  if not found then return null; end if;
-
-  select * into v_tournament from public.current_tournament();
-  v_display := coalesce(public.mask_email(p.email), 'Guest');
-
-  if v_tournament.id is not null then
-    with ranked as (
-      select ts.player_id,
-        rank() over (order by ts.record desc, ts.updated_at asc) as row_rank
-      from public.tournament_scores ts
-      join public.players p2 on p2.id = ts.player_id
-      where ts.tournament_id = v_tournament.id and p2.email is not null
-    )
-    select row_rank, public.tier_for_rank(row_rank) into v_rank, v_tier
-    from ranked where ranked.player_id = p.id;
-  end if;
-
-  return jsonb_build_object(
-    'display', v_display,
-    'record', p.record,
-    'rank', v_rank,
-    'tier', v_tier,
-    'tournament_title', v_tournament.title
-  );
-end $$;
 
 -- --------------------------------------------------------------------------- rounds --
 
@@ -1704,7 +1645,5 @@ revoke execute on function
   public.claim_prize(text, text, inet),
   public.release_expired_claims(),
   public.get_setting_int(text, int),
-  public.release_task_reward(uuid, text),
-  public.get_or_create_share_token(uuid),
-  public.get_share_by_token(text)
+  public.release_task_reward(uuid, text)
 from public, anon, authenticated;

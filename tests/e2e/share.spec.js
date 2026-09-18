@@ -1,87 +1,79 @@
-// E2E for ticket U4: share my record - the profile modal, copy link, social shortcuts,
-// and the public share page for a known token.
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+// E2E for the image-share model: the profile "Share my record" modal renders a badge PNG
+// client-side and either opens the OS share sheet with the image attached (navigator.share with
+// files) or, where that is unavailable, offers a PNG download plus the join link as plain text.
+// There is no public share page and no server token, so nothing here mints or reads one.
 import { expect, test } from '@playwright/test';
 
 import { dismissFirstVisit } from './first-visit.js';
 
-const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
-const REPORT_DIR = path.join(REPO_ROOT, 'docs', 'reports', 'u4');
-
-async function goProfile(page) {
+async function openShareModal(page) {
   await page.getByRole('button', { name: /your profile|profile/i }).click();
   await expect(page.locator('.pf')).toBeVisible();
+  await page.getByRole('button', { name: /share my record/i }).click();
+  await expect(page.locator('.share-modal')).toBeVisible();
+  // The badge is drawn on a canvas and shown as an <img>; wait for it to render.
+  await expect(page.locator('.share-badge-img')).toBeVisible();
 }
 
-test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
-
-test.describe('share my record (U4)', () => {
+test.describe('share my record (image)', () => {
   test.setTimeout(120000);
 
-  test('profile share modal: copy link and Telegram shortcut', async ({ page }) => {
+  test('fallback without file share: download button and a plain join link', async ({ page }) => {
+    // Force the no-file-share branch (most desktops) so the fallback UI is what renders.
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'canShare', { value: () => false, configurable: true });
+    });
     await page.goto('/');
     await dismissFirstVisit(page);
+    await openShareModal(page);
 
-    await goProfile(page);
-    await page.getByRole('button', { name: /share my record/i }).click();
-    await expect(page.locator('.share-modal')).toBeVisible();
-    await page.screenshot({ path: path.join(REPORT_DIR, '01-share-modal.png') });
+    await expect(page.getByRole('button', { name: /download image/i })).toBeVisible();
 
-    // The URL field should be populated from the share_link frame.
-    const urlInput = page.locator('.share-url-input');
-    await expect(urlInput).toHaveValue(/\/s\/[A-Za-z0-9_-]{12}$/);
-    const shareUrl = await urlInput.inputValue();
+    // The join link is plain, selectable text carrying the campaign UTM params - not a copy-link.
+    const joinUrl = await page.locator('.share-join-url').innerText();
+    expect(joinUrl).toMatch(/^https:\/\//);
+    expect(joinUrl).toContain('utm_source=goldrush');
+    expect(joinUrl).toContain('utm_campaign=goldrush');
 
-    // Copy button writes the clipboard.
-    await page.locator('.share-copy-btn').click();
-    const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
-    expect(clipboardText).toBe(shareUrl);
-
-    // Telegram shortcut carries the URL.
-    const telegram = page.locator('a[aria-label="Share to Telegram"]');
-    const telegramHref = await telegram.getAttribute('href');
-    expect(telegramHref).toMatch(/^https:\/\/t\.me\/share\/url\?url=/);
-    expect(telegramHref).toContain(encodeURIComponent(shareUrl));
+    // No copy-link, no per-network intent buttons, no share URL input survive from the old model.
+    await expect(page.locator('.share-url-input')).toHaveCount(0);
+    await expect(page.locator('a[aria-label="Share to Telegram"]')).toHaveCount(0);
 
     await page.getByRole('button', { name: /close/i }).click();
     await expect(page.locator('.share-modal')).toHaveCount(0);
   });
 
-  test('public share page shows the record and both CTAs', async ({ context }) => {
-    // Open a fresh context so the share page reads the token with no prior session.
-    const page = await context.newPage();
-
-    // First, mint a share token through the API by asking the server directly.
-    // Easier path: create a player with a known token via the test database is not available
-    // in E2E, so we use the socket from the web app and then read the token back.
+  test('with file share: primary Share button hands a PNG file and the join url to navigator.share', async ({ page }) => {
+    // Stub the Web Share API so the OS sheet never opens and we can inspect what was shared.
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'canShare', { value: () => true, configurable: true });
+      Object.defineProperty(navigator, 'share', {
+        configurable: true,
+        value: async (data) => {
+          const file = data.files && data.files[0];
+          window.__shared = {
+            url: data.url,
+            hasText: typeof data.text === 'string' && data.text.length > 0,
+            fileName: file ? file.name : null,
+            fileType: file ? file.type : null,
+            fileSize: file ? file.size : 0,
+          };
+        },
+      });
+    });
     await page.goto('/');
     await dismissFirstVisit(page);
+    await openShareModal(page);
 
-    await page.getByRole('button', { name: /your profile|profile/i }).click();
-    await page.getByRole('button', { name: /share my record/i }).click();
-    const urlInput = page.locator('.share-url-input');
-    await expect(urlInput).toHaveValue(/\/s\/[A-Za-z0-9_-]{12}$/);
-    const shareUrl = await urlInput.inputValue();
-    await page.close();
+    // The primary action is a single Share button; no Download/link fallback in this branch.
+    await expect(page.getByRole('button', { name: /download image/i })).toHaveCount(0);
+    await page.getByRole('button', { name: /^Share$/ }).click();
 
-    // Now open the share URL in a brand-new page.
-    const sharePage = await context.newPage();
-    await sharePage.goto(shareUrl);
-    await expect(sharePage.locator('.share-page')).toBeVisible();
-    await expect(sharePage.locator('.share-card-record')).toBeVisible();
-    // The page shows a primary "Play" CTA plus a secondary tournament/join CTA.
-    const ctas = sharePage.locator('.share-cta');
-    await expect(ctas).toHaveCount(2);
-    await expect(ctas.first()).toBeVisible();
-    await sharePage.screenshot({ path: path.join(REPORT_DIR, '02-share-page.png') });
-  });
-
-  test('unknown share token shows the unavailable card', async ({ page }) => {
-    await page.goto('/s/this-token-is-not-real');
-    await expect(page.locator('.share-page')).toBeVisible();
-    await expect(page.locator('.share-card-empty')).toBeVisible();
-    await expect(page.getByText(/this record is not available/i)).toBeVisible();
-    await expect(page.locator('.share-cta')).toHaveCount(1);
+    const shared = await page.waitForFunction(() => window.__shared).then((h) => h.jsonValue());
+    expect(shared.fileName).toBe('xchief-gold-rush-record.png');
+    expect(shared.fileType).toBe('image/png');
+    expect(shared.fileSize).toBeGreaterThan(0);
+    expect(shared.hasText).toBe(true);
+    expect(shared.url).toContain('utm_source=goldrush');
   });
 });
