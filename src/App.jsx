@@ -515,10 +515,10 @@ function Display({ state, profile, actions }) {
                 onDismiss={() => actions.markPrompt('email_win')}
               />
             )}
-            {/* Kiosk has no Play Again tap between rounds (see the `locked` note above): the
-                result pane is the only screen a visitor sees between two rounds, so the combo
-                meter has to live here too, not just on pane-idle - otherwise the multiplier the
-                next win pays is never shown once a first round has been played. */}
+            {/* The result pane is the only screen a kiosk visitor sees between two rounds (no
+                leaderboard or tasks nav to pass through, unlike the web), so the combo meter has
+                to live here too, not just on pane-idle - otherwise the multiplier the next win
+                pays is never shown once a first round has been played. */}
             {IS_KIOSK && <ComboBar streak={profile.streak} compact />}
             <div className="result-stats">
               <div className="stat">
@@ -563,10 +563,10 @@ export function Console({ state, profile, actions, trackRef, onOpenIdentity }) {
   const isIdle = phase === 'idle';
   const isRunning = phase === 'running';
   const isResult = phase === 'result';
-  // Kiosk has no Play Again tap (docs/layers.md: "if nobody plays for 30s..." implies a booth
-  // visitor can start the next round straight off the verdict) - only a running round locks the
-  // buttons. The web flow keeps requiring the explicit Play Again button between rounds.
-  const locked = IS_KIOSK ? isRunning : !isIdle;
+  // The up/down buttons are live only in 'idle', on the kiosk exactly as on the web: a locked
+  // prediction (running) and the verdict pane (result) both lock them. The Play Again button in
+  // the result pane is what resets the phase back to 'idle' before the next round can start.
+  const locked = !isIdle;
   const noPrice = price == null;
   const win = isResult && result?.outcome === 'win';
   const broke = isIdle && maxAffordableLever(profile.coins) === null;

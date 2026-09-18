@@ -407,6 +407,14 @@ async function tapToPlayOpenKiosk(page) {
   await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
 }
 
+// The kiosk up/down buttons lock through the verdict pane exactly like the web's, so a real
+// visitor taps Play Again on the result screen to arm the next round. Waits for the buttons to
+// come live again before the caller starts it.
+async function tapPlayAgain(page) {
+  await page.locator('.btn-again').click();
+  await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
+}
+
 function parseCoins(text) {
   return Number(text.replace(/[^0-9.]/g, '').replace(/,/g, ''));
 }
@@ -435,6 +443,7 @@ test.describe.serial('open kiosk route /kiosk', () => {
 
     await tapToPlayOpenKiosk(page);
     await playRound(page, 'up');
+    await tapPlayAgain(page);
     await playRound(page, 'down');
 
     const before = await readKioskState(page);
