@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { PROMO_VIDEO_SECONDS, PROMO_VIDEO_URL, STAFF_PIN, TASK_ICONS, VERIFY_MODE } from './config.js';
+import { PROMO_VIDEO_SECONDS, PROMO_VIDEO_URL, STAFF_PIN, VERIFY_MODE } from './config.js';
 import { accumulateWatchTime } from './watchTime.js';
 import { num, useLang } from './i18n.js';
 import { clearSignupTimer, readSignupTimer, writeSignupTimer } from './signupTimer.js';
 import { clearYoutubeCooldown, readYoutubeCooldown, writeYoutubeCooldown } from './youtubeMissionTimer.js';
 import Logo from './Logo.jsx';
+import { TASK_ICONS } from './TaskIcons.jsx';
 
 // The three seeded YouTube reward units (db/seed.sql), walked in id order and shown as one
 // "Watch xChief videos" mission row. Each is released and ledgered on its own by the server; the

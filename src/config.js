@@ -77,22 +77,10 @@ export const JOIN_URL = (() => {
 
 export const SIGNUP_PROMPT_LEVEL = 'trader'; // level whose first reach offers the signup
 
-// Task icons, keyed by id: the one piece of the old client-side task table still worth keeping,
-// since public.get_tasks() (ticket B6+B7+B9 decision 1) has no notion of an icon and never
-// should - it is decoration, not a reward number. Everything else the tasks screen renders
-// (title, reward, claimed, kind, url) comes from the server's own tasksRows.
-export const TASK_ICONS = {
-  signup: '◆',
-  video: '▶',
-  email: '✉',
-  instagram: '◎',
-  telegram: '✈',
-  youtube: '▷',
-  youtube_videos: '▷',
-  story: '↗',
-  review_trustpilot: '★',
-  review_google: '★',
-  review_fpa: '★',
-};
+// Task icons moved to src/TaskIcons.jsx: the brand marks (Telegram, YouTube, Instagram, review
+// stars) are inline SVG components, and config.js stays plain data (this file must stay .js, not
+// .jsx). public.get_tasks() has no notion of an icon and never should - it is decoration, not a
+// reward number. Everything else the tasks screen renders (title, reward, claimed, kind, url)
+// comes from the server's own tasksRows.
 
 export const LINKS_PUBLIC = LINKS;
