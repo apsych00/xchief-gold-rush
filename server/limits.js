@@ -398,7 +398,7 @@ export function createLimits({ now = Date.now, log = console.log } = {}) {
   function forgetSocket(socketId) {
     frameWindow.hits.delete(socketId);
     playInterval.forget(socketId);
-    for (const type of ['leaderboard', 'tasks', 'get_me', 'task_progress', 'task_start', 'task_return']) {
+    for (const type of ['leaderboard', 'tasks', 'get_me', 'task_progress', 'task_start', 'task_return', 'share_link']) {
       queryInterval.forget(`${socketId}:${type}`);
     }
   }

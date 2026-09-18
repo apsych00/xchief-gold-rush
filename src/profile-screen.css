@@ -328,6 +328,159 @@
   text-align: center;
 }
 
+/* ---------- share modal and public share page (ticket U4) ---------- */
+
+.share-modal {
+  padding: 18px;
+}
+
+.share-card {
+  width: 100%;
+  margin: 14px 0;
+  padding: 18px;
+  border-radius: 18px;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(233, 182, 42, 0.18), rgba(233, 182, 42, 0.05));
+  border: 1.5px solid rgba(233, 182, 42, 0.45);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 12px 30px rgba(0, 0, 0, 0.45);
+}
+
+.share-card-empty {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.share-card-mark {
+  display: flex;
+  justify-content: center;
+  color: #fff;
+}
+
+.share-card-title {
+  margin-top: 10px;
+  font: 700 13px var(--fa);
+  color: rgba(255, 255, 255, 0.8);
+  letter-spacing: 0.5px;
+}
+
+.share-card-record {
+  margin-top: 6px;
+  font: 900 clamp(32px, 8vw, 46px)/1 var(--en);
+  color: var(--gold);
+  text-shadow: 0 0 24px rgba(233, 182, 42, 0.4);
+}
+
+.share-card-unit {
+  font: 600 12px var(--fa);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.share-card-rank {
+  margin-top: 8px;
+  font: 700 12px var(--en);
+  color: var(--green);
+}
+
+.share-card-note {
+  margin-top: 8px;
+  font: 500 13px var(--fa);
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.share-error {
+  margin: 4px 0 8px;
+  text-align: center;
+}
+
+.share-url-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.share-url-input {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font: 500 13px var(--en);
+  user-select: text;
+}
+
+.share-url-input:focus {
+  outline: none;
+  border-color: var(--gold);
+}
+
+.share-copy-btn {
+  flex: none;
+  height: 42px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.share-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.share-shortcut {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 4px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.share-shortcut-icon {
+  font: 700 18px/1 var(--en);
+}
+
+.share-shortcut-label {
+  font: 600 10px var(--fa);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* Public share page: same card, CTAs below it */
+.share-page {
+  justify-content: flex-start;
+  padding-top: 20px;
+}
+
+.share-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.share-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 48px;
+  border-radius: 24px;
+  text-decoration: none;
+  text-align: center;
+}
+
 @media (max-height: 700px) {
   .pf {
     gap: 5px;

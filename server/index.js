@@ -55,6 +55,10 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 // /api/claim/<token>: the token is the base64url string settle_kiosk_round mints (ticket C9),
 // never re-validated for shape here - an unknown or malformed token both just read as 'invalid'.
 const CLAIM_PATH_RE = /^\/api\/claim\/([^/]+)$/;
+// /api/share/<token>: the token is the 12-char base64url string stored on players.share_token
+// (ticket U4). Unknown tokens answer 404; nothing about the player beyond the public payload
+// (display, record, rank, tier, tournament_title) is ever returned.
+const SHARE_PATH_RE = /^\/api\/share\/([^/]+)$/;
 
 const str = (v, max) =>
   String(v ?? '')
@@ -558,6 +562,16 @@ export function createApp({
     sendJson(res, 200, await ledger.getClaimStatus(token));
   }
 
+  /** GET /api/share/<token> (ticket U4): public share-page payload, no auth. */
+  async function handleShareGet(res, token) {
+    const payload = await ledger.getShareByToken(token);
+    if (!payload) {
+      sendJson(res, 404, { ok: false, error: 'not_found' });
+      return;
+    }
+    sendJson(res, 200, payload);
+  }
+
   /**
    * POST /api/claim/<token> {email} (ticket C9 decision 4): one atomic claim_prize() call, then
    * the bonus code is emailed through server/otp.js's Elastic sender - a mail failure is logged
@@ -751,6 +765,31 @@ export function createApp({
           return;
         }
         res.writeHead(405, { Allow: 'GET, POST', 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'method_not_allowed' }));
+        return;
+      }
+      const shareMatch = req.url.match(SHARE_PATH_RE);
+      if (shareMatch) {
+        const token = decodeURIComponent(shareMatch[1]);
+        // CORS (ticket U4): the public share page is served from the SPA origin; in dev the Vite
+        // server and the game server run on different ports, so the GET is cross-origin.
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204, {
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+          });
+          res.end();
+          return;
+        }
+        if (req.method === 'GET') {
+          handleShareGet(res, token).catch((err) => {
+            console.error('[share] unhandled error', err);
+            sendJson(res, 500, { ok: false, error: 'internal' });
+          });
+          return;
+        }
+        res.writeHead(405, { Allow: 'GET', 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: 'method_not_allowed' }));
         return;
       }
@@ -1182,6 +1221,30 @@ export function createApp({
           }
           const tournamentId = str(frame.id, 50) || null;
           send(ws, { type: 'leaderboard', ...(await buildLeaderboardPayload(tournamentId, 1, id, true)) });
+          break;
+        }
+        case 'share_link': {
+          // Share-my-record link (ticket U4): player sockets only, 1/s query budget. The server
+          // mints the token on first request and builds the public payload itself.
+          if (kind !== 'player') {
+            send(ws, { type: 'error', code: 'not_available' });
+            break;
+          }
+          const budget = limits.checkQueryRate(ws.socketId, 'share_link');
+          if (!budget.allowed) {
+            send(ws, { type: 'error', code: 'rate_limited', retry_ms: budget.retryMs });
+            break;
+          }
+          const token = await ledger.getOrCreateShareToken(id);
+          const payload = await ledger.getShareByToken(token);
+          send(ws, {
+            type: 'share_link',
+            url: ledger.shareUrlFor(token),
+            record: payload.record,
+            rank: payload.rank ?? null,
+            tier: payload.tier ?? null,
+            display: payload.display,
+          });
           break;
         }
         case 'request_otp': {
