@@ -1283,9 +1283,7 @@ button:focus:not(:focus-visible) {
   --row: clamp(42px, 5.6vh, 50px);
   --gap: 8px;
   position: relative;
-  /* Size to the rows and scroll only when they overflow, so a short board does not
-     leave a void that strands the ad zone at the bottom (owner 2026-09-18). */
-  flex: 0 1 auto;
+  flex: 1;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
@@ -1423,12 +1421,15 @@ button:focus:not(:focus-visible) {
 .ad-zone {
   flex: none;
   width: 100%;
-  aspect-ratio: 1072 / 310;
+  /* The banners carry a slim dark margin inside their own canvas; the frame is overscanned
+     (src/ads.jsx) and centered so the creative reaches the edges (owner 2026-09-18). The zone
+     box follows the cropped art's aspect so there is no letterbox around it. */
+  aspect-ratio: 1072 / 272;
   margin: 8px 0 10px;
-  border-radius: 16px;
+  border-radius: 14px;
   overflow: hidden;
   position: relative;
-  background: #000;
+  background: transparent;
 }
 .ad-zone-link {
   display: block;
@@ -1449,14 +1450,14 @@ button:focus:not(:focus-visible) {
   animation: gr-rise 0.4s ease-out both;
 }
 .ad-zone-scale {
-  /* Native 1072x310 canvas, scaled as one block to the zone width by src/ads.jsx (the banners
-     clip their bottom when laid out narrower than ~800 px). */
+  /* Native 1072x310 canvas, scaled to the zone width by src/ads.jsx and overscanned/centered so
+     the banner's own dark margin is cropped and the creative fills the zone. */
   position: absolute;
-  top: 0;
-  left: 0;
+  top: 50%;
+  left: 50%;
   width: 1072px;
   height: 310px;
-  transform-origin: top left;
+  transform-origin: center;
 }
 .ad-zone-frame {
   display: block;

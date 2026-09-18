@@ -25,6 +25,9 @@ const BANNERS_URL = '/ads/banners.json';
 // Native canvas of the two HTML banners (ads/banners/README.md); .ad-zone keeps the same ratio.
 const BANNER_W = 1072;
 const BANNER_H = 310;
+// The banners carry a slim dark margin inside their canvas; overscan the scaled frame so the
+// creative reaches the zone edges (owner 2026-09-18), cropped by .ad-zone's overflow:hidden.
+const OVERSCAN = 1.12;
 
 /** The leaderboard screen's banner zone. Its height follows the banner aspect ratio (1072:310),
  * so the list above reclaims the rest through the flex column. Renders nothing - the list above
@@ -88,7 +91,11 @@ export function AdZone() {
         // load until the zone is near the viewport.
         // The scale lives on a wrapper: .ad-zone-frame keeps the gr-rise entrance animation, whose
         // fill-mode would otherwise overwrite an inline transform on the frame itself.
-        <div key={current.src} className="ad-zone-scale" style={{ transform: `scale(${scale})` }}>
+        <div
+          key={current.src}
+          className="ad-zone-scale"
+          style={{ transform: `translate(-50%, -50%) scale(${scale * OVERSCAN})` }}
+        >
           <iframe
             className="ad-zone-frame"
             src={current.src}

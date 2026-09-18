@@ -10,7 +10,5 @@
     "src": "/ads/banners/xchief-banner-concepts.html?concept=3&embed=1",
     "alt": "xChief - Award-Winning Authority",
     "duration_ms": 11500
-  },
-  { "type": "image", "src": "/ads/banner-1.png", "alt": "xChief - trade gold with tight spreads", "href": "https://www.xchief.com/" },
-  { "type": "image", "src": "/ads/banner-2.png", "alt": "xChief - open a live account", "href": "https://www.xchief.com/" }
+  }
 ]
