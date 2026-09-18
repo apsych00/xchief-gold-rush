@@ -4,16 +4,15 @@
  * fixed booth device never needs to sign in.
  */
 import { enabled as apiEnabled } from './client.js';
-import { getKioskSecret, kioskReset, onKioskSession, play } from './socket.js';
+import { getKioskSecret, isKioskPath, kioskReset, onKioskSession, play, provisionKiosk } from './socket.js';
 
-export { getKioskSecret, kioskReset, onKioskSession };
+export { getKioskSecret, isKioskPath, kioskReset, onKioskSession, provisionKiosk };
 
-/** True when this tab is a booth kiosk: server mode is on and the launch URL carries a `k`
- * parameter at all - presence, not truthiness (D7, docs/reports/redteam.md): a launch shortcut
- * that lost its query string (`?k=`) must still render the kiosk shell and its own error state,
- * never silently fall through to the full web app. Read once - a kiosk's launch URL is fixed, so
- * its secret never changes mid-session. */
-export const IS_KIOSK = apiEnabled && getKioskSecret() !== null;
+/** True when this tab is a booth kiosk: the open kiosk route (/kiosk, ticket K1) or a seeded
+ * launch URL carrying `k` at all - presence, not truthiness (D7, docs/reports/redteam.md): a
+ * launch shortcut that lost its query string (`?k=`) must still render the kiosk shell and its
+ * own error state, never silently fall through to the full web app. */
+export const IS_KIOSK = apiEnabled && (isKioskPath() || getKioskSecret() !== null);
 
 /** Sends play {dir, lever}; resolves with round_opened. server/index.js applies the kiosk's own
  * lever the same way it does for a web player (frame.lever ?? 1 for a kiosk identity). */

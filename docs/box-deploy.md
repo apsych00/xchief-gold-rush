@@ -157,6 +157,36 @@ Other admin scripts (see `scripts/README.md`):
 `npm run box:coupons:load -- codes.txt` (the file must be in the `goldrush`
 folder), `npm run box:otp:peek someone@example.com` (dev only).
 
+## Open kiosk route (ticket K1)
+
+For the exhibition only, you can let anyone open `https://<your-domain>/kiosk` and get a working
+kiosk automatically, with no secret-in-URL step. The first visit provisions a kiosk and stores
+its identity on that device; reloads, crashes and reboots resume the same server-side session.
+
+Two environment switches control it in `.env.box`:
+
+- `KIOSK_OPEN_PROVISION` - set to `1` during the exhibition to enable `/kiosk`. Set it back to
+  `0` and restart the server after the exhibition.
+- `KIOSK_OPEN_MAX` - hard cap on the total number of active auto-provisioned open kiosks
+  (default 50). Once the cap is reached, `/kiosk` refuses new devices until old ones are removed.
+
+Turn it off after the exhibition:
+
+```
+# edit /opt/goldrush/.env.box and set KIOSK_OPEN_PROVISION=0
+deploy/deploy.sh
+```
+
+Decommissioning the auto-provisioned kiosks means deleting the rows whose labels start with
+`open-` (they are already excluded from the normal kiosk list once revoked):
+
+```
+docker compose --env-file .env.box exec db psql -U postgres \
+  -c "delete from public.kiosks where label like 'open-%';"
+```
+
+`/status` reports `kiosks.open` and `kiosks.seeded` so you can watch the count.
+
 ## 8. Monitoring
 
 Three read-only views, all served by Caddy - none of them need SSH:

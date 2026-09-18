@@ -59,6 +59,9 @@ export default defineConfig({
         // the device minted at auth). Raised here like the four per-IP budgets above so the suite's
         // shared loopback address can never trip it.
         MAX_REWARD_CLAIMS_PER_IP_PER_HOUR_NO_DEVICE: '1000',
+        // Ticket K1: open kiosk route. Default 0 (off); set to 1 when running the /kiosk E2E cases.
+        KIOSK_OPEN_PROVISION: process.env.KIOSK_OPEN_PROVISION || '0',
+        KIOSK_OPEN_MAX: process.env.KIOSK_OPEN_MAX || '50',
       },
     },
     {

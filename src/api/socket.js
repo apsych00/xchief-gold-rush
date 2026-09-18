@@ -9,11 +9,16 @@
  * server/rounds.js. onSettled() is how useGame.js hears about it, for both web and kiosk.
  */
 
+import { apiUrl } from './client.js';
+
 const TOKEN_KEY = 'xchief.player_token';
 // Device identity (ticket B5, docs/tickets/b5-device-identity.md decision 2): its own key,
 // separate from the player token, and never cleared by signOut - a device outlives every
 // player that has ever played from it.
 const DEVICE_TOKEN_KEY = 'xchief.device_token';
+// Open kiosk route (ticket K1): a self-provisioned booth identity, persisted on the device so
+// reloads, crashes and reboots resume the same server-side session.
+const KIOSK_STORAGE_KEY = 'xchief.kiosk';
 const MIN_BACKOFF_MS = 500;
 const MAX_BACKOFF_MS = 10000;
 const QUIET_AFTER_MS = 3000; // no price/hello frame this long -> the feed is quiet
@@ -31,9 +36,66 @@ function resolveWsUrl() {
 }
 const WS_URL = resolveWsUrl();
 
-/** The kiosk's launch URL bakes its bearer secret into ?k=; read fresh, the URL never changes mid-session. */
+/** True when this tab is the self-provisioning open kiosk route (ticket K1). */
+export function isKioskPath() {
+  return typeof window !== 'undefined' && window.location.pathname === '/kiosk';
+}
+
+function readStoredKiosk() {
+  try {
+    const raw = localStorage.getItem(KIOSK_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeKiosk(kiosk) {
+  try {
+    localStorage.setItem(KIOSK_STORAGE_KEY, JSON.stringify(kiosk));
+  } catch {
+    /* storage unavailable: the secret is lost on reload, which is the same as a fresh device */
+  }
+}
+
+let cachedKioskSecret = null;
+
+/** The kiosk's bearer secret: ?k= on a seeded launch URL, or the stored open-kiosk secret on
+ * /kiosk. The open-kiosk secret is cached after provisioning so authFrame sees it on reconnect. */
 export function getKioskSecret() {
+  if (cachedKioskSecret) return cachedKioskSecret;
+  if (isKioskPath()) {
+    const stored = readStoredKiosk();
+    if (stored?.secret) {
+      cachedKioskSecret = stored.secret;
+      return stored.secret;
+    }
+    return null;
+  }
   return new URLSearchParams(window.location.search).get('k');
+}
+
+/** Open kiosk route (ticket K1): call the server's public provision endpoint, store the result,
+ * and cache the secret so the pending socket auth can use it. */
+export async function provisionKiosk() {
+  const res = await fetch(apiUrl('/api/kiosk/provision'), { method: 'POST' });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const err = new Error(body.error || 'provision_failed');
+    err.code = body.error || 'provision_failed';
+    err.status = res.status;
+    throw err;
+  }
+  const kiosk = await res.json();
+  const stored = {
+    id: kiosk.id,
+    secret: kiosk.secret,
+    label: kiosk.label,
+    provisioned_at: new Date().toISOString(),
+  };
+  storeKiosk(stored);
+  cachedKioskSecret = kiosk.secret;
+  return stored;
 }
 
 function readToken() {
@@ -375,9 +437,20 @@ function open() {
 }
 
 /** Opens the socket if it is not already open/connecting. Safe to call more than once. */
-export function connect() {
+export async function connect() {
   if (started) return;
   started = true;
+  if (isKioskPath() && !getKioskSecret()) {
+    try {
+      await provisionKiosk();
+    } catch {
+      // Switch off (404) or cap/rate-limit: show the existing not-configured state rather than
+      // retrying forever with no secret. A reload is the only recovery.
+      kioskUnauthorized = true;
+      notifyStatus();
+      return;
+    }
+  }
   setInterval(evaluateQuiet, QUIET_POLL_MS).unref?.();
   open();
 }

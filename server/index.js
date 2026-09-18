@@ -523,7 +523,7 @@ export function createApp({
    * data: counts, feed health, and open socket totals only.
    */
   async function handleStatus(res) {
-    const [aggregates, db] = await Promise.all([getStatusAggregates(), ledger.ping()]);
+    const [aggregates, db, kiosks] = await Promise.all([getStatusAggregates(), ledger.ping(), ledger.kioskCounts()]);
     const now = Date.now();
     const sources = {};
     for (const [id, s] of Object.entries(feed.status())) {
@@ -553,6 +553,7 @@ export function createApp({
         reserved: aggregates.coupons_reserved,
       },
       kiosksActive: aggregates.kiosks_active,
+      kiosks: { seeded: kiosks.seeded, open: kiosks.open },
       devices24h: aggregates.devices_24h,
       limits: limits.stats(),
       safe_mode: safeMode.status(),
@@ -560,6 +561,38 @@ export function createApp({
       db,
     });
   }
+  /**
+   * POST /api/kiosk/provision (ticket K1): public, no auth. Creates an open kiosk when the
+   * exhibition switch is on, guarded by the anonymous-auth per-IP window and a hard cap on
+   * active open kiosks. Returns {id, secret, label}; the raw secret is shown once and never
+   * stored again.
+   */
+  async function handleProvision(req, res, ip) {
+    if (process.env.KIOSK_OPEN_PROVISION !== '1') {
+      sendJson(res, 404, { ok: false, error: 'not_configured' });
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.writeHead(405, { Allow: 'POST', 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'method_not_allowed' }));
+      return;
+    }
+    const budget = limits.checkAnonAuth(ip);
+    if (!budget.allowed) {
+      sendJson(res, 429, { ok: false, error: 'rate_limited', retry_ms: budget.retryMs });
+      return;
+    }
+    const max = Number(process.env.KIOSK_OPEN_MAX) || 50;
+    try {
+      const kiosk = await ledger.createOpenKiosk(max);
+      sendJson(res, 200, kiosk);
+    } catch (err) {
+      const code = ledger.KNOWN_ERROR_CODES.includes(err.code) ? err.code : 'internal';
+      if (code === 'internal') console.error('[provision] unhandled error', err);
+      sendJson(res, code === 'kiosk_cap' ? 429 : 500, { ok: false, error: code });
+    }
+  }
+
   /** GET /api/claim/<token> (ticket C9 decision 4): the claim page's own read - never a
    * decision, just what claim_prize would do if called right now. */
   async function handleClaimGet(res, token) {
@@ -819,6 +852,13 @@ export function createApp({
         }
         res.writeHead(405, { Allow: 'GET', 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: 'method_not_allowed' }));
+        return;
+      }
+      if (req.url === '/api/kiosk/provision') {
+        handleProvision(req, res, ip).catch((err) => {
+          console.error('[provision] unhandled error', err);
+          sendJson(res, 500, { ok: false, error: 'internal' });
+        });
         return;
       }
     }

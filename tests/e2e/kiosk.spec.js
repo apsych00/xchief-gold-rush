@@ -386,3 +386,91 @@ test('claim page: scanning a real claim_url shows the gift card once, and reopen
     await pool.end();
   }
 });
+
+// --- Ticket K1: open kiosk route (/kiosk) ----------------------------------------------------
+
+async function openKioskAttract(page) {
+  await page.goto('/kiosk');
+  await expect
+    .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
+      message: 'window.__xchief.mode must be "server" - the open kiosk route is not wired to the game socket',
+      timeout: 10000,
+    })
+    .toBe('server');
+  await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
+}
+
+async function tapToPlayOpenKiosk(page) {
+  await openKioskAttract(page);
+  await page.locator('.btn-start').click();
+  await dismissFirstVisit(page);
+  await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
+}
+
+function parseCoins(text) {
+  return Number(text.replace(/[^0-9.]/g, '').replace(/,/g, ''));
+}
+
+function multToStreak(multText) {
+  const mult = Number(multText.replace('×', '').trim());
+  if (mult === 1.5) return 1;
+  if (mult === 2) return 2;
+  if (mult === 3) return 3;
+  return 0;
+}
+
+async function readKioskState(page) {
+  const coinsText = await page.locator('.balance-text').innerText();
+  const multText = await page.locator('.combo-mult').innerText();
+  return { coins: parseCoins(coinsText), streak: multToStreak(multText) };
+}
+
+test.describe.serial('open kiosk route /kiosk', () => {
+  test.setTimeout(180000);
+
+  test('provisions on first visit, plays two rounds, and persists coins/streak across reload', async ({ page }) => {
+    // Start completely fresh so this test provisions its own kiosk.
+    await page.goto('/kiosk');
+    await page.evaluate(() => localStorage.removeItem('xchief.kiosk'));
+
+    await tapToPlayOpenKiosk(page);
+    await playRound(page, 'up');
+    await playRound(page, 'down');
+
+    const before = await readKioskState(page);
+
+    // Reload resumes the same kiosk identity from localStorage.
+    await page.reload();
+    await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
+
+    const after = await readKioskState(page);
+    expect(after.coins).toBe(before.coins);
+    expect(after.streak).toBe(before.streak);
+  });
+
+  test('a second browser context on /kiosk gets a different kiosk with a fresh session', async ({ browser }) => {
+    const context1 = await browser.newContext();
+    const page1 = await context1.newPage();
+    await tapToPlayOpenKiosk(page1);
+    const kiosk1 = await page1.evaluate(() => JSON.parse(localStorage.getItem('xchief.kiosk') || '{}'));
+
+    const context2 = await browser.newContext();
+    const page2 = await context2.newPage();
+    await tapToPlayOpenKiosk(page2);
+    const kiosk2 = await page2.evaluate(() => JSON.parse(localStorage.getItem('xchief.kiosk') || '{}'));
+
+    expect(kiosk1.label).toBeTruthy();
+    expect(kiosk2.label).toBeTruthy();
+    expect(kiosk1.label).not.toBe(kiosk2.label);
+
+    const state1 = await readKioskState(page1);
+    const state2 = await readKioskState(page2);
+    expect(state1.coins).toBe(1000);
+    expect(state1.streak).toBe(0);
+    expect(state2.coins).toBe(1000);
+    expect(state2.streak).toBe(0);
+
+    await context1.close();
+    await context2.close();
+  });
+});

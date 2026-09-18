@@ -61,6 +61,7 @@ export const KNOWN_ERROR_CODES = [
   'claim_invalid',
   'claim_link_expired',
   'not_claimable',
+  'kiosk_cap',
   'bad_progress',
   'progress_too_fast',
   'not_yet',
@@ -448,6 +449,23 @@ export async function availableCoupons() {
 /** Starts a fresh visitor session (coins 1000, streak 0, playing). */
 export async function startKioskSession(kioskId) {
   return call('start_kiosk_session', kioskId);
+}
+
+/** Open kiosk route (ticket K1): provision a new auto-kiosk. p_max caps active open kiosks. */
+export async function createOpenKiosk(max = 50) {
+  return call('create_open_kiosk', max);
+}
+
+/** Active kiosk counts split into seeded (non-open labels) and open (auto-provisioned). */
+export async function kioskCounts() {
+  const { rows } = await getPool().query(`
+    select
+      count(*) filter (where label not like 'open-%')::int as seeded,
+      count(*) filter (where label like 'open-%')::int as open
+    from public.kiosks
+    where status = 'active'
+  `);
+  return rows[0];
 }
 
 /** Back to attract mode: `kiosk_reset` (Claim/Done) and the idle sweep both call this. */
