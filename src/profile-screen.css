@@ -499,3 +499,169 @@
     display: none;
   }
 }
+
+/* WEB (non-kiosk) on iPad Air 13" - the profile screen, top-bar avatar and share
+   surfaces. Same gate and scoping as the block in styles.css (min 1000px on both
+   axes, .app:not(.app-kiosk)), so no phone and no kiosk screen is touched; the
+   kiosk never renders any of these. See that block's header for the rationale. */
+@media (min-width: 1000px) and (min-height: 1000px) {
+  /* top-bar avatar */
+  .app:not(.app-kiosk) .avatar-btn {
+    width: 46px;
+    height: 46px;
+  }
+  .app:not(.app-kiosk) .avatar-btn svg {
+    width: 30px;
+    height: 30px;
+  }
+  .app:not(.app-kiosk) .avatar-flame {
+    font-size: 15px;
+  }
+
+  /* profile screen */
+  .app:not(.app-kiosk) .pf {
+    gap: clamp(10px, 1.6vh, 18px);
+    padding: 6px 30px 10px;
+  }
+  .app:not(.app-kiosk) .pf-head {
+    gap: 20px;
+  }
+  /* The ring is an SVG sized in JS (Profile.jsx); scale the whole ring and reserve
+     the growth with margin so it never collides with the name block beside it. */
+  .app:not(.app-kiosk) .pf-ring {
+    margin: 8px 12px;
+    transform: scale(1.25);
+  }
+  .app:not(.app-kiosk) .pf-name {
+    font-size: clamp(24px, 2.8vh, 30px);
+  }
+  .app:not(.app-kiosk) .pf-level-chip {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 14px;
+  }
+  .app:not(.app-kiosk) .pf-level-sub {
+    font-size: 14px;
+  }
+  .app:not(.app-kiosk) .pf-lv {
+    height: 7px;
+  }
+  .app:not(.app-kiosk) .pf-tiles {
+    gap: 12px;
+  }
+  .app:not(.app-kiosk) .pf-tile {
+    padding: 16px 10px 14px;
+    border-radius: 18px;
+  }
+  .app:not(.app-kiosk) .pf-k {
+    font-size: 13px;
+  }
+  .app:not(.app-kiosk) .pf-v {
+    font-size: clamp(20px, 2.6vh, 26px);
+  }
+  .app:not(.app-kiosk) .pf-v-sub {
+    font-size: 13px;
+  }
+  .app:not(.app-kiosk) .pf-section-title {
+    margin-bottom: 10px;
+    font-size: 14px;
+  }
+  .app:not(.app-kiosk) .pf-badges {
+    gap: 12px;
+  }
+  .app:not(.app-kiosk) .pf-badge {
+    padding: 16px 8px 14px;
+    border-radius: 18px;
+  }
+  .app:not(.app-kiosk) .pf-badge-icon {
+    font-size: 26px;
+  }
+  .app:not(.app-kiosk) .pf-badge-name {
+    font-size: 14px;
+  }
+  .app:not(.app-kiosk) .pf-badge-hint {
+    font-size: 12px;
+  }
+  .app:not(.app-kiosk) .pf-row {
+    height: clamp(52px, 6vh, 60px);
+    padding: 0 18px;
+  }
+  .app:not(.app-kiosk) .pf-row-k,
+  .app:not(.app-kiosk) .pf-row-v {
+    font-size: 16px;
+  }
+  .app:not(.app-kiosk) .pf-link {
+    font-size: 15px;
+  }
+  .app:not(.app-kiosk) .pf-actions {
+    gap: 12px;
+  }
+  .app:not(.app-kiosk) .pf-btn {
+    height: 56px;
+    border-radius: 28px;
+    font-size: 17px;
+  }
+  .app:not(.app-kiosk) .pf-foot {
+    font-size: 13px;
+  }
+
+  /* share modal + public share page */
+  .app:not(.app-kiosk) .share-card {
+    max-width: 420px;
+    margin: 16px auto;
+    padding: 24px;
+    border-radius: 22px;
+  }
+  .app:not(.app-kiosk) .share-card-title {
+    font-size: 15px;
+  }
+  .app:not(.app-kiosk) .share-card-record {
+    font-size: clamp(40px, 6vh, 56px);
+  }
+  .app:not(.app-kiosk) .share-card-unit {
+    font-size: 14px;
+  }
+  .app:not(.app-kiosk) .share-card-rank {
+    font-size: 14px;
+  }
+  .app:not(.app-kiosk) .share-card-note {
+    font-size: 15px;
+  }
+  .app:not(.app-kiosk) .share-url-row {
+    max-width: 460px;
+    margin: 0 auto 16px;
+  }
+  .app:not(.app-kiosk) .share-url-input {
+    height: 52px;
+    border-radius: 14px;
+    font-size: 15px;
+  }
+  .app:not(.app-kiosk) .share-copy-btn {
+    height: 52px;
+    padding: 0 20px;
+    font-size: 15px;
+  }
+  .app:not(.app-kiosk) .share-shortcuts {
+    max-width: 460px;
+    margin: 0 auto 18px;
+    gap: 12px;
+  }
+  .app:not(.app-kiosk) .share-shortcut {
+    padding: 14px 6px;
+    border-radius: 18px;
+  }
+  .app:not(.app-kiosk) .share-shortcut-icon {
+    font-size: 24px;
+  }
+  .app:not(.app-kiosk) .share-shortcut-label {
+    font-size: 13px;
+  }
+  .app:not(.app-kiosk) .share-actions {
+    max-width: 460px;
+    gap: 12px;
+  }
+  .app:not(.app-kiosk) .share-cta {
+    height: 58px;
+    border-radius: 29px;
+  }
+}
