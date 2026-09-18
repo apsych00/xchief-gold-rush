@@ -16,9 +16,15 @@
  * Run: see docs/showcase.md. In short -
  *   bash db/run-tests-demo.sh --keep
  *   DATABASE_URL=postgresql://postgres:test@localhost:55447/postgres \
- *     PLAYER_TOKEN_SECRET=dev-secret PORT=8787 npm run server
+ *     PLAYER_TOKEN_SECRET=dev-secret PORT=8787 KIOSK_OPEN_PROVISION=1 npm run server
  *   npx vite --port 5347 --strictPort
  *   DATABASE_URL=postgresql://postgres:test@localhost:55447/postgres node demo/showcase.mjs
+ *
+ * The two kiosk windows open the OPEN route (${BASE}/kiosk): each self-provisions its own kiosk
+ * (POST /api/kiosk/provision) and stores {id, secret, label} in localStorage under 'xchief.kiosk'.
+ * There is no seeded secret in the URL anymore, so the server MUST run with KIOSK_OPEN_PROVISION=1
+ * or /kiosk cannot provision. Where a scenario has to touch a kiosk's row in the database, it reads
+ * that window's own provisioned identity off the page (see provisionedKiosk()).
  *
  * Options:
  *   --only 1,4,8     run a subset (every scenario sets up its own world, so any subset works)
@@ -39,9 +45,6 @@ import { dismissFirstVisit } from '../tests/e2e/first-visit.js';
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPORT = path.join(REPO, 'docs', 'reports', 'showcase-results.md');
 
-const KIOSK_A_SECRET = 'dev-kiosk-secret-0001'; // db/seed.sql
-const KIOSK_B_SECRET = 'demo-kiosk-secret-0002'; // created by this script, see ensureKioskB()
-const KIOSK_B_LABEL = 'demo-kiosk-b';
 const VIEWPORT = { width: 420, height: 900 };
 
 const args = parseArgs(process.argv.slice(2));
@@ -222,8 +225,8 @@ async function ownLeaderboardRow(page) {
   return (await rows.innerText()).replace(/\s+/g, ' ').trim();
 }
 
-async function enterKiosk(page, secret) {
-  await page.goto(`${BASE}/?k=${secret}`, { waitUntil: 'domcontentloaded' });
+async function enterKiosk(page) {
+  await page.goto(`${BASE}/kiosk`, { waitUntil: 'domcontentloaded' });
   await page.getByText('Tap to play').waitFor({ timeout: 20000 });
   await read();
   await page.locator('.btn-start').click();
@@ -231,27 +234,26 @@ async function enterKiosk(page, secret) {
   await waitPlayable(page);
 }
 
-/* --------------------------------------------------------------------- fixtures --- */
-
-async function ensureKioskB() {
-  const rows = await q('select id from public.kiosks where label = $1', [KIOSK_B_LABEL]);
-  if (rows.length) {
-    await q(
-      `update public.kiosks set secret_hash = extensions.crypt($2, extensions.gen_salt('bf')),
-         status = 'active' where label = $1`,
-      [KIOSK_B_LABEL, KIOSK_B_SECRET],
+/**
+ * The open-route kiosk identity this window self-provisioned into localStorage. Waits for the
+ * client to reach its play state first (window.__xchief.mode === 'server'), because the identity
+ * is only stored once /kiosk has provisioned and connected - reading it any earlier gets nothing.
+ * Returns {id, secret, label}; the id names the kiosk's row, the secret authenticates a socket
+ * reset. The server must run with KIOSK_OPEN_PROVISION=1 or /kiosk never provisions (see the
+ * header). Read per window, so Kiosk A and Kiosk B each drive their own provisioned kiosk.
+ */
+async function provisionedKiosk(page) {
+  await page.waitForFunction(() => window.__xchief && window.__xchief.mode === 'server', null, { timeout: 25000 });
+  const identity = await page.evaluate(() => JSON.parse(localStorage.getItem('xchief.kiosk') || 'null'));
+  if (!identity || !identity.id || !identity.secret) {
+    throw new Error(
+      'the kiosk window never self-provisioned an identity - is KIOSK_OPEN_PROVISION=1 set on the server?',
     );
-    return rows[0].id;
   }
-  const ins = await q(
-    `insert into public.kiosks (label, secret_hash)
-       values ($1, extensions.crypt($2, extensions.gen_salt('bf'))) returning id`,
-    [KIOSK_B_LABEL, KIOSK_B_SECRET],
-  );
-  return ins[0].id;
+  return identity;
 }
 
-const kioskIdFor = async (secret) => (await q('select public.verify_kiosk($1) as id', [secret]))[0].id;
+/* --------------------------------------------------------------------- fixtures --- */
 
 /** Make sure the prize pool is not empty, so a real five-win streak could be honoured. */
 async function ensureCoupons() {
@@ -632,8 +634,9 @@ const SCENARIOS = [
     ],
     covered: 'tests/e2e/kiosk.spec.js #1; tests/e2e/player-promises.spec.js #3',
     async run({ kioskA }) {
-      await kioskResetViaSocket(KIOSK_A_SECRET);
-      await kioskA.goto(`${BASE}/?k=${KIOSK_A_SECRET}`, { waitUntil: 'domcontentloaded' });
+      const { id, secret } = await provisionedKiosk(kioskA);
+      await kioskResetViaSocket(secret);
+      await kioskA.goto(`${BASE}/kiosk`, { waitUntil: 'domcontentloaded' });
       await kioskA.getByText('Tap to play').waitFor({ timeout: 20000 });
       const atAttract = await forbiddenUi(kioskA).count();
       await read(2);
@@ -650,9 +653,7 @@ const SCENARIOS = [
 
       if (!/WIN|MISS|FLAT/.test(verdict)) throw new Error(`no server verdict on screen: ${verdict}`);
       if (atAttract + atResult > 0) throw new Error(`web-only UI rendered on a kiosk (${atAttract}/${atResult} nodes)`);
-      const session = await q('select session_coins, streak, session_state from public.kiosks where id = $1', [
-        await kioskIdFor(KIOSK_A_SECRET),
-      ]);
+      const session = await q('select session_coins, streak, session_state from public.kiosks where id = $1', [id]);
       return `verdict "${verdict.slice(0, 32)}"; session now ${session[0].session_coins} coins / streak ${session[0].streak}; forbidden UI nodes: 0`;
     },
   },
@@ -668,8 +669,9 @@ const SCENARIOS = [
     covered: 'tests/e2e/kiosk.spec.js #4; tests/e2e/streak.spec.js',
     async run({ kioskA }) {
       const CODE = 'XG-SHOWCASE-DEMO';
-      await kioskResetViaSocket(KIOSK_A_SECRET);
-      await enterKiosk(kioskA, KIOSK_A_SECRET);
+      const { id, secret } = await provisionedKiosk(kioskA);
+      await kioskResetViaSocket(secret);
+      await enterKiosk(kioskA);
       await read();
 
       for (const streak of [1, 2, 3, 4]) {
@@ -727,9 +729,7 @@ const SCENARIOS = [
 
       if (lines !== 1) throw new Error(`the code wrapped onto ${lines} lines`);
       if (forbidden > 0) throw new Error(`web-only UI rendered behind the win modal (${forbidden} nodes)`);
-      const state = (
-        await q('select session_state from public.kiosks where id = $1', [await kioskIdFor(KIOSK_A_SECRET)])
-      )[0];
+      const state = (await q('select session_state from public.kiosks where id = $1', [id]))[0];
       return `win modal showed ${CODE} on ${lines} line; Claim returned the booth to attract (server session '${state.session_state}')`;
     },
   },
@@ -744,11 +744,12 @@ const SCENARIOS = [
     ],
     covered: 'tests/e2e/kiosk.spec.js #2; test/integration-box/server.test.mjs',
     async run({ kioskB }) {
-      await kioskResetViaSocket(KIOSK_B_SECRET);
-      await enterKiosk(kioskB, KIOSK_B_SECRET);
+      const { id, secret } = await provisionedKiosk(kioskB);
+      await kioskResetViaSocket(secret);
+      await enterKiosk(kioskB);
       await q(
         "update public.kiosks set session_coins = 50, session_state = 'playing', last_round_at = now() where id = $1",
-        [await kioskIdFor(KIOSK_B_SECRET)],
+        [id],
       );
       await read();
 
@@ -765,11 +766,7 @@ const SCENARIOS = [
       await read();
 
       if (forbidden > 0) throw new Error(`web-only UI rendered behind the exit modal (${forbidden} nodes)`);
-      const state = (
-        await q('select session_state, session_coins from public.kiosks where id = $1', [
-          await kioskIdFor(KIOSK_B_SECRET),
-        ])
-      )[0];
+      const state = (await q('select session_state, session_coins from public.kiosks where id = $1', [id]))[0];
       return `exit modal shown from the server's broke state; Done reset the booth (server session '${state.session_state}', ${state.session_coins} coins)`;
     },
   },
@@ -784,8 +781,9 @@ const SCENARIOS = [
     ],
     covered: 'tests/e2e/kiosk.spec.js #5',
     async run({ kioskB }) {
-      await kioskResetViaSocket(KIOSK_B_SECRET);
-      await enterKiosk(kioskB, KIOSK_B_SECRET);
+      const { secret } = await provisionedKiosk(kioskB);
+      await kioskResetViaSocket(secret);
+      await enterKiosk(kioskB);
       await kioskB.evaluate(() => window.__xchief.kioskTiming({ idleMs: 4000, countdownMs: 6000 }));
 
       const overlay = kioskB.getByText('Still there?');
@@ -817,12 +815,13 @@ const SCENARIOS = [
     ],
     covered: 'test/integration-box/server.test.mjs (idle sweep); tests/e2e/kiosk.spec.js #3',
     async run({ kioskB }) {
-      await kioskResetViaSocket(KIOSK_B_SECRET);
-      await enterKiosk(kioskB, KIOSK_B_SECRET);
+      const { id, secret } = await provisionedKiosk(kioskB);
+      await kioskResetViaSocket(secret);
+      await enterKiosk(kioskB);
       // Take the client's own flush out of the picture entirely, so what happens next can only
       // be the server's doing.
       await kioskB.evaluate(() => window.__xchief.kioskTiming({ idleMs: 3600000, countdownMs: 3600000 }));
-      const kioskId = await kioskIdFor(KIOSK_B_SECRET);
+      const kioskId = id;
       await read(2);
 
       // Prove the starting point, then make the row stale - in that order, so the sweep has no
@@ -858,8 +857,9 @@ const SCENARIOS = [
     covered: 'tests/e2e/streak.spec.js #2',
     async run({ kioskA }) {
       const CODE = 'XG-SHOWCASE-HOLD';
-      await kioskResetViaSocket(KIOSK_A_SECRET);
-      await enterKiosk(kioskA, KIOSK_A_SECRET);
+      const { secret } = await provisionedKiosk(kioskA);
+      await kioskResetViaSocket(secret);
+      await enterKiosk(kioskA);
       await kioskA.evaluate((code) => {
         window.__xchief.inject({
           type: 'round_settled',
@@ -1116,18 +1116,18 @@ async function main() {
   const app = await fetch(`${BASE}/`).catch(() => null);
   if (!app || !app.ok) throw new Error(`the app is not being served at ${BASE} - see docs/showcase.md`);
 
-  await ensureKioskB();
   await ensureCoupons();
   const retired = await retireOldDemoPlayers();
   if (retired) console.log(`retired ${retired} demo identities from earlier runs off the leaderboard\n`);
-  await kioskResetViaSocket(KIOSK_A_SECRET);
-  await kioskResetViaSocket(KIOSK_B_SECRET);
+  // Both kiosk windows open the open route (${BASE}/kiosk) and self-provision on load, so there
+  // is no kiosk to pre-reset here - each kiosk scenario reads its own window's provisioned
+  // identity (provisionedKiosk) and resets that kiosk first thing.
 
   const browser = await chromium.launch({ headless: false, args: ['--disable-features=TranslateUI'] });
   const windows = {};
   const order = [
-    ['kioskA', 'Kiosk A', `${BASE}/?k=${KIOSK_A_SECRET}`],
-    ['kioskB', 'Kiosk B', `${BASE}/?k=${KIOSK_B_SECRET}`],
+    ['kioskA', 'Kiosk A', `${BASE}/kiosk`],
+    ['kioskB', 'Kiosk B', `${BASE}/kiosk`],
     ['web', 'Web', `${BASE}/`],
   ];
   for (const [i, [key, , url]] of order.entries()) {
