@@ -855,6 +855,19 @@ export function createApp({
         return;
       }
       if (req.url === '/api/kiosk/provision') {
+        // CORS (ticket K1): same dev-recipe split as claim/share above - Vite and this server on
+        // two different ports, so the open kiosk route's POST is cross-origin and needs a preflight
+        // answered. Safe wide open: this route mints a fresh, unprivileged kiosk identity, nothing
+        // it does is cookie/session-authorized.
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204, {
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+          });
+          res.end();
+          return;
+        }
         handleProvision(req, res, ip).catch((err) => {
           console.error('[provision] unhandled error', err);
           sendJson(res, 500, { ok: false, error: 'internal' });
