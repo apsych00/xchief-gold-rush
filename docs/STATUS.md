@@ -10,15 +10,23 @@ Walk the dev build: web http://localhost:5173 · kiosk http://localhost:5173/kio
 
 | Status | What | Notes |
 |---|---|---|
-| 🔨 | Share = image | Rebuilding share as a rendered badge image + native share sheet; dropping the page/copy-link |
-| 🔨 | Video missions | One row cycling 3 YouTube videos, watch 30s to earn, next unlocks after 3 min, "x of 3" |
-| 🔨 | Instagram mission | Follow-verify via BoxAPI; not_configured until the token is set |
 | 🎨 | Play buttons look | You're redoing the Up/Down button styling |
+
+## Waiting on you
+
+| What | Notes |
+|---|---|
+| BoxAPI token | Put `BOXAPI_TOKEN` in `.env.box` (and swap the old Instagram OAuth vars for the K3 block) to turn the Instagram mission live; it shows "coming soon" until then |
+| Box deploy | You're running it - runbook + deploy repo are ready |
 
 ## Just landed (verified, on dev)
 
 | Status | What | Notes |
 |---|---|---|
+| ✅ | Share = image | A rendered badge/pass image + native share sheet (phone) or download + join link (desktop); no page, no copy-link; the "something went wrong" bug is gone |
+| ✅ | Video missions | One row cycling 3 YouTube videos, watch 30s to earn, next unlocks after 3 min, "x of 3", white overlay note + Skip |
+| ✅ | Instagram mission | Follow-verify via BoxAPI, server-decided; "coming soon" until the token is set |
+| ✅ | Email prompts sync | The "add your email" prompts vanish the moment you verify; guests still see them |
 | ✅ | Kiosk = open link | Booth opens `/kiosk` and self-binds, no secret; clean English intro; "Play on web" QR on the attract screen |
 | ✅ | Kiosk gameplay + layout | Up/Down now lock like the web (Play Again to continue); console body shorter, countdown fits the iPad |
 | ✅ | English everywhere | Persian text/layout removed from every screen |
