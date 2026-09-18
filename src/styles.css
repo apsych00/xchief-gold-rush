@@ -1449,6 +1449,14 @@ button:focus:not(:focus-visible) {
      the element so the animation replays on every rotation. */
   animation: gr-rise 0.4s ease-out both;
 }
+.ad-zone-click {
+  /* Transparent click target for the iframe banners (src/ads.jsx) - covers the full zone,
+     independent of .ad-zone-scale's own scale/overscan transform, and paints above the iframe
+     since it follows it in source order. */
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
 .ad-zone-scale {
   /* Native 1072x310 canvas, scaled to the zone width by src/ads.jsx and overscanned/centered so
      the banner's own dark margin is cropped and the creative fills the zone. */
