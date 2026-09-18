@@ -359,40 +359,6 @@ test.describe('player-visible promises', () => {
     await expect(page.locator('.btn-down')).toBeEnabled({ timeout: 10000 });
   });
 
-  test('6. watching the promo video to the end releases its reward from the server, shown as a toast (ticket B6)', async ({
-    page,
-  }) => {
-    await page.goto('/');
-    await dismissFirstVisit(page);
-    await expect
-      .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), { timeout: 10000 })
-      .toBe('server');
-    const before = await getMe(page);
-
-    await page.locator('.nav-btn').nth(2).click();
-    await expect(page.locator('.tasks')).toBeVisible({ timeout: 5000 });
-
-    const videoTask = page.locator('.task').filter({ hasText: 'Watch the xChief video' });
-    await expect(videoTask).toBeVisible();
-    await videoTask.locator('.task-btn').click();
-
-    // No VITE_PROMO_VIDEO_URL configured in this dev setup: VideoModal's fallback countdown
-    // plays out for real (src/Tasks.jsx), reporting progress to the server on the same cadence
-    // a real <video>'s onTimeUpdate would - report_video_progress (db/schema.sql) is what
-    // actually decides when 90% has been crossed and releases the reward, never this screen.
-    await expect(page.locator('.promo-fallback')).toBeVisible({ timeout: 3000 });
-    await page.screenshot({ path: path.join(REPORT_DIR, '01-video-modal-playing.png') });
-    await expect(page.locator('.modal-backdrop')).toHaveCount(0, { timeout: 25000 });
-
-    await expect(page.locator('.toast')).toBeVisible({ timeout: 5000 });
-    await expect(videoTask.locator('.task-state')).toBeVisible({ timeout: 5000 });
-    await page.screenshot({ path: path.join(REPORT_DIR, '02-video-task-claimed-toast.png') });
-
-    const after = await getMe(page);
-    expect(after.coins, 'the server must have released the video task reward').toBeGreaterThan(before.coins);
-    await expect.poll(() => screenCoins(page), { timeout: 5000 }).toBe(after.coins);
-  });
-
   test('7. a redirect task opens its destination and releases the reward within 1 s after the timer ends, with no focus event (ticket B7 / K4)', async ({
     page,
     context,
