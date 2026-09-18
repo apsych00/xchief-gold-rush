@@ -50,7 +50,9 @@
 	}
 
 	# The ad banner list (ticket B11): ads/banners.json plus public/ads/*, mounted read-only
-	# like ops/ so the list can be edited without a rebuild.
+	# like ops/ so the list can be edited without a rebuild. The self-hosted mission videos
+	# (docs/tickets/self-host-mission-videos.md) ride the same block: ads/videos/<id>.mp4 in the
+	# repo is already served at /ads/videos/<id>.mp4 by this file_server, no extra config needed.
 	handle_path /ads* {
 		root * /srv/ads
 		file_server

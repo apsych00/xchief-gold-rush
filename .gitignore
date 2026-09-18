@@ -31,6 +31,10 @@ demo/kiosks.json
 # local compose port override (IIS holds :80 on the dev machine)
 docker-compose.override.yml
 
+# self-hosted mission videos (docs/tickets/self-host-mission-videos.md): operator-swappable, same
+# pattern as the ad banner images. Drop the real MP4s in ads/videos/, see ads/videos/README.md.
+ads/videos/*.mp4
+
 # plain-named env copies handed to sandboxed workers (never committed)
 ENV_*.txt
 design/screens/

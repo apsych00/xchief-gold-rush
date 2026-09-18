@@ -23,9 +23,14 @@ insert into public.tasks (id, title, reward, repeat_ms, requires_email, kind, ur
   -- One "Watch xChief videos" mission on the client (src/Tasks.jsx collapses these three rows into
   -- a single "x of 3" row), but three separate reward units server-side so each 30-second watch is
   -- released and ledgered once per device/email. The client walks them in id order.
-  ('youtube_1',         'Watch xChief video 1',            150,  null,        false, 'youtube',  'pA17iDq3Ppw'),
-  ('youtube_2',         'Watch xChief video 2',            150,  null,        false, 'youtube',  'BjndfW6kQLU'),
-  ('youtube_3',         'Watch xChief video 3',            150,  null,        false, 'youtube',  'EETzCqTaZGg'),
+  --
+  -- Self-hosted mission videos (docs/tickets/self-host-mission-videos.md): kind stays 'youtube' so
+  -- report_video_progress's existing 30-second threshold is untouched, but url now points at a
+  -- local MP4 served the same way the ad banners are (ads/videos/<id>.mp4, see its README) instead
+  -- of a YouTube video id - the client plays it from a local <video>, no YouTube IFrame involved.
+  ('youtube_1',         'Watch xChief video 1',            150,  null,        false, 'youtube',  '/ads/videos/pA17iDq3Ppw.mp4'),
+  ('youtube_2',         'Watch xChief video 2',            150,  null,        false, 'youtube',  '/ads/videos/BjndfW6kQLU.mp4'),
+  ('youtube_3',         'Watch xChief video 3',            150,  null,        false, 'youtube',  '/ads/videos/EETzCqTaZGg.mp4'),
   ('story',             'Share your record',               300,  86400000,    false, 'manual',   null),
   ('review_trustpilot', 'Review on Trustpilot',            500,  null,        false, 'redirect', 'https://www.trustpilot.com/review/xchief.com')
 on conflict (id) do update set

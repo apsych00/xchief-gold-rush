@@ -433,7 +433,61 @@ test.describe('player-visible promises', () => {
     await page.screenshot({ path: path.join(K4_REPORT_DIR, '03-missions-tab-title.png') });
   });
 
-  test('9. a YouTube mission opens the IFrame player and reports progress (ticket K4)', async ({ page }) => {
+  test('9. a video mission plays the local hosted video, never touches youtube.com, and reports progress (ticket K4, self-host mission videos)', async ({
+    page,
+  }) => {
+    // Acceptance: no request to youtube.com and no bot interstitial - the whole point of
+    // self-hosting the mission videos. Fail loudly if anything in this test hits YouTube.
+    const youtubeRequests = [];
+    page.on('request', (req) => {
+      if (/(^|\.)youtube(-nocookie)?\.com/.test(new URL(req.url()).hostname)) youtubeRequests.push(req.url());
+    });
+
+    // Fake the native <video> element's playback clock rather than waiting out 30 real seconds:
+    // the src/duration/timeupdate/ended plumbing is exactly what src/Tasks.jsx's
+    // useVideoMissionWatch listens to, so this exercises the real reporting path without a slow
+    // test. Installed before the app loads so it is in place before VideoModal mounts the element.
+    await page.addInitScript(() => {
+      const proto = HTMLMediaElement.prototype;
+      Object.defineProperty(proto, 'currentTime', {
+        configurable: true,
+        get() {
+          return this.__t || 0;
+        },
+        set(v) {
+          this.__t = v;
+        },
+      });
+      Object.defineProperty(proto, 'duration', {
+        configurable: true,
+        get() {
+          return this.__duration ?? 55;
+        },
+      });
+      Object.defineProperty(proto, 'src', {
+        configurable: true,
+        get() {
+          return this.getAttribute('src') || '';
+        },
+        set(v) {
+          this.setAttribute('src', v);
+          this.__t = 0;
+          this.__duration = 55;
+          clearInterval(this.__fakeTimer);
+          // Advances 1 simulated second every 50 ms real time: 55 simulated seconds in ~2.75 s.
+          this.__fakeTimer = setInterval(() => {
+            this.__t += 1;
+            this.dispatchEvent(new Event('timeupdate'));
+            if (this.__t >= this.__duration) {
+              clearInterval(this.__fakeTimer);
+              this.dispatchEvent(new Event('ended'));
+            }
+          }, 50);
+        },
+      });
+      proto.play = () => Promise.resolve();
+    });
+
     await page.goto('/');
     await dismissFirstVisit(page);
     await expect
@@ -443,48 +497,23 @@ test.describe('player-visible promises', () => {
     await page.locator('.nav-btn').nth(2).click();
     await expect(page.locator('.tasks')).toBeVisible({ timeout: 5000 });
 
-    const youtubeTask = page.locator('.task').filter({ hasText: 'Watch xChief videos' });
-    await expect(youtubeTask).toBeVisible();
+    const videoMissionTask = page.locator('.task').filter({ hasText: 'Watch xChief videos' });
+    await expect(videoMissionTask).toBeVisible();
 
-    // Stub the YouTube IFrame API so the test needs no network and no real video id.
-    await page.evaluate(() => {
-      window.YT = {
-        PlayerState: { PLAYING: 1, ENDED: 0, PAUSED: 2 },
-        Player: class {
-          constructor(el, opts) {
-            this._opts = opts;
-            this._time = 0;
-            this._duration = 55;
-            setTimeout(() => {
-              opts.events.onReady();
-              opts.events.onStateChange({ data: window.YT.PlayerState.PLAYING });
-              const iv = setInterval(() => {
-                this._time += 1;
-                if (this._time >= this._duration) {
-                  clearInterval(iv);
-                  opts.events.onStateChange({ data: window.YT.PlayerState.ENDED });
-                }
-              }, 50);
-            }, 10);
-          }
-          playVideo() {}
-          getCurrentTime() {
-            return this._time;
-          }
-          getDuration() {
-            return this._duration;
-          }
-          destroy() {}
-        },
-      };
-    });
+    await videoMissionTask.locator('.task-btn').click();
+    const player = page.locator('.youtube-player-wrap video.youtube-player');
+    await expect(player).toBeVisible({ timeout: 5000 });
+    // Non-seekable: no native controls attribute, so there is no seek bar to grab.
+    expect(await player.getAttribute('controls'), 'the player must not expose a native seek bar').toBeNull();
+    const src = await player.getAttribute('src');
+    expect(src, 'the video mission must play a local file, not a YouTube id or URL').toMatch(/^\/ads\/videos\/.+\.mp4$/);
+    // A brief settle so the modal's own open transition is finished before the report screenshot.
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: path.join(K4_REPORT_DIR, '04-video-mission-player.png') });
 
-    await youtubeTask.locator('.task-btn').click();
-    await expect(page.locator('.youtube-player')).toBeVisible({ timeout: 5000 });
-    await page.screenshot({ path: path.join(K4_REPORT_DIR, '04-youtube-modal-player.png') });
-
-    // The stub ends after ~2.8 s; the modal closes on ENDED and reports progress.
+    // The fake clock ends after ~2.75 s; the modal closes on `ended` and reports progress.
     await expect(page.locator('.modal-backdrop')).toHaveCount(0, { timeout: 15000 });
+    expect(youtubeRequests, `no request should reach YouTube: ${youtubeRequests.join(', ')}`).toHaveLength(0);
   });
 
   test('10. signing in with OTP releases the email (and first-time signup) reward from the server (ticket B9, gap G1)', async ({
