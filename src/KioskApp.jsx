@@ -64,7 +64,10 @@ function KioskWonModal({ claimUrl, secondsLeft, onScanned }) {
       return undefined;
     }
     let cancelled = false;
-    QRCode.toDataURL(claimUrl, { margin: 1, width: 220 }).then((url) => {
+    // Rendered at 220px on phones and up to ~320px on the booth iPad; generate
+    // at the larger size so the kiosk QR stays crisp when scaled up (phones just
+    // downscale it, which is always sharp).
+    QRCode.toDataURL(claimUrl, { margin: 1, width: 400 }).then((url) => {
       if (!cancelled) setQrSrc(url);
     });
     return () => {
