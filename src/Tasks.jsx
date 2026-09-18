@@ -319,23 +319,15 @@ function normalizeHandle(raw) {
 }
 
 /**
- * Open Instagram to our profile (ticket K3): try the app deep link first, and if the app did not
- * take the tab over within 1.5 s, send that same tab to the web profile. Reusing the one tab
- * keeps a desktop browser (where the app scheme does nothing) from stacking blank tabs.
+ * Open Instagram to our profile (ticket K3). The web profile URL works everywhere: it opens in
+ * the browser on desktop and deep-links into the Instagram app on mobile (universal link). The
+ * `instagram://` app scheme is deliberately not used - on desktop it throws "scheme does not have
+ * a registered handler" in the console; the web URL avoids that and still opens the app on phones.
  */
 function openInstagram(appUrl, profileUrl) {
-  const first = appUrl || profileUrl;
-  if (!first) return;
-  const win = window.open(first, '_blank');
-  if (appUrl && profileUrl && win) {
-    setTimeout(() => {
-      try {
-        if (!win.closed) win.location.href = profileUrl;
-      } catch {
-        /* cross-origin after the app took over: nothing to fall back to */
-      }
-    }, 1500);
-  }
+  const url = profileUrl || appUrl;
+  if (!url) return;
+  window.open(url, '_blank', 'noopener');
 }
 
 /**

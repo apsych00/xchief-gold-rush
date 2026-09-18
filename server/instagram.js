@@ -94,13 +94,16 @@ function httpErrorCode(statusCode) {
 }
 
 /**
- * The BoxAPI doc lists request params but not response bodies, so the user object may arrive
- * bare, under `data`, or under `user`/`data.user` depending on how the upstream wraps it. Try
- * the documented-adjacent envelopes in order rather than pin one shape we cannot verify until
- * the real token arrives (flagged in the K3 report).
+ * BoxAPI wraps every response as { status:"done", response:{ status_code, content_type,
+ * body:{ status:"ok", user:{...} } } } (verified against the live API). Unwrap `response.body`
+ * first, then read `user`; the extra fallbacks keep the fake and any envelope drift working.
  */
+function pickBody(data) {
+  return data?.response?.body ?? data?.data ?? data ?? null;
+}
 function pickUser(data) {
-  return data?.data?.user ?? data?.user ?? data?.data ?? data ?? null;
+  const body = pickBody(data);
+  return body?.user ?? body?.data?.user ?? body ?? null;
 }
 
 function pickId(u) {
@@ -133,7 +136,8 @@ export async function getUserByUsername({ username }) {
  * usernames it contains so the caller can look for us by either.
  */
 function pickUserList(data) {
-  const list = data?.data?.users ?? data?.users ?? data?.items ?? data?.data ?? [];
+  const body = pickBody(data);
+  const list = body?.users ?? body?.data?.users ?? body?.items ?? (Array.isArray(body) ? body : []);
   return Array.isArray(list) ? list : [];
 }
 
