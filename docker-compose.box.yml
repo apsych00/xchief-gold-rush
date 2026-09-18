@@ -1,0 +1,63 @@
+# Shared-box overlay (docs/deploy-shared-box.md).
+#
+# Use this file INSTEAD of docker-compose.override.yml (the dev-machine file) whenever the
+# box is shared with other services and must not fight over 80/443. It does three things:
+#
+#   1. Removes every public port bind. Caddy is reached over the compose network by
+#      cloudflared, so the stack publishes NOTHING to the internet.
+#   2. Adds cloudflared as the origin path: an outbound-only Cloudflare Tunnel. No inbound
+#      port is opened on the host, so there is no collision with the other services' 80/443
+#      and no box firewall change to negotiate.
+#   3. Scopes Dozzle to our own containers, so /logs on a shared Docker daemon cannot show
+#      the co-tenants' logs.
+#
+# Select it explicitly - never rely on the auto-loaded docker-compose.override.yml on the
+# box. In .env.box set:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.box.yml
+#   COMPOSE_PROJECT_NAME=goldrush
+# deploy/deploy.sh sources .env.box (set -a) before it runs docker compose, so both are
+# honoured; setting COMPOSE_FILE also disables the automatic docker-compose.override.yml
+# merge, so the dev bindings can never leak onto the box.
+#
+# Every host port below is bound to 127.0.0.1 on an uncommon high port and exists only for
+# a local smoke test or a one-time login. Change any of them in .env.box (the BOX_* vars),
+# never in this file - that is the whole point of keeping the port map in one place.
+
+services:
+  # The origin path. Outbound only: cloudflared dials Cloudflare's edge over 443 and the
+  # public hostname is served through that tunnel. There is no inbound listener on the box.
+  cloudflared:
+    image: cloudflare/cloudflared:latest # pin to a known-good tag once verified on the box
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARED_TUNNEL_TOKEN:?CLOUDFLARED_TUNNEL_TOKEN is missing - create the tunnel in Cloudflare Zero Trust and paste its token into .env.box}
+    depends_on:
+      - caddy
+
+  caddy:
+    # No public ports. cloudflared reaches this container as caddy:80 on the compose
+    # network; the loopback bind below is only so curl on the box can smoke-test.
+    ports: !override
+      - '127.0.0.1:${BOX_CADDY_SMOKE_PORT:-8091}:80'
+    environment:
+      # Serve plain HTTP internally. Caddy must NOT try to obtain a Let's Encrypt cert:
+      # there is no inbound 80 on a tunnelled shared box, so ACME (HTTP-01) would fail
+      # forever. Cloudflare terminates TLS at the edge and the tunnel link is already
+      # encrypted, so the origin does not need its own certificate. The game server keeps
+      # the real SITE_ADDRESS from .env.box (it needs the true origin for Layer 2 pinning);
+      # only Caddy's public address is forced to :80 here.
+      SITE_ADDRESS: ':80'
+
+  dozzle:
+    environment:
+      DOZZLE_BASE: /logs
+      # On a shared Docker daemon Dozzle would otherwise list every tenant's containers at
+      # /logs. Scope it to our compose project only.
+      DOZZLE_FILTER: 'label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-goldrush}'
+
+  mt5:
+    # Optional (profile mt5). One-time first-login VNC UI, loopback only, on a high port so
+    # it does not land on a 3001 another service may already hold.
+    ports: !override
+      - '127.0.0.1:${BOX_MT5_VNC_PORT:-8071}:3001'
