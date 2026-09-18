@@ -35,3 +35,8 @@ docker-compose.override.yml
 ENV_*.txt
 design/screens/
 .claude/worktrees/
+docs/reports/**/*.png
+docs/reports/**/*.jpg
+docs/reports/**/*.jpeg
+docs/reports/**/*.webp
+test-results/

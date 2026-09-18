@@ -19,7 +19,6 @@
     "test": "node --test test/economy.test.mjs",
     "test:unit": "node --test \"test/unit/*.test.mjs\"",
     "test:feed": "node --test test/unit/feed.test.mjs",
-    "test:db": "supabase test db",
     "db:test": "bash db/run-tests.sh",
     "test:integration": "node --test \"test/integration/*.test.mjs\"",
     "test:server": "node --test --test-concurrency=1 \"test/integration-box/*.test.mjs\"",
@@ -54,7 +53,6 @@
     "box:alert-test": "docker compose exec server node scripts/alert-test.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.116.0",
     "pg": "^8.23.0",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
@@ -70,7 +68,6 @@
     "eslint-plugin-react-hooks": "^5.1.0",
     "globals": "^15.14.0",
     "prettier": "^3.4.2",
-    "supabase": "^2.117.0",
     "vercel": "^59.17.0",
     "vite": "^6.0.0"
   }
