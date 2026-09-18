@@ -60,6 +60,18 @@ function storeKiosk(kiosk) {
 
 let cachedKioskSecret = null;
 
+/** Drops the stored open-kiosk secret (both the cache and localStorage). Used only when the
+ * server has just told us that secret names a kiosk it no longer recognizes - the fix for the
+ * booth-bricking bug: reconnecting with the same dead secret would fail the same way forever. */
+function clearStoredKiosk() {
+  cachedKioskSecret = null;
+  try {
+    localStorage.removeItem(KIOSK_STORAGE_KEY);
+  } catch {
+    /* storage unavailable: nothing was persisted to begin with */
+  }
+}
+
 /** The kiosk's bearer secret: ?k= on a seeded launch URL, or the stored open-kiosk secret on
  * /kiosk. The open-kiosk secret is cached after provisioning so authFrame sees it on reconnect. */
 export function getKioskSecret() {
@@ -175,8 +187,17 @@ let token = null;
 // D7 (docs/reports/redteam.md): a kiosk whose secret the server rejected (revoked, empty,
 // too short) - reconnect will keep retrying the same bad secret forever, so this stays true
 // across every retry until a `welcome` actually lands. Only ever set from a `k=` launch URL;
-// a web player never sees this.
+// a web player never sees this. The open `/kiosk` route never sets this flag - see
+// needsReprovision below, which self-heals instead of getting stuck here.
 let kioskUnauthorized = false;
+// Booth bug fix: the open `/kiosk` route's stored secret can outlive the kiosk row it names (a
+// DB reset, a redeploy that resets the db, or a manual revoke). When the server rejects it with
+// kiosk_unauthorized, the handler below clears the stored secret and sets this flag; the next
+// scheduled reconnect (still governed by the normal backoff, so this never hammers the server)
+// re-provisions a fresh kiosk before it tries to open a socket again, instead of looping forever
+// on the same dead secret. Never set for the ?k= launch-URL route - that one is not
+// self-provisioning and keeps surfacing kioskUnauthorized as before.
+let needsReprovision = false;
 // Ticket OD1: the WS upgrade path's own 429 (S2's per-IP connection window) refuses the TCP
 // handshake before any WebSocket frame exists (server/index.js's `upgrade` handler writes the
 // raw HTTP response itself), which is exactly the one failure mode the WebSocket spec hides
@@ -353,8 +374,13 @@ function handleMessage(frame) {
       // this flag (not the ordinary `reconnecting` status, which never lands without a prior
       // `welcome`) is what tells the kiosk shell to show its own error state.
       if (frame.code === 'kiosk_unauthorized' && getKioskSecret() !== null) {
-        kioskUnauthorized = true;
-        notifyStatus();
+        if (isKioskPath()) {
+          clearStoredKiosk();
+          needsReprovision = true;
+        } else {
+          kioskUnauthorized = true;
+          notifyStatus();
+        }
       }
       settlePending(frame);
       break;
@@ -379,8 +405,27 @@ function authFrame() {
 
 function scheduleReconnect() {
   clearTimeout(reconnectTimer);
-  reconnectTimer = setTimeout(open, backoffMs);
+  reconnectTimer = setTimeout(attemptReconnect, backoffMs);
   backoffMs = Math.min(MAX_BACKOFF_MS, backoffMs * 2);
+}
+
+/** The reconnect the retry timer actually runs. Ordinary case: just open() again, same as
+ * always. When the previous attempt was rejected as kiosk_unauthorized on the open `/kiosk`
+ * route, needsReprovision is set - re-provision a fresh kiosk first, so the socket that opens
+ * next authenticates with a secret the server has actually heard of. If provisioning itself
+ * fails (offline, switched off, capped), stay flagged and let the next scheduled attempt (still
+ * on the same backoff, so this never turns into a tight loop) try again. */
+async function attemptReconnect() {
+  if (needsReprovision) {
+    try {
+      await provisionKiosk();
+      needsReprovision = false;
+    } catch {
+      scheduleReconnect();
+      return;
+    }
+  }
+  open();
 }
 
 function rejectAllPending(code) {
