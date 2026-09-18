@@ -120,15 +120,14 @@ export default function ClaimPage({ token }) {
     return { lang, t: makeT(lang), setLang };
   }, [lang]);
 
-  const dir = lang === 'fa' ? 'rtl' : 'ltr';
   useEffect(() => {
     document.documentElement.lang = lang;
-    document.documentElement.dir = dir;
-  }, [lang, dir]);
+    document.documentElement.dir = 'ltr';
+  }, [lang]);
 
   return (
     <LangContext.Provider value={langCtx}>
-      <div className="app" dir={dir} data-lang={lang}>
+      <div className="app" dir="ltr" data-lang={lang}>
         <div className="phone">
           <header className="topbar">
             <div className="topbar-start">

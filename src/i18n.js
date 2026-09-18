@@ -1,318 +1,11 @@
 import { createContext, useContext } from 'react';
 
-// Persian strings are kept below for a later release, but the UI currently
-// ships English only: the toggle is hidden and the stored choice is ignored.
 export const ENABLED_LANGS = ['en'];
 export const DEFAULT_LANG = 'en';
-export const LANGS = ['fa', 'en'];
+export const LANGS = ['en'];
 export const LANG_KEY = 'xchief.lang';
 
 const dict = {
-  fa: {
-    dir: 'rtl',
-    coins: 'سکه',
-    record: 'رکورد',
-    streak: 'کمبو',
-    combo: {
-      label: 'کمبو',
-      idle: 'جایزهٔ استریک',
-      next: 'برد بعدی ×{mult}',
-      max: 'حداکثر کمبو ×{mult}',
-      reset: 'کمبو صفر شد',
-    },
-    langToggle: 'EN',
-    level: { rookie: 'تازه‌کار', trader: 'تریدر', pro: 'حرفه‌ای', chief: 'Gold Chief' },
-    home: {
-      question: '۵ ثانیه بعد، طلا بالاتر می‌ره یا پایین‌تر؟',
-      start: 'شروع چالش',
-      note: 'هر دور {base} سکه × اهرم شرط می‌بندی',
-      rules: 'درست بگی شرطت رو می‌بری. بردهای پشت‌سرهم کمبو رو تا ×{max} بالا می‌بره.',
-      more: 'سکهٔ بیشتر',
-      toNext: '{n} سکه تا سطح {level}',
-      maxLevel: 'بالاترین سطح',
-    },
-    game: {
-      home: '→ خانه',
-      after: '۵ ثانیه بعد؟',
-      help: 'ضریب رو انتخاب کن، بعد صعود یا نزول رو بزن',
-      stake: 'شرط',
-      win: 'برد',
-      locked: 'پیش‌بینی قفل شد',
-      lever: 'اهرم',
-      up: 'صعود ▲',
-      down: 'نزول ▼',
-      brokeTitle: 'سکه‌هات تموم شد',
-      brokeSub: 'با انجام یک کار کوچک دوباره سکه بگیر و برگرد',
-      brokeCta: 'سکه بگیر',
-      freeTitle: 'سکه‌هات تموم شد',
-      freeSub: 'یک بار مهمون ما باش',
-      freeCta: '{n}+ سکه بگیر',
-    },
-    feed: {
-      live: 'زنده',
-      poll: 'زنده',
-      connecting: 'در حال اتصال…',
-      demo: 'دمو',
-      quiet: 'بازار آرام',
-      waiting: 'در انتظار قیمت بازار…',
-      note: 'قیمت لحظه‌ای طلا ({symbol})',
-      noteQuiet: 'بازار ثابته؛ حرکت ریز شبیه‌سازی‌شده روی آخرین قیمت',
-      // Ticket OD1: shown instead of the ordinary "connecting" note when the WS upgrade path's
-      // own 429 keeps refusing the reconnect (src/api/socket.js's connectionRefused signature) -
-      // a network sharing one IP, not this one visitor's own fault.
-      tooManyConnections: 'اتصال زیاده از این شبکه؛ یک دقیقه دیگه دوباره امتحان کن',
-    },
-    result: {
-      winTitle: 'درست پیش‌بینی کردی!',
-      winDelta: '{n}+ سکه',
-      winSub: 'شرط {stake} × {mult}',
-      streakTag: 'کمبو {n} · شرط {stake} × {mult}',
-      nextCombo: 'برد بعدی ×{mult} می‌ده',
-      maxCombo: 'حداکثر کمبو! هر برد ×{mult}',
-      missTitle: 'این بار نشد',
-      missDelta: '{n}− سکه',
-      missSub: 'کمبو صفر شد؛ دوباره پیش‌بینی کن',
-      tieTitle: 'قیمت تغییر نکرد',
-      tieSub: 'سکه‌ات برگشت؛ کمبو حفظ شد',
-      start: 'شروع',
-      end: 'پایان',
-      again: 'دور بعدی',
-      lb: 'لیدربورد',
-      tasks: 'سکه بگیر',
-      newRecord: 'رکورد جدید!',
-      badge: { high_roller: 'نشان High Roller', hot_streak: 'نشان Hot Streak', comeback: 'نشان Comeback' },
-    },
-    body: {
-      lever: 'اهرم',
-      win: 'برد',
-      hintIdle: 'اهرم رو بکش، بعد جهت رو انتخاب کن',
-      hintRunning: 'انتخاب تا پایان دور قفل شد',
-      hintWin: 'موجودی: {bal} سکه',
-      hintLose: 'دور بعدی رو شروع کن',
-      cantAfford: 'سکه کافی نیست',
-    },
-    lb: {
-      title: 'لیدربورد',
-      you: 'شما',
-      byRecord: 'بر اساس رکورد',
-      guestNote: 'به‌عنوان مهمان بازی می‌کنی؛ ایمیلت رو بزن تا رتبه‌بندی بشی',
-      prev: 'قبلی',
-      next: 'بعدی',
-      pageOf: 'صفحه {page} از {pages} · {total} بازیکن',
-    },
-    tournament: {
-      none: 'در حال حاضر مسابقه‌ای برگزار نمی‌شود',
-      ended: 'تمام شد',
-      daysLeft: '{n} روز مانده',
-      hoursLeft: '{n} ساعت مانده',
-    },
-    identity: {
-      playingAs: 'بازی با {email}',
-      savedNote: 'امتیاز و رتبه‌ت روی این ایمیل ذخیره می‌شه',
-      signOut: 'خروج',
-      welcomeBack: 'خوش برگشتی',
-    },
-    otp: {
-      title: 'ایمیلت رو تأیید کن',
-      emailSub: 'یک کد ۸ رقمی برات می‌فرستیم',
-      emailPlaceholder: 'you@email.com',
-      send: 'ارسال کد',
-      codeTitle: 'کد رو وارد کن',
-      codeSub: 'یک کد ۸ رقمی به {email} فرستادیم',
-      verify: 'تأیید',
-      resend: 'ارسال دوباره',
-      resendWait: '{s} ثانیه دیگه دوباره بفرست',
-      cancel: 'حالا نه',
-      doneTitle: 'تأیید شد',
-      doneRecord: 'رکورد: {n} سکه',
-      close: 'باشه',
-      errors: {
-        invalid_email: 'یک ایمیل معتبر وارد کن',
-        invalid_code: 'کد اشتباهه. دوباره امتحان کن',
-        expired_code: 'این کد منقضی شده. یکی جدید بگیر',
-        too_many_attempts: 'خیلی تلاش کردی. یک کد جدید بگیر',
-        default: 'مشکلی پیش اومد. دوباره امتحان کن',
-      },
-    },
-    nav: { home: 'خانه', play: 'بازی', tasks: 'سکه', lb: 'لیدربورد' },
-    profile: {
-      open: 'پروفایل شما',
-      guest: 'شما',
-      toNext: '{n} سکه تا {level}',
-      coins: 'سکه',
-      rounds: 'دورها',
-      winRate: 'نرخ برد',
-      bestCombo: 'بهترین کمبو',
-      combo: 'کمبوی فعلی',
-      badges: 'نشان‌ها',
-      earned: 'گرفته شد',
-      badge: { high_roller: 'High Roller', hot_streak: 'Hot Streak', comeback: 'Comeback' },
-      badgeHint: {
-        high_roller: 'یک دور با ×۵ ببر',
-        hot_streak: '۴ برد پشت‌سرهم',
-        comeback: 'بعد از ورشکستگی رکورد بزن',
-      },
-      account: 'حساب',
-      email: 'ایمیل',
-      addEmail: 'افزودن ایمیل · ۲۰۰',
-      xchief: 'حساب xChief',
-      linked: 'متصل ✓',
-      openAccount: 'ساخت حساب · +{n}',
-      share: 'اشتراک رکوردم',
-      shareText: 'رکوردم توی چالش طلای xChief: {record} سکه ({level}). می‌تونی بزنی؟ {url}',
-      shareTextShort: 'رکوردم توی چالش طلای xChief: {record} سکه. می‌تونی بزنی؟ {url}',
-      foot: 'پیشرفت روی همین دستگاه ذخیره می‌شه.',
-    },
-    share: {
-      title: 'رکورد xChief Gold Rush',
-      cardTitle: 'رکورد طلای من',
-      record: '{record} سکه',
-      rank: 'رتبه {rank} · {tier}',
-      copy: 'کپی',
-      copied: 'لینک کپی شد',
-      copyFailed: 'کپی نشد',
-      urlLabel: 'لینک رکورد',
-      shareToX: 'اشتراک در X',
-      shareToTelegram: 'اشتراک در تلگرام',
-      copyLink: 'کپی لینک',
-      more: 'بیشتر',
-      close: 'بستن',
-      play: 'بازی کن',
-      joinTournament: 'بپیوند به {title}',
-      notAvailable: 'این رکورد در دسترس نیست',
-      error: 'مشکلی پیش اومد. دوباره امتحان کن',
-      rateLimited: 'خیلی سریع درخواست دادی. یک ثانیه صبر کن',
-      ogTitleDefault: 'رکورد xChief Gold Rush',
-      ogTitle: 'رکورد {display} در xChief Gold Rush: {record} سکه',
-      ogDescriptionDefault: 'بیا توی چالش طلای xChief بازی کن و رکورد من رو بزن.',
-      ogDescription: 'رکورد {display} توی چالش طلای xChief: {record} سکه. می‌تونی بزنی؟',
-    },
-    tasks: {
-      title: 'سکه بگیر',
-      sub: 'هر کار یک بار سکه می‌ده؛ برگرد و رکوردت رو بشکن',
-      reward: '{n}+',
-      start: 'شروع',
-      open: 'باز کن',
-      waiting: '{s} ثانیه…',
-      signupWaiting: '{t} مانده',
-      done: 'انجام دادم ✓',
-      claimed: 'دریافت شد',
-      again: 'دوباره تا {t}',
-      verify: 'تأیید پرسنل',
-      pinTitle: 'تأیید پرسنل غرفه',
-      pinSub: 'PIN چهاررقمی رو وارد کنید',
-      pinWrong: 'PIN اشتباهه',
-      pinOk: 'تأیید',
-      cancel: 'انصراف',
-      videoTitle: 'xChief رو بشناس',
-      videoSub: 'چند ثانیه صبر کن، سکه‌ت میاد',
-      shareText: 'رکوردم توی چالش طلای xChief: {record} سکه! تو می‌تونی بزنی؟ {url}',
-      copied: 'متن کپی شد؛ توی استوری بذار',
-      instagramPending: 'در حال اتصال اینستاگرام…',
-      instagramDone: 'فالو شد! +300 سکه',
-      instagramFailed: 'اینستاگرام تأیید نکرد. دوباره امتحان کن.',
-      instagramComingSoon: 'جایزه اینستاگرام به زودی فعال می‌شه',
-      items: {
-        video: { title: 'ویدیوی xChief', desc: '۱۵ ثانیه، هر ۵ دقیقه' },
-        email: { title: 'ثبت ایمیل', desc: 'امتیازت ذخیره می‌شه' },
-        instagram: { title: 'فالو اینستاگرام', desc: '@xchief' },
-        telegram: { title: 'عضویت کانال تلگرام', desc: 'اخبار و سیگنال' },
-        youtube: { title: 'سابسکرایب یوتیوب', desc: 'آموزش ترید' },
-        story: { title: 'استوری رکوردت', desc: 'با تگ xChief · روزی یک بار' },
-        review_trustpilot: { title: 'نظر در Trustpilot', desc: 'تجربه‌ت رو بنویس' },
-        review_google: { title: 'نظر در گوگل', desc: 'تجربه‌ت رو بنویس' },
-        review_fpa: { title: 'نظر در Forex Peace Army', desc: 'تجربه‌ت رو بنویس' },
-        signup: { title: 'حساب xChief بساز', desc: 'بزرگ‌ترین جایزه · ایمیل' },
-      },
-    },
-    lead: {
-      title: 'امتیازت رو ذخیره کن',
-      sub: 'ایمیلت رو بزن تا امتیازها و جایزه‌ها رو از دست ندی',
-      placeholder: 'ایمیل شما',
-      cta: 'ثبت',
-      done: 'ثبت شد ✓ امتیازت ذخیره می‌شه',
-      invalid: 'یک ایمیل معتبر وارد کن',
-      privacy: 'بدون اسپم. هر وقت خواستی لغو کن.',
-      lbTitle: 'می‌خوای تو لیدربورد بمونی؟',
-      lbSub: 'ایمیلت رو بزن تا رتبه‌ت ثبت بشه',
-      winTitle: 'این امتیاز رو ذخیره کن',
-      winSub: 'ایمیلت رکورد و رتبه‌ت رو نگه می‌داره',
-      skip: 'حالا نه',
-    },
-    signup: {
-      title: 'حساب xChief بساز',
-      sub: 'این فرم رو پر کن، همین الان {n}+ سکه بگیر و ثبت‌نام رو در xchief.com تمام کن',
-      email: 'you@email.com',
-      privacy: 'xChief دربارهٔ حسابت با تو تماس می‌گیره. بدون اسپم.',
-      cta: '{n}+ سکه بگیر',
-      notNow: 'حالا نه',
-      errEmail: 'یک ایمیل معتبر وارد کن',
-      doneTitle: 'سکه‌ها اضافه شد ✓',
-      doneSub: 'برای فعال شدن حساب، ثبت‌نام رو در xchief.com تمام کن',
-      open: 'باز کردن xchief.com',
-      back: 'برگشت به بازی',
-      brokeTitle: 'سکه‌هات تموم شد',
-      brokeSub: 'حساب xChief بساز و با {n}+ سکه برگرد',
-      brokeAlt: 'یا {n} سکهٔ رایگان بگیر',
-      brokeAltUsed: 'یا با یک کار کوچک سکه بگیر',
-      traderTitle: 'مثل یک تریدر بازی می‌کنی',
-      traderSub: 'حساب واقعی xChief بگیر و {n}+ سکه',
-    },
-    toast: { limit: 'سقف ۶۰ دور در ساعت؛ کمی استراحت کن', coins: '{n}+ سکه' },
-    update: { text: 'نسخهٔ جدید بازی آماده‌ست', cta: 'به‌روزرسانی' },
-    // ticket C11: the web first-visit tour (A5), three cards shown one at a time. next/gotIt/skip
-    // are the controls the shared E2E helper (tests/e2e/first-visit.js) drives.
-    tour: {
-      card1: {
-        title: '۵ ثانیهٔ بعد را پیش‌بینی کن',
-        body: 'طلا بالا می‌رود یا پایین. پیش از شروع دور یکی را انتخاب کن.',
-      },
-      card2: {
-        title: 'سکه ببر، از جدول بالا برو',
-        body: 'هر پیش‌بینی درست به رکوردت اضافه می‌کند؛ بالای جدول جایزه می‌گیرد.',
-      },
-      card3: {
-        title: 'برای رتبه‌گرفتن ایمیلت را تأیید کن',
-        body: 'بازی بی‌نام اشکالی ندارد؛ فقط ایمیل‌های تأییدشده در لیدربورد دیده می‌شوند.',
-      },
-      next: 'بعدی',
-      gotIt: 'فهمیدم',
-      skip: 'رد کردن',
-    },
-    // ticket C9: the kiosk WON screen shows both languages together, always, regardless of the
-    // lang toggle - qrTitleFa/qrTitleEn and scannedBtnFa/scannedBtnEn are read directly by key
-    // (never through the active-lang lookup) and so carry the same literal text in both dict.fa
-    // and dict.en.
-    kioskWin: {
-      qrTitleFa: 'تبریک! شما برنده بونوس ۱۰۰ دلاری ایکس‌چیف شدید. برای دریافت هدیه اسکن کنید:',
-      qrTitleEn: 'Congratulations! You won the xChief $100 bonus. Scan to claim your gift:',
-      scannedBtnFa: 'اسکن کردم',
-      scannedBtnEn: "I've scanned it",
-    },
-    // ticket C11: the kiosk intro (A6) shows both languages at once, like the C9 QR screen -
-    // kioskIntro.fa/kioskIntro.en are read directly by key (never through the active-lang
-    // lookup) and carry the same literal text in both dict.fa and dict.en. {n} is the streak
-    // target from the server's kiosk_session frame, never a number baked into the client.
-    kioskIntro: {
-      fa: 'طلا را برای ۵ ثانیه پیش‌بینی کن. {n} برد پشت‌سرهم بگیر و بونوس ۱۰۰ دلاری ایکس‌چیف را ببر.',
-      en: 'Predict gold for 5 seconds. Win {n} in a row and take home the $100 bonus.',
-    },
-    claim: {
-      title: 'جایزهٔ ۱۰۰ دلاری xChief شما',
-      step1: 'ایمیلی که می‌خوای جایزه بهش ارسال بشه رو وارد کن',
-      step2: 'کارت هدیه‌ت همین‌جا نمایش داده می‌شه',
-      step3: 'برات ایمیل هم می‌کنیم',
-      emailPlaceholder: 'you@email.com',
-      cta: 'دریافت کد من',
-      cardNote: 'از این صفحه اسکرین‌شات بگیر یا ایمیلت رو چک کن',
-      sentTo: 'ارسال شد به {email}',
-      claimedBy: 'این هدیه توسط {email} دریافت شده است',
-      expired: 'این لینک منقضی شده. از کارکنان غرفه بپرس.',
-      invalid: 'این لینک معتبر نیست.',
-      errInvalidEmail: 'یک ایمیل معتبر وارد کن',
-      errDefault: 'مشکلی پیش اومد. دوباره امتحان کن',
-    },
-  },
   en: {
     dir: 'ltr',
     coins: 'coins',
@@ -325,7 +18,6 @@ const dict = {
       max: 'Max combo ×{mult}',
       reset: 'Combo reset',
     },
-    langToggle: 'فا',
     level: { rookie: 'Rookie', trader: 'Trader', pro: 'Pro', chief: 'Gold Chief' },
     home: {
       question: 'In 5 seconds, does gold go up or down?',
@@ -585,17 +277,13 @@ const dict = {
       skip: 'Skip',
     },
     kioskWin: {
-      qrTitleFa: 'تبریک! شما برنده بونوس ۱۰۰ دلاری ایکس‌چیف شدید. برای دریافت هدیه اسکن کنید:',
       qrTitleEn: 'Congratulations! You won the xChief $100 bonus. Scan to claim your gift:',
-      scannedBtnFa: 'اسکن کردم',
       scannedBtnEn: "I've scanned it",
     },
-    // ticket C11: the kiosk intro (A6) shows both languages at once, like the C9 QR screen -
-    // kioskIntro.fa/kioskIntro.en are read directly by key (never through the active-lang
-    // lookup) and carry the same literal text in both dict.fa and dict.en. {n} is the streak
-    // target from the server's kiosk_session frame, never a number baked into the client.
+    // ticket C11: the kiosk intro (A6). kioskIntro.en is read directly by key (never through
+    // the active-lang lookup). {n} is the streak target from the server's kiosk_session frame,
+    // never a number baked into the client.
     kioskIntro: {
-      fa: 'طلا را برای ۵ ثانیه پیش‌بینی کن. {n} برد پشت‌سرهم بگیر و بونوس ۱۰۰ دلاری ایکس‌چیف را ببر.',
       en: 'Predict gold for 5 seconds. Win {n} in a row and take home the $100 bonus.',
     },
     claim: {
@@ -616,15 +304,8 @@ const dict = {
   },
 };
 
-const FA_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
-
-export function num(n, lang) {
-  const s = Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
-  if (lang !== 'fa') return s;
-  return s
-    .replace(/\d/g, (d) => FA_DIGITS[d])
-    .replace(/,/g, '٬')
-    .replace(/\./g, '٫');
+export function num(n) {
+  return Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 export function money(v) {
@@ -638,7 +319,7 @@ function interpolate(str, vars) {
 }
 
 export function makeT(lang) {
-  const d = dict[lang] || dict.fa;
+  const d = dict[lang] || dict.en;
   return (path, vars) => {
     const val = path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), d);
     if (typeof val !== 'string') return path;
