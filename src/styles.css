@@ -2218,12 +2218,13 @@ button:focus:not(:focus-visible) {
   /* Portrait (1024x1366) defaults; the landscape block further down retunes
      --s and the panel size for the shorter 1366x1024 viewport. */
   .app-kiosk {
-    --s: 2.05;
+    --s: 1.82;
   }
   .app-kiosk .phone {
-    max-width: min(92vw, 880px);
-    height: min(100%, 1300px);
-    border-radius: 44px;
+    /* Fill the tablet to a small edge (owner 2026-09-18). */
+    max-width: min(97vw, 1000px);
+    height: min(100%, 1340px);
+    border-radius: 40px;
   }
 
   /* ---- top bar ---- */
@@ -2355,7 +2356,7 @@ button:focus:not(:focus-visible) {
     height: clamp(90px, 12vh, 150px);
   }
   .app-kiosk .countdown {
-    font-size: clamp(160px, 26vh, 340px);
+    font-size: clamp(120px, 17vh, 220px);
   }
   .app-kiosk .win-word {
     font-size: clamp(72px, 11vh, 150px);
@@ -2460,10 +2461,10 @@ button:focus:not(:focus-visible) {
    above; the display type is height-driven (vh) so it self-tunes here. */
 @media (min-width: 1000px) and (min-height: 1000px) and (orientation: landscape) {
   .app-kiosk {
-    --s: 1.68;
+    --s: 1.6;
   }
   .app-kiosk .phone {
-    max-width: min(88vw, 900px);
+    max-width: min(94vw, 1320px);
     height: min(100%, 1000px);
   }
 }

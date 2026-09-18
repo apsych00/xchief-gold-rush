@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { Console, TopBar } from './App.jsx';
-import { num, useLang } from './i18n.js';
+import { useLang } from './i18n.js';
 import { QR_MS, useKioskFlow } from './useKioskFlow.js';
 
 // showButton is false for the no_codes screen (ticket C8, docs/layers.md): same attract
@@ -170,10 +170,7 @@ function KioskIntroModal({ streakTarget, onDone }) {
       aria-label={t('kioskIntro.en', { n: streakTarget })}
     >
       <div className="modal kiosk-modal kiosk-intro">
-        <div className="modal-title" dir="rtl">
-          {t('kioskIntro.fa', { n: num(streakTarget, 'fa') })}
-        </div>
-        <div className="modal-sub">{t('kioskIntro.en', { n: streakTarget })}</div>
+        <div className="modal-title">{t('kioskIntro.en', { n: streakTarget })}</div>
         <div className="modal-actions">
           <button type="button" className="btn-primary kiosk-modal-btn" onClick={onDone}>
             Start
