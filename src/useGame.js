@@ -405,7 +405,12 @@ export function useGame() {
 
   const startRound = useCallback(
     (dir) => {
-      if (phaseRef.current !== 'idle') return;
+      // Kiosk has no Play Again tap between rounds (App.jsx's Console leaves the buttons
+      // unlocked through 'result'); a tap on up/down there starts the next round directly,
+      // same as it would from 'idle'. The web flow still only ever starts from 'idle' - its
+      // buttons stay locked until the explicit Play Again tap resets the phase.
+      const canStart = IS_KIOSK ? phaseRef.current !== 'running' : phaseRef.current === 'idle';
+      if (!canStart) return;
       const start = priceRef.current;
       if (start == null) return;
       const p = profileRef.current;
