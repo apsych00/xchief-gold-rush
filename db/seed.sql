@@ -2,19 +2,19 @@
 
 -- Task definitions the server owns (docs/layers.md C5): id, title and reward all come from
 -- here, never duplicated as numbers in src/. Titles are plain English; the client's own i18n
--- (src/i18n.js, keyed by id) still owns the localized copy shown on screen. 'signup' is the
--- email verification itself, so it needs a confirmed email.
+-- (src/i18n.js, keyed by id) still owns the localized copy shown on screen. 'signup' is now a
+-- redirect task: it opens the broker registration page and releases after a 1-hour window.
 --
 -- kind and url (ticket B6+B7+B9, decision 1) drive the release path: video's progress is
--- reported and released at 90% (B6); telegram/youtube/review_* are redirect-and-return (B7),
--- their URLs moved here from src/config.js's old LINKS object rather than left as a client env
--- var, so a marketer changing a destination edits one seeded row, not a deploy; email and signup
--- are released by verify_otp_code on the socket that verified (B9); instagram is left as its own
--- kind for B8 to fill in later. 'story' (share-your-record) fits none of B6/B7's mechanics - it
--- has no external destination to return from - so it stays 'manual', unclaimable until a later
--- ticket gives it one.
+-- reported and released at 90% (B6); telegram/youtube/review_* and signup are redirect-and-return
+-- (B7), their URLs moved here from src/config.js's old LINKS object rather than left as a client
+-- env var, so a marketer changing a destination edits one seeded row, not a deploy; email is
+-- released by verify_otp_code on the socket that verified (B9); instagram is left as its own kind
+-- for B8 to fill in later. 'story' (share-your-record) fits none of B6/B7's mechanics - it has no
+-- external destination to return from - so it stays 'manual', unclaimable until a later ticket
+-- gives it one.
 insert into public.tasks (id, title, reward, repeat_ms, requires_email, kind, url) values
-  ('signup',            'Create an xChief account',        1000, null,        true,  'signup',   null),
+  ('signup',            'Create an xChief account',        1000, null,        false, 'redirect', 'https://my.xchief.com/registration?utm_source=goldrush&utm_campaign=goldrush'),
   ('video',             'xChief video',                    100,  300000,      false, 'video',    null),
   ('email',             'Save your email',                 200,  null,        false, 'email',    null),
   ('instagram',         'Follow Instagram',                300,  null,        false, 'instagram', null),

@@ -4,7 +4,23 @@ import { accumulateWatchTime } from './watchTime.js';
 import { num, useLang } from './i18n.js';
 import { apiUrl } from './api/client.js';
 import { getStoredToken } from './api/socket.js';
+import { clearSignupTimer, readSignupTimer, writeSignupTimer } from './signupTimer.js';
 import Logo from './Logo.jsx';
+
+/**
+ * Format milliseconds as mm:ss or h:mm:ss for the signup mission countdown.
+ * Seconds are rounded up so the display never jumps from 1:00:01 to 0:59:59 in one tick.
+ */
+function formatCountdown(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
 
 function PinModal({ onOk, onCancel }) {
   const { t } = useLang();
@@ -287,9 +303,9 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
  * What "start" does depends only on `kind`:
  *   - 'video' / 'youtube': opens the video modal; progress reports go to the server as they happen.
  *   - 'redirect': opens the destination after telling the server the visit started, then reports
- *     the return when the 5 s window ends (a timer, not only a focus event).
- *   - 'email' / 'signup': both are released by verify_otp_code once an email is verified, not by
- *     anything claimed here - "start" opens the OTP screen instead.
+ *     the return when the window ends (a timer, not only a focus event). The signup mission is a
+ *     redirect task with a persisted 1-hour window and its own external registration URL.
+ *   - 'email': released by verify_otp_code once an email is verified; "start" opens the OTP screen.
  *   - 'instagram': B8's own ticket - shown with no action.
  *   - 'manual' (kept for future use; none seeded): the old instant-claim / PIN-gated path.
  */
@@ -367,6 +383,43 @@ export default function Tasks({
     [onReturnTaskVisit, onToast],
   );
 
+  // A ref lets the mount-time restore effect call the current tryReturn without re-running
+  // whenever the callback identity changes.
+  const tryReturnRef = useRef(tryReturn);
+  useEffect(() => {
+    tryReturnRef.current = tryReturn;
+  }, [tryReturn]);
+
+  // Signup mission (ticket B9 -> redirect-with-timer): restore a persisted 1-hour countdown
+  // from a previous session. If the deadline has already passed, try to release immediately;
+  // otherwise show the remaining time and schedule the release.
+  useEffect(() => {
+    const until = readSignupTimer();
+    if (!until) return;
+    pendingReturns.current.add('signup');
+    setWaiting((w) => ({ ...w, signup: until }));
+    const remaining = until - Date.now();
+    if (remaining <= 0) {
+      tryReturnRef.current('signup');
+      return;
+    }
+    const timer = setTimeout(() => {
+      returnTimers.current.delete('signup');
+      if (pendingReturns.current.has('signup')) tryReturnRef.current('signup');
+    }, remaining);
+    returnTimers.current.set('signup', timer);
+  }, []);
+
+  // Once the server marks the signup task claimed, drop the persisted timer and any pending
+  // return state so the row shows Claimed instead of a stuck countdown.
+  useEffect(() => {
+    const signupRow = tasksRows.find((r) => r.id === 'signup');
+    if (signupRow?.claimed) {
+      clearSignupTimer();
+      finishReturn('signup');
+    }
+  }, [tasksRows]);
+
   // Redirect and return (ticket B7 / K4): once a visit is open, the tab regaining focus is one
   // return signal, but the primary signal is the 5 s window ending. A wrong-early return gets
   // `not_yet` back and is retried after retry_ms.
@@ -400,8 +453,13 @@ export default function Tasks({
   const beginRedirect = (row) => {
     onStartTaskVisit(row.id)
       .then((res) => {
-        const windowMs = res?.window_ms ?? 5000;
+        // The signup mission uses the same redirect-and-return path as other external links, but
+        // its window is 1 hour and is persisted across reloads so the player can close the app
+        // and come back to a correct remaining countdown.
+        const isSignup = row.id === 'signup';
+        const windowMs = isSignup ? 60 * 60 * 1000 : (res?.window_ms ?? 5000);
         const until = Date.now() + windowMs;
+        if (isSignup) writeSignupTimer(until);
         pendingReturns.current.add(row.id);
         setWaiting((w) => ({ ...w, [row.id]: until }));
         window.open(row.url, '_blank', 'noopener');
@@ -424,7 +482,7 @@ export default function Tasks({
       beginRedirect(row);
       return;
     }
-    if (row.kind === 'email' || row.kind === 'signup') {
+    if (row.kind === 'email') {
       onOpenIdentity?.();
       return;
     }
@@ -497,7 +555,9 @@ export default function Tasks({
                 {st.kind === 'claimed' && <div className="task-state">{t('tasks.claimed')}</div>}
                 {st.kind === 'waiting' && (
                   <button type="button" className="task-btn" disabled>
-                    {t('tasks.waiting', { s: num(Math.ceil(st.left / 1000), lang) })}
+                    {row.id === 'signup'
+                      ? t('tasks.signupWaiting', { t: formatCountdown(st.left) })
+                      : t('tasks.waiting', { s: num(Math.ceil(st.left / 1000), lang) })}
                   </button>
                 )}
                 {st.kind === 'available' && !notConfigured && (
