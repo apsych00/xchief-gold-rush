@@ -281,11 +281,18 @@ create table public.task_visits (
 -- unique so one handle can be claimed by one player only. device_id records the player's device
 -- at start time. The reward itself is still granted through release_task_reward, so the
 -- once-per-device/email guards apply unchanged.
+-- check_attempts counts genuine BoxAPI verification attempts (ticket K3 second-try grant): the
+-- server bumps it once per real read that ran past the per-player check window, and on the second
+-- or later attempt grants the reward even when the read could not confirm the follow (freshness
+-- lag, a private player account, or a follow sitting past the page cap). It is an
+-- intentional UX-over-strictness policy - the server still decides and releases; the client never
+-- asserts its own outcome.
 create table public.instagram_accounts (
   player_id uuid primary key references public.players (id) on delete cascade,
   handle text not null unique,
   device_id uuid references public.devices (id),
   verified_at timestamptz,
+  check_attempts int not null default 0,
   created_at timestamptz not null default now()
 );
 
@@ -1345,6 +1352,24 @@ begin
   );
 end $$;
 
+-- Instagram second-try grant bookkeeping (ticket K3): atomically increments and returns this
+-- player's genuine-check-attempt count. server/index.js calls this once per real BoxAPI
+-- verification (past the per-player check window) and uses the returned count to apply the
+-- owner's second-try grant policy - on the second or later genuine attempt the reward is granted
+-- even when the read could not confirm the follow. Returns null when no instagram row exists yet
+-- (start_instagram creates it before any check, so a real check always has one).
+create function public.bump_instagram_attempt(p_player uuid)
+returns int language plpgsql security definer set search_path = public as $$
+declare
+  v_count int;
+begin
+  update public.instagram_accounts
+    set check_attempts = check_attempts + 1
+    where player_id = p_player
+    returning check_attempts into v_count;
+  return v_count;
+end $$;
+
 -- Video watch progress (ticket B6 decision 2), client-callable via auth.uid(). Progress never
 -- moves backwards in storage (a rewind is a silent no-op, not an error - only the touched
 -- updated_at moves) and is capped at duration + 5. The one hard rejection is a jump faster than
@@ -1715,5 +1740,6 @@ revoke execute on function
   public.get_setting_int(text, int),
   public.release_task_reward(uuid, text),
   public.start_instagram(uuid, text),
-  public.verify_instagram(uuid, text)
+  public.verify_instagram(uuid, text),
+  public.bump_instagram_attempt(uuid)
 from public, anon, authenticated;

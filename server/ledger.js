@@ -671,6 +671,18 @@ export async function verifyInstagram(playerId, handle, ip) {
   return callWithIp('verify_instagram', ip, playerId, handle);
 }
 
+/**
+ * Instagram second-try grant bookkeeping (ticket K3): atomically increments and returns this
+ * player's genuine-check-attempt count on their instagram_accounts row. server/index.js calls
+ * this once per real BoxAPI verification (past the per-player check window) and uses the returned
+ * count to decide the owner's second-try grant policy. The row already exists (start_instagram
+ * created it before any check), so a missing row returns null and grants nothing.
+ */
+export async function bumpInstagramAttempt(playerId) {
+  const result = await call('bump_instagram_attempt', playerId);
+  return typeof result === 'number' ? result : 0;
+}
+
 /** Process start: nobody is left to honestly settle a round still marked open. */
 export async function voidOpenRounds() {
   await getPool().query(

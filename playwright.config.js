@@ -50,10 +50,16 @@ export default defineConfig({
         MAX_SOCKETS_PER_IP: '1000',
         MAX_OTP_REQUESTS_PER_IP_PER_10MIN: '1000',
         // Instagram follow reward via BoxAPI (ticket K3). The E2E suite points the adapter at the
-        // fake BoxAPI server defined below; our own handle is the account the fake seeds as 'xchief'.
+        // fake BoxAPI server defined below; our own handle is the account the fake seeds as
+        // 'xchief.global'. The three timing overrides keep the follow check snappy and let the
+        // second-try grant spec make two genuine checks without a 20 s wait: a short freshness
+        // retry delay, two reads per check, and a short per-player check window.
         BOXAPI_TOKEN: process.env.BOXAPI_TOKEN || 'fake-token',
         BOXAPI_BASE: process.env.BOXAPI_BASE || `${FAKE_BOXAPI_URL}/`,
-        INSTAGRAM_HANDLE: process.env.INSTAGRAM_HANDLE || 'xchief',
+        INSTAGRAM_HANDLE: process.env.INSTAGRAM_HANDLE || 'xchief.global',
+        INSTAGRAM_RETRY_DELAY_MS: process.env.INSTAGRAM_RETRY_DELAY_MS || '200',
+        INSTAGRAM_FOLLOWERS_READS: process.env.INSTAGRAM_FOLLOWERS_READS || '2',
+        INSTAGRAM_CHECK_INTERVAL_MS: process.env.INSTAGRAM_CHECK_INTERVAL_MS || '1500',
         // Ticket B13: the no-device reward window (legacy clients only; a fresh browser is bound to
         // the device minted at auth). Raised here like the four per-IP budgets above so the suite's
         // shared loopback address can never trip it.

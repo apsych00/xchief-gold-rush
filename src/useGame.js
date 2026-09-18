@@ -6,7 +6,7 @@ import { enabled as apiEnabled } from './api/client.js';
 import * as api from './api/game.js';
 import { ensureSession, requestOtp as sessionRequestOtp, signOut as sessionSignOut, verifyOtp as sessionVerifyOtp } from './api/session.js';
 import { IS_KIOSK, playKioskRound } from './api/kiosk.js';
-import { connect as connectSocket, onIdentityChange, onLeaderboard, onSettled } from './api/socket.js';
+import { connect as connectSocket, getInstagramHandle, onIdentityChange, onLeaderboard, onSettled } from './api/socket.js';
 
 export const ROUND_SECONDS = 5;
 export const LEVERS = ECON.levers;
@@ -80,6 +80,9 @@ const initialGame = {
   // fetch; kiosk and offline (apiEnabled false) modes never populate it - there is no local
   // fallback any more, the client keeps no task table of its own.
   tasksRows: [],
+  // Ticket K3: the Instagram account to follow, from the server's welcome (INSTAGRAM_HANDLE).
+  // null until the session is up; the tasks UI falls back to a default until then.
+  ourInstagramHandle: null,
 };
 
 export function useGame() {
@@ -181,7 +184,11 @@ export function useGame() {
       if (!cancelled) applyMe(row);
     };
     ensureSession()
-      .then(() => api.getMe())
+      .then(() => {
+        // Ticket K3: the welcome that ensureSession waited on carries the handle to follow.
+        if (!cancelled) setState((s) => ({ ...s, ourInstagramHandle: getInstagramHandle() }));
+        return api.getMe();
+      })
       .then(guardedApplyMe)
       .then(() => {
         if (!cancelled) refreshTasks();

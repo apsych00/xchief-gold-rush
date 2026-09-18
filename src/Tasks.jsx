@@ -291,6 +291,12 @@ function openInstagram(appUrl, profileUrl) {
 // under the server's own 20 s per-player window so a genuine follow is picked up promptly.
 const INSTAGRAM_RETRY_MS = 5000;
 
+// Fallback handle for the brief window before the server's welcome has told us which account to
+// follow (and for the offline build, which never shows a live Instagram check). The server value
+// always overrides it - see ourInstagramHandle - so this is never the source of truth, just a
+// sensible default that matches the configured INSTAGRAM_HANDLE.
+const INSTAGRAM_HANDLE_FALLBACK = 'xchief.global';
+
 /**
  * Instagram follow reward (ticket K3). Two steps in one modal:
  *   1. The player enters their handle. onStart stores it server-side and returns the follow URLs
@@ -303,12 +309,17 @@ const INSTAGRAM_RETRY_MS = 5000;
  * server confirms the follow nothing a later check returns (a rate-limit, a stale not_following)
  * can pull the modal back out of its done state.
  */
-function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel }) {
+function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel, ourHandle }) {
   const { t } = useLang();
   const [phase, setPhase] = useState('handle'); // 'handle' | 'follow'
   const [handle, setHandle] = useState('');
   const [error, setError] = useState(null); // i18n key for a refusal shown to the player
   const [busy, setBusy] = useState(false);
+  // The account to follow, shown in every handle mention. Prefer the value the server returns on
+  // start; fall back to the prop (from the welcome frame) and then the default - the client never
+  // asserts a handle of its own, it only renders what the server provides.
+  const [serverHandle, setServerHandle] = useState(null);
+  const displayHandle = serverHandle || ourHandle || INSTAGRAM_HANDLE_FALLBACK;
   const inputRef = useRef(null);
   const urlsRef = useRef({ appUrl: null, profileUrl: null });
   // Single-flight and success latch (ticket K3): checkingRef blocks a second overlapping check so
@@ -370,6 +381,7 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel })
           return;
         }
         urlsRef.current = { appUrl: res?.app_url || null, profileUrl: res?.profile_url || null };
+        if (res?.our_handle) setServerHandle(res.our_handle);
         setPhase('follow');
         openInstagram(res?.app_url, res?.profile_url);
       })
@@ -471,7 +483,11 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel })
         <form className="modal" onSubmit={submitHandle}>
           <div className="modal-title">{t('tasks.instagramHandleTitle')}</div>
           <div className="modal-sub">
-            {error ? <span className="lead-error">{t(error)}</span> : t('tasks.instagramHandleSub')}
+            {error ? (
+              <span className="lead-error">{t(error, { handle: displayHandle })}</span>
+            ) : (
+              t('tasks.instagramHandleSub', { handle: displayHandle })
+            )}
           </div>
           <div className="ig-handle-field">
             <span className="ig-handle-at" aria-hidden="true">
@@ -497,15 +513,19 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel })
               {t('tasks.cancel')}
             </button>
             <button type="submit" className="btn-primary" disabled={busy || !handle.trim()}>
-              {t('tasks.instagramFollowCta')}
+              {t('tasks.instagramFollowCta', { handle: displayHandle })}
             </button>
           </div>
         </form>
       ) : (
         <div className="modal">
-          <div className="modal-title">{t('tasks.instagramFollowTitle')}</div>
+          <div className="modal-title">{t('tasks.instagramFollowTitle', { handle: displayHandle })}</div>
           <div className="modal-sub">
-            {error ? <span className="lead-error">{t(error)}</span> : t('tasks.instagramFollowSub')}
+            {error ? (
+              <span className="lead-error">{t(error, { handle: displayHandle })}</span>
+            ) : (
+              t('tasks.instagramFollowSub', { handle: displayHandle })
+            )}
           </div>
           <button
             type="button"
@@ -550,6 +570,7 @@ export default function Tasks({
   onReturnTaskVisit,
   onInstagramStart,
   onInstagramCheck,
+  ourInstagramHandle,
   onOpenIdentity,
   onToast,
 }) {
@@ -726,6 +747,9 @@ export default function Tasks({
     onClaim(row.id);
   };
 
+  // The account to follow, from the server's welcome (ticket K3). Every user-facing mention of the
+  // handle - the task-row desc and the modal copy - renders this, not a value baked into the client.
+  const igHandle = ourInstagramHandle || INSTAGRAM_HANDLE_FALLBACK;
   const instagramRow = tasksRows.find((r) => r.id === 'instagram');
   const instagramDone = Boolean(instagramRow?.claimed);
   const instagramBannerText = instagramDone
@@ -844,7 +868,7 @@ export default function Tasks({
               </div>
               <div className="task-body">
                 <div className="task-title">{t(`${item}.title`)}</div>
-                <div className="task-desc">{t(`${item}.desc`)}</div>
+                <div className="task-desc">{t(`${item}.desc`, { handle: igHandle })}</div>
               </div>
               <div className="task-side">
                 <div className="task-reward" dir="ltr">
@@ -894,6 +918,7 @@ export default function Tasks({
         <InstagramModal
           onStart={onInstagramStart}
           onCheck={onInstagramCheck}
+          ourHandle={ourInstagramHandle}
           onNotConfigured={() => setIgNotConfigured(true)}
           onDone={() => {
             setIgModalOpen(false);

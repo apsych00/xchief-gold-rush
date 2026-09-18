@@ -3,10 +3,16 @@
  * OAuth adapter). See docs/boxapi-instagram-data-api.md.
  *
  * The mechanism is a read, not a login: the player gives their handle, follows us on Instagram,
- * and the server proves the follow by reading our own account's numeric id and then their
- * following list off BoxAPI - the client never asserts it followed. That decision (release the
- * reward or not) lives in server/index.js and the ledger; this file only knows how to ask
- * BoxAPI questions and shape the answers.
+ * and the server proves the follow off BoxAPI - the client never asserts it followed. That
+ * decision (release the reward or not) lives in server/index.js and the ledger; this file only
+ * knows how to ask BoxAPI questions and shape the answers.
+ *
+ * The primary proof reads OUR OWN account's follower list newest-first (user/get_followers): a
+ * brand-new follower lands at the top of it, so it is the freshest signal we can get, it is
+ * immune to the player following 200+ accounts (their following cap never applies) and it works
+ * even when the player's own account is private (we read our follower list, never theirs). The
+ * player's own following list (user/get_following) is kept as a secondary signal for a public
+ * player who is not yet visible near the top of our followers.
  *
  * No live BoxAPI call is made when BOXAPI_BASE points elsewhere; that is how tests point the
  * adapter at test/fakes/boxapi.mjs.
@@ -21,8 +27,31 @@
 const OUR_ID_TTL_MS = 24 * 60 * 60 * 1000;
 let ourIdCache = null; // { handle, id, at }
 
-// How many of the follower's following rows to read when checking for us (ticket K3 decision 2).
+// How many of the player's following rows to read on the secondary check (ticket K3 decision 2).
 const FOLLOWING_COUNT = 200;
+
+// How many rows to request per page of OUR follower list, and how many newest-first pages to
+// scan per read (~150 rows over 3 pages). The real API returns ~49 rows a page with has_more, so
+// this caps the scan at the freshest slice rather than paging through ~13,850 followers.
+const FOLLOWERS_PAGE_COUNT = 50;
+const FOLLOWERS_PAGE_CAP = 3;
+
+// BoxAPI's follower list lags a just-made follow by a few seconds. Within one check we read our
+// followers a small number of times a short delay apart before giving up, so "follow then come
+// straight back and check" still confirms. Both are env-tunable (tests set the delay to 0 to run
+// the retry loop instantly); total stays well under ~15s. INSTAGRAM_FOLLOWERS_READS counts the
+// first read too, so the default is one read plus two retries.
+function followerReads() {
+  const raw = process.env.INSTAGRAM_FOLLOWERS_READS;
+  const n = raw != null && raw !== '' ? Number(raw) : 3;
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 3;
+}
+function retryDelayMs() {
+  const raw = process.env.INSTAGRAM_RETRY_DELAY_MS;
+  const n = raw != null && raw !== '' ? Number(raw) : 2500;
+  return Number.isFinite(n) && n >= 0 ? n : 2500;
+}
+const sleep = (ms) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
 
 function configured() {
   return Boolean(process.env.BOXAPI_TOKEN);
@@ -158,6 +187,58 @@ export async function getFollowing({ id, count = FOLLOWING_COUNT }) {
   return { ok: true, ids, usernames };
 }
 
+// A follower page carries the rows plus paging metadata under `response.body`. The cursor field
+// name is not pinned in the docs, so read the ones BoxAPI/Instagram are known to use; whichever
+// is present is echoed back as `max_id` on the next request. has_more likewise has a couple of
+// spellings across envelopes.
+function pickCursor(body) {
+  return body?.next_max_id ?? body?.next_cursor ?? body?.max_id ?? body?.end_cursor ?? null;
+}
+function pickHasMore(body) {
+  return Boolean(body?.has_more ?? body?.more_available ?? false);
+}
+
+/**
+ * user/get_followers: read one newest-first page of the given id's followers. `max_id` pages
+ * deeper (absent for the first page). Returns {ok:true, ids, usernames, hasMore, cursor} or
+ * {ok:false, code}.
+ */
+export async function getFollowers({ id, count = FOLLOWERS_PAGE_COUNT, max_id = null }) {
+  const params = max_id ? { id, count, max_id } : { id, count };
+  const res = await apiPost('user/get_followers', params);
+  if (!res.ok) return res;
+  const body = pickBody(res.data);
+  const ids = new Set();
+  const usernames = new Set();
+  for (const u of pickUserList(res.data)) {
+    const uid = pickId(u);
+    if (uid) ids.add(uid);
+    if (u && u.username) usernames.add(String(u.username).toLowerCase());
+  }
+  return { ok: true, ids, usernames, hasMore: pickHasMore(body), cursor: pickCursor(body) };
+}
+
+/**
+ * Scan up to FOLLOWERS_PAGE_CAP newest-first pages of OUR follower list for the player, following
+ * the has_more cursor. Short-circuits the moment the player's id or username appears. Returns
+ * {ok:true, found} normally; {ok:false, code} only when the very first page fails - a later page
+ * failing after some were read is treated as "not found here" so the caller can still try the
+ * secondary signal.
+ */
+async function ourFollowersInclude(ourId, theirId, theirHandle) {
+  let cursor = null;
+  for (let page = 0; page < FOLLOWERS_PAGE_CAP; page += 1) {
+    const res = await getFollowers({ id: ourId, max_id: cursor });
+    if (!res.ok) return page === 0 ? { ok: false, code: res.code } : { ok: true, found: false };
+    if ((theirId && res.ids.has(theirId)) || (theirHandle && res.usernames.has(theirHandle))) {
+      return { ok: true, found: true };
+    }
+    if (!res.hasMore || !res.cursor) break;
+    cursor = res.cursor;
+  }
+  return { ok: true, found: false };
+}
+
 /** Resolve our own account's numeric id, from the 24 h cache when it is fresh. */
 async function resolveOurId() {
   const handle = ourHandle();
@@ -179,10 +260,13 @@ export function resetCache() {
 
 /**
  * Prove that `handle` follows our account (ticket K3 decision 2). Resolves our own id first
- * (cached), then their id, then reads their following list and looks for us in it. Returns
- * {ok:true} when the follow is visible, otherwise {ok:false, reason} where reason is one the
- * client has copy for ('not_following', 'private', 'not_found') or a generic upstream failure
- * ('not_configured', 'network_error', 'unauthorized', 'api_error').
+ * (cached), then the player's id. The primary proof reads OUR follower list newest-first over a
+ * few pages, retried a few times a short delay apart to ride out BoxAPI's freshness lag on a
+ * just-made follow. A public player who is not yet visible near the top of our followers gets a
+ * secondary check against their own following list. Returns {ok:true} when the follow is visible
+ * in either, otherwise {ok:false, reason} where reason is one the client has copy for
+ * ('not_following', 'private', 'not_found') or a generic upstream failure ('not_configured',
+ * 'network_error', 'unauthorized', 'api_error').
  */
 export async function verifyFollow({ handle }) {
   if (!configured()) return { ok: false, reason: 'not_configured' };
@@ -195,11 +279,39 @@ export async function verifyFollow({ handle }) {
 
   const them = await getUserByUsername({ username: handle });
   if (!them.ok) return { ok: false, reason: them.code };
-  if (them.is_private) return { ok: false, reason: 'private' };
+  const theirHandle = them.username ? String(them.username).toLowerCase() : String(handle).toLowerCase();
 
-  const following = await getFollowing({ id: them.id, count: FOLLOWING_COUNT });
-  if (!following.ok) return { ok: false, reason: following.code };
+  // PRIMARY: our newest followers, retried for freshness. Remember an upstream error only while
+  // no read ever succeeded, so a real transport/auth failure surfaces its own reason rather than
+  // being flattened to 'not_following'.
+  const reads = followerReads();
+  let scannedOk = false;
+  let upstreamError = null;
+  for (let attempt = 0; attempt < reads; attempt += 1) {
+    const scan = await ourFollowersInclude(ours.id, them.id, theirHandle);
+    if (scan.ok) {
+      scannedOk = true;
+      if (scan.found) return { ok: true };
+    } else if (!upstreamError) {
+      upstreamError = scan.code;
+    }
+    if (attempt < reads - 1) await sleep(retryDelayMs());
+  }
 
-  const follows = following.ids.has(ours.id) || following.usernames.has(ourHandle());
-  return follows ? { ok: true } : { ok: false, reason: 'not_following' };
+  // SECONDARY: a public player's own following list still proves a follow. Skipped for a private
+  // account, whose following is hidden - the primary path already covered the private case.
+  if (!them.is_private) {
+    const following = await getFollowing({ id: them.id, count: FOLLOWING_COUNT });
+    if (following.ok) {
+      scannedOk = true;
+      if (following.ids.has(ours.id) || following.usernames.has(ourHandle())) return { ok: true };
+    } else if (!upstreamError) {
+      upstreamError = following.code;
+    }
+  }
+
+  // Never read our followers (or their following) successfully: report the upstream failure, not
+  // a false "not following".
+  if (!scannedOk && upstreamError) return { ok: false, reason: upstreamError };
+  return { ok: false, reason: them.is_private ? 'private' : 'not_following' };
 }

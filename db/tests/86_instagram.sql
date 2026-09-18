@@ -2,7 +2,7 @@
 -- Tests run as postgres; the service-role-only guard is asserted with function_privs_are.
 begin;
 
-select plan(16);
+select plan(21);
 
 -- The instagram_accounts table exists with the K3 columns, keyed by player.
 select has_table('public', 'instagram_accounts', 'public.instagram_accounts table exists');
@@ -10,6 +10,7 @@ select has_column('public', 'instagram_accounts', 'player_id', 'instagram_accoun
 select has_column('public', 'instagram_accounts', 'handle', 'instagram_accounts has handle');
 select has_column('public', 'instagram_accounts', 'device_id', 'instagram_accounts has device_id');
 select has_column('public', 'instagram_accounts', 'verified_at', 'instagram_accounts has verified_at');
+select has_column('public', 'instagram_accounts', 'check_attempts', 'instagram_accounts has check_attempts');
 select has_column('public', 'instagram_accounts', 'created_at', 'instagram_accounts has created_at');
 select col_is_pk('public', 'instagram_accounts', 'player_id', 'player_id is the primary key');
 
@@ -24,6 +25,16 @@ select ok(
   ),
   'a row is stored with verified_at null'
 );
+
+-- check_attempts starts at 0 and bump_instagram_attempt increments and returns it (ticket K3
+-- second-try grant bookkeeping).
+select is(
+  (select check_attempts from public.instagram_accounts where player_id = :'ig_p1'::uuid),
+  0,
+  'a fresh instagram row starts with check_attempts 0'
+);
+select is(public.bump_instagram_attempt(:'ig_p1'::uuid), 1, 'first bump returns 1');
+select is(public.bump_instagram_attempt(:'ig_p1'::uuid), 2, 'second bump returns 2');
 
 -- A handle already held by another player is refused (the unique index makes this atomic).
 select tests.create_anonymous_player() as ig_p2 \gset
@@ -55,6 +66,10 @@ select function_privs_are(
 select function_privs_are(
   'public', 'verify_instagram', array['uuid', 'text'], 'authenticated', array[]::text[],
   'authenticated has no execute privilege on verify_instagram'
+);
+select function_privs_are(
+  'public', 'bump_instagram_attempt', array['uuid'], 'authenticated', array[]::text[],
+  'authenticated has no execute privilege on bump_instagram_attempt'
 );
 
 -- The once-per-device/email duplicate behavior is covered by db/tests/80_device_identity.sql.
