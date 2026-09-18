@@ -5,7 +5,15 @@ import { num, useLang } from './i18n.js';
 import { apiUrl } from './api/client.js';
 import { getStoredToken } from './api/socket.js';
 import { clearSignupTimer, readSignupTimer, writeSignupTimer } from './signupTimer.js';
+import { clearYoutubeCooldown, readYoutubeCooldown, writeYoutubeCooldown } from './youtubeMissionTimer.js';
 import Logo from './Logo.jsx';
+
+// The three seeded YouTube reward units (db/seed.sql), walked in id order and shown as one
+// "Watch xChief videos" mission row. Each is released and ledgered on its own by the server; the
+// row only advances the client's view. YT_COOLDOWN_MS is the pacing gap before the next video
+// unlocks - purely a UI timer, since the reward itself is server-released from validated watch.
+const YT_MISSION_IDS = ['youtube_1', 'youtube_2', 'youtube_3'];
+const YT_COOLDOWN_MS = 3 * 60 * 1000;
 
 /**
  * Format milliseconds as mm:ss or h:mm:ss for the signup mission countdown.
@@ -245,9 +253,7 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
     onDone,
   });
 
-  const pct = isHostedVideo
-    ? 0
-    : ((PROMO_VIDEO_SECONDS - left) / PROMO_VIDEO_SECONDS) * 100;
+  const pct = isHostedVideo ? 0 : ((PROMO_VIDEO_SECONDS - left) / PROMO_VIDEO_SECONDS) * 100;
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
@@ -255,6 +261,10 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
         {isYouTube ? (
           <div className="youtube-player-wrap">
             <div ref={containerRef} className="youtube-player" />
+            <button type="button" className="youtube-skip" onClick={onCancel}>
+              {t('tasks.skip')}
+            </button>
+            <div className="youtube-watch-note">{t('tasks.videoWatchNote')}</div>
             {playerError && <div className="lead-error">{t('tasks.videoSub')}</div>}
           </div>
         ) : isHostedVideo ? (
@@ -287,11 +297,13 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
             </div>
           </div>
         )}
-        <div className="modal-actions">
-          <button type="button" className="btn-ghost" onClick={onCancel}>
-            {t('tasks.cancel')}
-          </button>
-        </div>
+        {!isYouTube && (
+          <div className="modal-actions">
+            <button type="button" className="btn-ghost" onClick={onCancel}>
+              {t('tasks.cancel')}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -324,9 +336,11 @@ export default function Tasks({
   const [waiting, setWaiting] = useState({}); // task id -> window-close timestamp
   const [pinFor, setPinFor] = useState(null);
   const [videoTask, setVideoTask] = useState(null);
+  const [ytCooldownUntil, setYtCooldownUntil] = useState(() => readYoutubeCooldown());
   const [igStatus, setIgStatus] = useState(() => new URLSearchParams(window.location.search).get('ig'));
   const pendingReturns = useRef(new Set());
   const returnTimers = useRef(new Map());
+  const ytClaimedBaseline = useRef(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -516,6 +530,44 @@ export default function Tasks({
             ? t('tasks.instagramFailed')
             : null;
 
+  // The three YouTube reward rows, collapsed into one "x of 3" mission. They complete in id order;
+  // the current video is the first unclaimed one, and the whole mission is done when all are
+  // claimed. Each reward is released by the server from validated watch time (report_video_progress,
+  // db/schema.sql) - the client only decides which video to show and paces the unlocks.
+  const ytRows = YT_MISSION_IDS.map((id) => tasksRows.find((r) => r.id === id)).filter(Boolean);
+  const ytLoaded = ytRows.length === YT_MISSION_IDS.length;
+  const ytClaimedCount = ytRows.filter((r) => r.claimed).length;
+  const ytFirstUnclaimed = ytRows.findIndex((r) => !r.claimed);
+  const ytDone = ytLoaded && ytFirstUnclaimed === -1;
+  const ytCurrent = ytDone ? null : ytRows[ytFirstUnclaimed] || null;
+  const ytStep = ytDone ? YT_MISSION_IDS.length : ytFirstUnclaimed + 1;
+  const ytCooldownLeft = Math.max(0, ytCooldownUntil - now);
+  // Video 1 is always available; a later video is gated only while its 3-minute unlock is running.
+  const ytWaiting = !ytDone && ytStep > 1 && ytCooldownLeft > 0;
+
+  // Start the 3-minute unlock the moment the server releases a video's reward (the claim count
+  // rises). The baseline is captured on the first fully-loaded render so a returning player whose
+  // earlier videos are already claimed does not trip a fresh cooldown, and no cooldown is set after
+  // the final video since there is nothing left to unlock.
+  useEffect(() => {
+    if (!ytLoaded) return;
+    if (ytClaimedBaseline.current === null) {
+      ytClaimedBaseline.current = ytClaimedCount;
+      return;
+    }
+    if (ytClaimedCount > ytClaimedBaseline.current) {
+      if (ytClaimedCount < YT_MISSION_IDS.length) {
+        const until = Date.now() + YT_COOLDOWN_MS;
+        setYtCooldownUntil(until);
+        writeYoutubeCooldown(until);
+      } else {
+        clearYoutubeCooldown();
+        setYtCooldownUntil(0);
+      }
+    }
+    ytClaimedBaseline.current = ytClaimedCount;
+  }, [ytLoaded, ytClaimedCount]);
+
   return (
     <section className="tasks">
       <div className="screen-head">
@@ -532,6 +584,48 @@ export default function Tasks({
       )}
       <div className="task-list">
         {tasksRows.map((row) => {
+          // Collapse the three YouTube reward rows into one "Watch xChief videos" mission that
+          // shows "x of 3" and walks the current video only. The mission takes youtube_1's slot;
+          // the other two never render a row of their own.
+          if (row.id === 'youtube_2' || row.id === 'youtube_3') return null;
+          if (row.id === 'youtube_1') {
+            return (
+              <div key="youtube_videos" className={`task ${ytDone ? 'task-done' : ''}`}>
+                <div className="task-icon" aria-hidden="true">
+                  {TASK_ICONS.youtube_videos || '▷'}
+                </div>
+                <div className="task-body">
+                  <div className="task-title">{t('tasks.items.youtube_videos.title')}</div>
+                  <div className="task-desc">
+                    {t('tasks.items.youtube_videos.desc')}
+                    {' · '}
+                    <span dir="ltr">
+                      {t('tasks.videoStep', {
+                        n: num(ytStep, lang),
+                        total: num(YT_MISSION_IDS.length, lang),
+                      })}
+                    </span>
+                  </div>
+                </div>
+                <div className="task-side">
+                  <div className="task-reward" dir="ltr">
+                    {t('tasks.reward', { n: num((ytCurrent || row).reward, lang) })}
+                  </div>
+                  {ytDone && <div className="task-state">{t('tasks.claimed')}</div>}
+                  {!ytDone && ytWaiting && (
+                    <button type="button" className="task-btn" disabled>
+                      {t('tasks.videoCooldown', { t: formatCountdown(ytCooldownLeft) })}
+                    </button>
+                  )}
+                  {!ytDone && !ytWaiting && ytCurrent && (
+                    <button type="button" className="task-btn" onClick={() => setVideoTask(ytCurrent)}>
+                      {t('tasks.start')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          }
           const st = statusOf(row);
           const item = `tasks.items.${row.id}`;
           const done = st.kind === 'claimed';

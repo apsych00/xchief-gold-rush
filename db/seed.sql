@@ -20,9 +20,12 @@ insert into public.tasks (id, title, reward, repeat_ms, requires_email, kind, ur
   ('instagram',         'Follow Instagram',                300,  null,        false, 'instagram', null),
   ('telegram',          'Join Telegram',                   300,  null,        false, 'redirect', 'https://t.me/xchief'),
   ('youtube',           'Subscribe on YouTube',            300,  null,        false, 'redirect', 'https://www.youtube.com/@xchief'),
-  ('youtube_1',         'YouTube mission 1',               150,  null,        false, 'youtube',  'VIDEO_ID_1'),
-  ('youtube_2',         'YouTube mission 2',               150,  null,        false, 'youtube',  'VIDEO_ID_2'),
-  ('youtube_3',         'YouTube mission 3',               150,  null,        false, 'youtube',  'VIDEO_ID_3'),
+  -- One "Watch xChief videos" mission on the client (src/Tasks.jsx collapses these three rows into
+  -- a single "x of 3" row), but three separate reward units server-side so each 30-second watch is
+  -- released and ledgered once per device/email. The client walks them in id order.
+  ('youtube_1',         'Watch xChief video 1',            150,  null,        false, 'youtube',  'pA17iDq3Ppw'),
+  ('youtube_2',         'Watch xChief video 2',            150,  null,        false, 'youtube',  'BjndfW6kQLU'),
+  ('youtube_3',         'Watch xChief video 3',            150,  null,        false, 'youtube',  'EETzCqTaZGg'),
   ('story',             'Share your record',               300,  86400000,    false, 'manual',   null),
   ('review_trustpilot', 'Review on Trustpilot',            500,  null,        false, 'redirect', 'https://www.trustpilot.com/review/xchief.com')
 on conflict (id) do update set

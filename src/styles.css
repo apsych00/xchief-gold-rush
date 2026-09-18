@@ -1778,6 +1778,7 @@ button:focus:not(:focus-visible) {
   color: var(--gold);
 }
 .youtube-player-wrap {
+  position: relative;
   width: 100%;
   border-radius: 14px;
   overflow: hidden;
@@ -1786,6 +1787,38 @@ button:focus:not(:focus-visible) {
 .youtube-player {
   width: 100%;
   aspect-ratio: 16 / 9;
+}
+/* Overlay on the YouTube mission player: a skip button in the top-right and the white watch note
+   across the top. The note is plain white text (never red), well-spaced and shadowed so it stays
+   legible over any frame; it ignores pointer events so it never blocks the video underneath. */
+.youtube-skip {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  border: 0;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font: 600 12px var(--fa);
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.youtube-skip:hover {
+  background: rgba(0, 0, 0, 0.78);
+}
+.youtube-watch-note {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: 92px;
+  z-index: 2;
+  color: #fff;
+  font: 600 13px var(--fa);
+  letter-spacing: 0.3px;
+  line-height: 1.55;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.75);
+  pointer-events: none;
 }
 
 /* ---------- lead capture ---------- */
