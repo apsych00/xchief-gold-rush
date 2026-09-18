@@ -131,9 +131,15 @@ export function TopBar({ profile, actions, active }) {
   return (
     <header className="topbar">
       <div className="topbar-start">
-        <div className="logo" dir="ltr">
+        <button
+          type="button"
+          className="logo logo-home"
+          onClick={actions.goHome}
+          aria-label={t('nav.home')}
+          dir="ltr"
+        >
           <Logo height={26} />
-        </div>
+        </button>
         {ENABLED_LANGS.length > 1 && (
           <button
             type="button"
