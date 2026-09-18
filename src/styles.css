@@ -1646,6 +1646,16 @@ button:focus:not(:focus-visible) {
   font: 700 14px var(--en);
   color: var(--gold);
 }
+.youtube-player-wrap {
+  width: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #000;
+}
+.youtube-player {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
 
 /* ---------- lead capture ---------- */
 
