@@ -56,7 +56,24 @@ const LINKS = {
   site: env.VITE_LINK_SITE || 'https://www.xchief.com/',
 };
 
-export const SHARE_URL = env.VITE_SHARE_URL || 'https://xchief-gold-rush.vercel.app';
+// The app's own public web origin - the campaign home a player lands on. Kiosk "Play on web"
+// QR and the share badge's join link both build on this. A marketer overrides it per deploy
+// with VITE_SHARE_URL; the default is the live campaign domain.
+export const SHARE_URL = env.VITE_SHARE_URL || 'https://goldrush.xchief.academy';
+
+// The join link stamped into a shared record badge and passed to navigator.share (ticket: image
+// share). SHARE_URL carrying the campaign UTM params, built through the URL API so the origin
+// stays whatever SHARE_URL is while the params are always present and correctly encoded.
+export const JOIN_URL = (() => {
+  try {
+    const u = new URL(SHARE_URL);
+    u.searchParams.set('utm_source', 'goldrush');
+    u.searchParams.set('utm_campaign', 'goldrush');
+    return u.href;
+  } catch {
+    return SHARE_URL;
+  }
+})();
 
 export const SIGNUP_PROMPT_LEVEL = 'trader'; // level whose first reach offers the signup
 

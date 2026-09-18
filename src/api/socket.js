@@ -348,10 +348,6 @@ function handleMessage(frame) {
       leaderboardEmitter.emit(payloadOf(frame));
       settlePending(frame);
       break;
-    case 'share_link':
-      // Reply to getShareLink() (ticket U4): {url, record, rank, tier, display}.
-      settlePending(frame);
-      break;
     case 'ping':
       // ws-level pongs answer the server's heartbeat automatically; nothing to send back.
       break;
@@ -547,9 +543,4 @@ export function requestOtp(email) {
 
 export function verifyOtp(email, code) {
   return request(['me'], { type: 'verify_otp', email, code }).then(payloadOf);
-}
-
-/** Share-my-record link (ticket U4): resolves with {url, record, rank, tier, display}. */
-export function getShareLink() {
-  return request(['share_link'], { type: 'share_link' }).then(payloadOf);
 }

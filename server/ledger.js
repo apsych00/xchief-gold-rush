@@ -406,10 +406,6 @@ function claimUrlFor(token) {
   return token ? `${publicUrl()}/claim/${token}` : null;
 }
 
-function shareUrlFor(token) {
-  return token ? `${publicUrl()}/s/${token}` : null;
-}
-
 /**
  * The kiosk's visitor session as the `kiosk_session` frame shape (ticket C1, docs/layers.md;
  * ticket C9 adds streak_target, claim_url and claim_expires_at): {coins, streak, state,
@@ -564,20 +560,6 @@ export async function getClaimStatus(token) {
 export async function releaseExpiredClaims() {
   return call('release_expired_claims');
 }
-
-/**
- * Mint or retrieve the share token for a player (ticket U4). The SQL function atomically
- * creates the 12-char base64url token on first call and returns the existing one thereafter.
- */
-export async function getOrCreateShareToken(playerId) {
-  return call('get_or_create_share_token', playerId);
-}
-
-export async function getShareByToken(token) {
-  return call('get_share_by_token', token);
-}
-
-export { shareUrlFor };
 
 /** Mirrors an env-driven tunable into public.settings at boot (ticket C9 decision 1): a running
  * box can then change it with one SQL update, and a restart with no env var set never clobbers
