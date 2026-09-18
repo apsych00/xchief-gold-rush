@@ -8,11 +8,17 @@ What's live, what's cooking, what's next. Product view. Updated as things land.
 
 | Status | What | Notes |
 |---|---|---|
-| 🔨 | Share your score | Share popup with preview + copy link, and a public share page that invites people to play |
-| 🔨 | Open kiosk link | A `/kiosk` web link that starts a booth session without needing the secret in the URL |
-| 🔨 | Missions tab | The Coins tab becomes Missions - watch-to-earn YouTube missions with a no-skip player |
-| 🔨 | Deployment plan | Exact steps to go live on the shared server via a Cloudflare tunnel, around the ports we can't touch |
+| 🔨 | Open kiosk link | A `/kiosk` web link that starts a booth session without the secret in the URL - server wiring being finished; off by default until it works |
+| 🔨 | Logo + background polish | Logo links home; app background gets a cohesive gradient instead of pitch black |
 | 🎨 | Play buttons look | Owner is redoing the Up/Down button styling |
+
+## Just landed
+
+| Status | What | Notes |
+|---|---|---|
+| ✅ | Share your score | Share popup with preview + copy link, and a public share page that invites people to play - verified |
+| ✅ | Missions tab | The Coins tab is now Missions - watch-to-earn YouTube missions with a no-skip player - verified |
+| ✅ | Deployment plan | Exact steps to go live on the shared server via a Cloudflare tunnel, around the ports we can't touch - drafted |
 
 ## Next up
 
