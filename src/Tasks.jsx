@@ -478,9 +478,16 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel })
           <div className="modal-sub">
             {error ? <span className="lead-error">{t(error)}</span> : t('tasks.instagramFollowSub')}
           </div>
+          <button
+            type="button"
+            className="link-btn ig-open-again"
+            onClick={() => openInstagram(urlsRef.current.appUrl, urlsRef.current.profileUrl)}
+          >
+            {t('tasks.instagramOpenAgain')}
+          </button>
           <div className="modal-actions">
-            <button type="button" className="btn-ghost" onClick={() => openInstagram(urlsRef.current.appUrl, urlsRef.current.profileUrl)}>
-              {t('tasks.instagramOpenAgain')}
+            <button type="button" className="btn-ghost" onClick={onCancel}>
+              {t('tasks.cancel')}
             </button>
             <button type="button" className="btn-primary" onClick={check} disabled={busy}>
               {busy ? t('tasks.instagramChecking') : t('tasks.instagramCheckCta')}
