@@ -106,10 +106,6 @@ function readToken() {
   }
 }
 
-export function getStoredToken() {
-  return readToken();
-}
-
 function storeToken(token) {
   try {
     localStorage.setItem(TOKEN_KEY, token);
@@ -552,4 +548,17 @@ export function verifyOtp(email, code) {
 /** Share-my-record link (ticket U4): resolves with {url, record, rank, tier, display}. */
 export function getShareLink() {
   return request(['share_link'], { type: 'share_link' }).then(payloadOf);
+}
+
+/** Instagram follow reward, step 1 (ticket K3): stores the handle server-side and resolves with
+ * {handle, profile_url, app_url}, or {status:'not_configured'} while the token is missing. The
+ * client opens those URLs; it never claims the follow itself. */
+export function instagramStart(handle) {
+  return request(['instagram_started'], { type: 'instagram_start', handle }).then(payloadOf);
+}
+
+/** Instagram follow reward, step 2 (ticket K3): asks the server to read BoxAPI and decide.
+ * Resolves with {ok, reason?, reward?, me?} - the server released the reward, never this call. */
+export function instagramCheck() {
+  return request(['instagram_result'], { type: 'instagram_check' }).then(payloadOf);
 }

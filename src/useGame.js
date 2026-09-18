@@ -566,6 +566,34 @@ export function useGame() {
     [applyMe, toast],
   );
 
+  // Instagram follow reward, step 1 (ticket K3): store the handle and get the follow URLs back.
+  // The client never asserts the follow - it just opens Instagram; the server decides in step 2.
+  const instagramStart = useCallback((handle) => {
+    if (!apiEnabled || IS_KIOSK)
+      return Promise.reject(Object.assign(new Error('not_available'), { code: 'not_available' }));
+    return api.instagramStart(handle);
+  }, []);
+
+  // Instagram follow reward, step 2 (ticket K3): ask the server to read BoxAPI and decide. On a
+  // proven follow the server has already released the reward; reflect the fresh coins and the
+  // claimed row here, exactly like the other reward paths. The reason on a refusal is left to the
+  // Tasks screen to phrase.
+  const instagramCheck = useCallback(() => {
+    if (!apiEnabled || IS_KIOSK)
+      return Promise.reject(Object.assign(new Error('not_available'), { code: 'not_available' }));
+    return api.instagramCheck().then((res) => {
+      if (res.ok) {
+        if (res.me) applyMe(res.me);
+        setState((s) => ({
+          ...s,
+          tasksRows: s.tasksRows.map((r) => (r.id === 'instagram' ? { ...r, claimed: true } : r)),
+        }));
+        if (res.reward != null) toast(`+${res.reward}`);
+      }
+      return res;
+    });
+  }, [applyMe, toast]);
+
   const freeRefill = useCallback(() => {
     if (apiEnabled && !IS_KIOSK) {
       api
@@ -730,6 +758,8 @@ export function useGame() {
     reportVideoProgress,
     startTaskVisit,
     returnTaskVisit,
+    instagramStart,
+    instagramCheck,
     toast,
     requestOtp,
     verifyOtp,

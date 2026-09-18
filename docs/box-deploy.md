@@ -261,27 +261,26 @@ Done. The campaign runs itself from here.
 
 ---
 
-## Instagram follow reward (ticket B8)
+## Instagram follow reward (ticket K3)
 
-The "Follow on Instagram" task is built and ready, but it only activates once the Instagram app credentials are added. Until then `/status` reports `instagram: "not_configured"` and the task shows "Coming soon".
+The "Follow on Instagram" task is built and ready, but it only activates once the BoxAPI token is added. Until then `/status` reports `instagram: "not_configured"` and the task shows "Coming soon" (it does not crash).
 
-### What the reward can and cannot prove
+### How the follow is verified
 
-Instagram does not provide a third-party endpoint that answers "does user X follow account Y". What the game can prove is that a real Instagram account completed Instagram Login (OAuth) and gave us its `user_id` and `username`. The reward is bound to that Instagram account once, and to the player's device and verified email per the existing reward rules (ticket B5). A second player or device that presents the same `ig_user_id` is refused with `already_claimed`.
+The player enters their own Instagram handle, is sent to Instagram (app deep link, falling back to the web profile) to follow `@xchief`, then taps "I followed, check". The server verifies the follow through the BoxAPI Instagram data API (docs/boxapi-instagram-data-api.md): it resolves our own account's numeric id (`user/get_info_by_username`, cached in memory for 24 h), resolves the player's id the same way, and reads the player's following list (`user/get_following`) to look for us. The client never asserts the follow - the server reads BoxAPI and decides. The reward is released through the same `release_task_reward` path as every other task, so it is granted once per player, per device and per verified email (ticket B13). A handle can be claimed by one player only.
 
-After OAuth the client deep-links to `INSTAGRAM_PROFILE_URL` with a "Follow, then come back" step. The actual follow is not verified by the API - the same lenient model as the other redirect-and-return tasks (ticket B7), with a hardening pass planned in ticket B13.
+A private account cannot be checked (its following list is hidden); the player is asked to make it public for a moment or see the booth staff. An unknown handle asks the player to check the spelling.
 
-### When the Instagram credentials arrive
+### When the BoxAPI token arrives
 
-1. In the Instagram app dashboard, set the OAuth redirect URI to `https://<your-domain>/api/instagram/callback` (replace `<your-domain>` with the same `SITE_ADDRESS` value from step 3).
-2. Edit `.env.box` and fill in the four Instagram lines:
-   - `INSTAGRAM_APP_ID`
-   - `INSTAGRAM_APP_SECRET`
-   - `INSTAGRAM_REDIRECT_URI` - must match the URI registered in the Instagram dashboard.
-   - `INSTAGRAM_PROFILE_URL` - the xChief Instagram profile the player is asked to follow, e.g. `https://www.instagram.com/xchief/`.
-3. Run `deploy/deploy.sh` to restart the server with the new env.
-4. Smoke test: open the coins screen, tap "Follow on Instagram", complete the OAuth flow, and return. The URL should end with `?ig=done`, the task row should show "Claimed", and the balance should increase by the task reward (default 300).
-5. Check `https://<your-domain>/status` - the `instagram` field should now read `"configured"`.
+1. Edit `.env.box` and fill in the Instagram follow reward lines:
+   - `BOXAPI_TOKEN` - the BoxAPI Bearer token (from the BoxAPI dashboard, https://boxapi.ir).
+   - `BOXAPI_BASE` - the API base URL; leave it at the default `https://boxapi.ir/api/instagram/` unless BoxAPI moves it.
+   - `INSTAGRAM_HANDLE` - our own account handle without the `@`, e.g. `xchief`.
+   - `INSTAGRAM_PROFILE_URL` - the web profile the player is sent to, e.g. `https://www.instagram.com/xchief/` (optional; derived from `INSTAGRAM_HANDLE` when left empty).
+2. Run `deploy/deploy.sh` to restart the server with the new env.
+3. Smoke test: open the coins screen, tap "Follow on Instagram", enter a handle that follows `@xchief`, follow, then tap "I followed, check". The task row should show "Claimed" and the balance should increase by the task reward (default 300).
+4. Check `https://<your-domain>/status` - the `instagram` field should now read `"configured"`.
 
 ---
 

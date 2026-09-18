@@ -9,8 +9,9 @@
 -- reported and released at 90% (B6); telegram/youtube/review_* and signup are redirect-and-return
 -- (B7), their URLs moved here from src/config.js's old LINKS object rather than left as a client
 -- env var, so a marketer changing a destination edits one seeded row, not a deploy; email is
--- released by verify_otp_code on the socket that verified (B9); instagram is left as its own kind
--- for B8 to fill in later. 'story' (share-your-record) fits none of B6/B7's mechanics - it has no
+-- released by verify_otp_code on the socket that verified (B9); instagram is its own kind, released
+-- by verify_instagram once the server proves the follow through BoxAPI (K3). 'story'
+-- (share-your-record) fits none of B6/B7's mechanics - it has no
 -- external destination to return from - so it stays 'manual', unclaimable until a later ticket
 -- gives it one.
 insert into public.tasks (id, title, reward, repeat_ms, requires_email, kind, url) values
