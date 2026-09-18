@@ -37,12 +37,21 @@ import { createMt5Source } from './feed-mt5.js';
 import { createMt5BridgeSource } from './feed-mt5-bridge.js';
 
 const STALE_MS = 10000; // demote the active source only after 10 s of silence
-const QUIET_MS = 3000; // no published tick for 3 s -> the series is quiet
+// Quiet is keyed on price MOVEMENT, not tick arrival: off-hours the upstream keeps sending
+// frequent ticks at the SAME price, so "no tick for 3 s" never fires and the chart flatlines.
+// The market is quiet once the published real price has not CHANGED for QUIET_MS.
+const QUIET_MS = 3000; // no change in the published real price for 3 s -> the market is quiet
 const PRICE_MIN = 100;
 const PRICE_MAX = 100000;
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
 const REANCHOR_STEP = 0.05; // max offset decay per tick while idle
+// Quiet-market simulation (ported from the old client src/priceFeed.js): while the real price
+// is still, publish a gentle, mean-reverting random walk anchored to the last real price so a
+// 5 s round is still playable. Amplitude is fractions of a dollar - a believable XAU/USD lull.
+const QUIET_AMPLITUDE = 0.35; // max synthetic drift from the last real price, in dollars
+const QUIET_STEP = 0.12; // random-walk increment scale per synthetic tick
+const QUIET_REVERT = 0.05; // mean-reversion pull back toward the real price each tick
 
 const isValidPrice = (p) => typeof p === 'number' && Number.isFinite(p) && p > PRICE_MIN && p < PRICE_MAX;
 // Gold is quoted to 3 decimals (Finnhub OANDA: 4308.425). Publishing 2 collapsed real moves
@@ -144,6 +153,7 @@ export function createFeed({
   feedRelayWs = process.env.FEED_RELAY_WS || null,
   onTick,
   now = Date.now,
+  random = Math.random, // injectable for deterministic tests of the quiet-market walk
 } = {}) {
   const sources = new Map(); // id -> state, iteration order = priority order
   for (const def of sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbol, mt5BridgeWs, feedRelayWs })) {
@@ -152,6 +162,11 @@ export function createFeed({
 
   let activeId = null; // source id currently publishing the series
   let published = null; // last published tick: { price, t }
+  let lastRealPrice = null; // last published value driven by a real upstream change: the walk anchor
+  let lastChangeAt = null; // when that real value last changed; quiet is keyed on this, not tick arrival
+  let quiet = false; // currently synthesizing a quiet-market walk
+  let quietDrift = 0; // bounded random-walk offset from lastRealPrice while quiet
+  let reentryResidual = 0; // synthetic drift carried past a quiet -> real resume, decayed to 0 for a smooth landing
   let idle = false; // set by the round manager via setIdle
   let running = false; // start()/stop() gate for the sockets and timers
   const sockets = new Map();
@@ -195,8 +210,60 @@ export function createFeed({
       next.offset = off > 0 ? Math.max(0, round3(off - REANCHOR_STEP)) : Math.min(0, round3(off + REANCHOR_STEP));
     }
 
-    published = { price: round3(next.raw + next.offset), t };
-    if (onTick) onTick({ price: published.price, t, quiet: false });
+    // The value the real series would publish this tick (raw + the source offset). A source
+    // switch is always a change point even when the level is continuous: it means a fresh active
+    // source just took over after the old one fell silent, which is a demotion, not a quiet
+    // market, so the quiet clock restarts from here rather than counting the old source's silence.
+    const realPrice = round3(next.raw + next.offset);
+    const realChanged = switched || lastRealPrice === null || realPrice !== lastRealPrice;
+
+    if (realChanged) {
+      // A genuine upstream move (or the very first tick): the real series is live. If we were
+      // synthesizing, resume the real series smoothly. On a same-source resume the last shown
+      // value was lastRealPrice + drift, so carry that drift across as a residual that decays to
+      // 0 over the next ticks - the real move shows through without the drift snapping away. A
+      // source switch already anchored next.offset to the last published value (continuity), so
+      // that path lands on the real series on its own and needs no residual.
+      if (quiet) {
+        reentryResidual = switched ? 0 : quietDrift;
+        quiet = false;
+        quietDrift = 0;
+      }
+      lastRealPrice = realPrice;
+      lastChangeAt = t;
+    } else if (!quiet && !idle && lastChangeAt !== null && t - lastChangeAt > QUIET_MS) {
+      // The published real price has not changed for QUIET_MS while a round is (or was just) in
+      // play: the market is quiet. Start synthesizing so the chart keeps moving. Gated on !idle
+      // so the idle re-anchor (offset decay back to true XAU) is never fought while no one plays.
+      quiet = true;
+      quietDrift = 0;
+    }
+
+    let price;
+    if (quiet) {
+      // Bounded, mean-reverting random walk around the last real price. Small amplitude so it
+      // reads as a real XAU/USD lull, anchored to lastRealPrice so it never drifts far.
+      quietDrift += (random() - 0.5) * QUIET_STEP - quietDrift * QUIET_REVERT;
+      if (quietDrift > QUIET_AMPLITUDE) quietDrift = QUIET_AMPLITUDE;
+      else if (quietDrift < -QUIET_AMPLITUDE) quietDrift = -QUIET_AMPLITUDE;
+      price = round3(lastRealPrice + quietDrift);
+    } else if (reentryResidual !== 0) {
+      // Glide the carried-over synthetic drift out by at most REANCHOR_STEP per tick.
+      price = round3(realPrice + reentryResidual);
+      reentryResidual =
+        reentryResidual > 0
+          ? Math.max(0, round3(reentryResidual - REANCHOR_STEP))
+          : Math.min(0, round3(reentryResidual + REANCHOR_STEP));
+    } else {
+      price = realPrice;
+    }
+
+    published = { price, t };
+    // The quiet flag is movement-based: true whenever the real price has been still for QUIET_MS,
+    // whether or not this exact tick is synthetic. The synthetic ticks carry quiet:true so the
+    // client can show its "quiet market" label.
+    const quietFlag = lastChangeAt !== null && t - lastChangeAt > QUIET_MS;
+    if (onTick) onTick({ price, t, quiet: quietFlag });
   }
 
   // --------------------------------------------------------------- upstream --
@@ -336,12 +403,14 @@ export function createFeed({
 
   /**
    * Last published tick with the quiet flag evaluated at call time:
-   * quiet = no published tick in the last 3 s. Returns null before the first
+   * quiet = the real price has not changed in the last 3 s (a quiet market,
+   * whether the last tick was real or synthetic). Returns null before the first
    * accepted tick. `source` is internal (rounds.source audit), never client.
    */
   function latest() {
     if (!published || activeId === null) return null;
-    return { price: published.price, t: published.t, source: activeId, quiet: now() - published.t > QUIET_MS };
+    const q = lastChangeAt !== null && now() - lastChangeAt > QUIET_MS;
+    return { price: published.price, t: published.t, source: activeId, quiet: q };
   }
 
   /** Per-source operator detail for the health endpoint. */

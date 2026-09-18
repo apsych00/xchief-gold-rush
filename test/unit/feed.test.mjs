@@ -9,10 +9,24 @@ import assert from 'node:assert/strict';
 import { createFeed } from '../../server/feed.js';
 
 const T0 = 1_700_000_000_000;
+const round3 = (p) => Math.round(p * 1000) / 1000; // mirrors server/feed.js's 3-decimal publishing
 
 // metaapiToken/metaapiAccountId default to null (not process.env) so these
 // tests are isolated from whatever the box's real environment happens to
 // have set; a test enables mt5 explicitly by passing both.
+// Deterministic PRNG (mulberry32) so the quiet-market random walk is reproducible in tests.
+// A real market lull is Math.random in production; here we seed it to assert exact behaviour.
+function seededRandom(seed = 1) {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 function harness({
   finnhubToken = 'test-token',
   metaapiToken = null,
@@ -20,6 +34,7 @@ function harness({
   metaapiSymbol,
   mt5BridgeWs = null,
   feedRelayWs = null,
+  random = seededRandom(1),
 } = {}) {
   let clock = T0;
   const ticks = [];
@@ -32,6 +47,7 @@ function harness({
     feedRelayWs,
     onTick: (tick) => ticks.push(tick),
     now: () => clock,
+    random,
   });
   return {
     feed,
@@ -153,6 +169,95 @@ test('quiet reflects the active source, not lower-priority ticks', () => {
   h.advance(2600);
   assert.equal(h.feed.latest().quiet, true, 'finnhub (active) has not ticked in 3.6 s');
   assert.equal(h.feed.latest().source, 'finnhub');
+});
+
+// --- quiet-market simulation --------------------------------------------------
+// Off-hours the upstream keeps sending frequent ticks at the SAME price. Quiet is keyed on price
+// MOVEMENT, not arrival, so the feed synthesizes a gentle walk around the last real price and the
+// chart stays playable. The synthetic series is server-side only: rounds still settle on
+// feed.latest(), which is the synthesized price, so the client can never influence it.
+
+test('a flat upstream (same price repeated) goes quiet by movement and the series starts moving', () => {
+  const h = harness();
+  h.inject('finnhub', 4355, 0); // first real tick, anchor 4355
+  // Same price every 200 ms. quiet is not arrival-based, so it must not stay live forever.
+  for (let i = 0; i < 40; i++) h.inject('finnhub', 4355, 200);
+
+  const synth = h.ticks.filter((t) => t.quiet);
+  assert.ok(synth.length > 0, 'the market is reported quiet after ~3 s of a still price');
+  // While within QUIET_MS of the last change the ticks are still flat and live.
+  assert.equal(h.ticks[0].quiet, false);
+  assert.equal(h.ticks[0].price, 4355);
+
+  // The synthetic series actually moves - not every published price is 4355.
+  const distinct = new Set(synth.map((t) => t.price));
+  assert.ok(distinct.size > 1, 'the synthetic series is not flat');
+
+  // ...and stays anchored: every synthetic price is within the amplitude of the real price.
+  for (const t of synth) {
+    assert.ok(Math.abs(t.price - 4355) <= 0.35 + 1e-9, `synthetic price ${t.price} drifted past the amplitude`);
+  }
+
+  // feed.latest() (what rounds.js reads to open and settle) is the moving, quiet price.
+  const p = h.feed.latest();
+  assert.equal(p.quiet, true);
+  assert.equal(p.source, 'finnhub', 'still the real active source, no fabricated source name');
+  assert.equal(p.price, h.ticks.at(-1).price, 'latest() is the last synthetic tick, not the raw upstream price');
+});
+
+test('the quiet flag is movement-based: a moving upstream never synthesizes', () => {
+  const h = harness();
+  let raw = 4355;
+  for (let i = 0; i < 40; i++) {
+    raw = round3(raw + 0.02); // a genuinely moving market, one real tick every 200 ms
+    h.inject('finnhub', raw, 200);
+  }
+  assert.ok(
+    h.ticks.every((t) => t.quiet === false),
+    'a moving real price is never reported quiet',
+  );
+  // No synthetic drift: the published series is exactly the real series (offset 0 here).
+  assert.equal(h.ticks.at(-1).price, raw);
+  assert.equal(h.feed.latest().quiet, false);
+});
+
+test('when the real price moves again the real series resumes smoothly with no jump', () => {
+  const h = harness();
+  h.inject('finnhub', 4355, 0);
+  for (let i = 0; i < 40; i++) h.inject('finnhub', 4355, 200); // go quiet and synthesize
+  assert.equal(h.feed.latest().quiet, true);
+  const lastSynth = h.ticks.at(-1).price;
+
+  // The market wakes up: a real move of +0.20. The first real tick must not jump away from the
+  // last synthetic value by more than the real move itself (the drift decays out, it does not snap).
+  h.inject('finnhub', 4355.2, 200);
+  const firstReal = h.ticks.at(-1);
+  assert.equal(firstReal.quiet, false, 'a real move ends the quiet spell immediately');
+  const step = Math.abs(firstReal.price - lastSynth);
+  assert.ok(step <= 0.2 + 0.35 + 1e-9, `resume jump ${step} exceeds the real move plus the bounded residual`);
+
+  // Keep moving; the residual glides out and the series converges onto the true real level.
+  let raw = 4355.2;
+  for (let i = 0; i < 30; i++) {
+    raw = round3(raw + 0.05);
+    h.inject('finnhub', raw, 200);
+  }
+  assert.equal(h.ticks.at(-1).quiet, false);
+  assert.equal(h.ticks.at(-1).price, raw, 'no residual drift remains: published equals the real price');
+});
+
+test('quiet synthesis is gated on !idle so the idle re-anchor is never fought', () => {
+  const h = harness();
+  h.inject('finnhub', 4355, 0);
+  h.feed.setIdle(true); // idle: the re-anchor owns the series, no synthesis
+  for (let i = 0; i < 40; i++) h.inject('finnhub', 4355, 200);
+  // offset is already 0 (finnhub was the first and only source), so idle re-anchor holds it flat.
+  assert.ok(
+    h.ticks.every((t) => t.price === 4355),
+    'no synthetic movement while idle',
+  );
+  // The market is still reported quiet - it genuinely is - even though nothing is synthesized.
+  assert.equal(h.feed.latest().quiet, true);
 });
 
 // --- re-anchor ----------------------------------------------------------------
