@@ -68,10 +68,32 @@ function ClaimForm({ token, onClaimed }) {
 
 function GiftCard({ code, email }) {
   const { t } = useLang();
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return undefined;
+    const id = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(id);
+  }, [copied]);
+
+  const copyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+    } catch {
+      /* clipboard API unavailable or blocked - the code is still selectable by hand */
+    }
+  };
+
   return (
     <div className="claim-card">
-      <div className="kiosk-code" dir="ltr">
-        {code}
+      <div className="claim-code-row">
+        <div className="kiosk-code claim-code" dir="ltr">
+          {code}
+        </div>
+        <button type="button" className="btn-primary claim-copy-btn" onClick={copyCode}>
+          {copied ? t('claim.copied') : t('claim.copy')}
+        </button>
       </div>
       <div className="modal-sub">{t('claim.sentTo', { email })}</div>
       <div className="modal-sub">{t('claim.cardNote')}</div>

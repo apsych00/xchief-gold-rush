@@ -2254,12 +2254,41 @@ button:focus:not(:focus-visible) {
   max-width: 320px;
 }
 .claim-form .lead-input {
+  /* .claim-form is a vertical flex column, unlike .lead-form's row; the base .lead-input's
+     "flex: 1" (flex-basis 0) is a horizontal-layout rule that collapses the input's height to
+     its min-content in a column, so it must be reset here to keep the full fixed height. */
+  flex: none;
   width: 100%;
 }
 .claim-card {
   width: 100%;
   max-width: 320px;
   text-align: center;
+}
+.claim-code-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.claim-code {
+  flex: 1 1 200px;
+  min-width: 0;
+  /* The base .kiosk-code is sized for a wide booth display and never wraps (a photo is the
+     proof there); the claim page is phone-width and shares the row with a Copy button, so the
+     code must be free to shrink and wrap instead of being clipped. */
+  font-size: clamp(16px, 5.5vw, 26px);
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: unset;
+  /* The winner needs to grab this by hand as well as by button - override the app-wide
+     user-select: none and let the code itself be highlighted and copied. */
+  user-select: text;
+  -webkit-user-select: text;
+}
+.claim-copy-btn {
+  flex: none;
 }
 
 /* short displays: tighten the result stack so actions never leave the panel */

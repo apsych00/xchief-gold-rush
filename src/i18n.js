@@ -306,6 +306,8 @@ const dict = {
       cta: 'Get my code',
       cardNote: 'Screenshot this or check your inbox',
       sentTo: 'Sent to {email}',
+      copy: 'Copy',
+      copied: 'Copied',
       claimedBy: 'This gift was claimed by {email}',
       expired: 'This link has expired. Ask the booth staff.',
       invalid: 'This link is not valid.',
