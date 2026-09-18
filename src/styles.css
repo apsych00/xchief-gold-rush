@@ -612,6 +612,37 @@ button:focus:not(:focus-visible) {
   text-wrap: pretty;
   max-width: 320px;
 }
+/* "Play on web" QR on the kiosk attract screen (KioskApp's AttractWebQr, owner 2026-09-18): a
+   dark card with a subtle border to match the app, a small rounded white QR and a caption. Only
+   ever rendered in kiosk mode, so these classes never touch the phone/web layout; the kiosk
+   media block below sizes it up for the booth. */
+.attract-webqr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.attract-webqr-img {
+  display: block;
+  width: 104px;
+  height: 104px;
+  padding: 6px;
+  border-radius: 12px;
+  background: #fff;
+}
+.attract-webqr-loading {
+  background: rgba(255, 255, 255, 0.08);
+}
+.attract-webqr-cap {
+  font: 700 12px var(--fa);
+  color: rgba(255, 255, 255, 0.72);
+  letter-spacing: 0.3px;
+}
 .stat-v-combo {
   font-family: var(--en);
 }
@@ -2290,6 +2321,21 @@ button:focus:not(:focus-visible) {
     max-width: 560px;
     font-size: clamp(16px, 2vh, 22px);
   }
+  .app-kiosk .attract-webqr {
+    margin-top: 6px;
+    padding: 14px;
+    gap: 10px;
+    border-radius: 22px;
+  }
+  .app-kiosk .attract-webqr-img {
+    width: 150px;
+    height: 150px;
+    padding: 8px;
+    border-radius: 16px;
+  }
+  .app-kiosk .attract-webqr-cap {
+    font-size: 18px;
+  }
 
   /* ---- play screen: display frame + panes ---- */
   .app-kiosk .display {
@@ -2419,30 +2465,36 @@ button:focus:not(:focus-visible) {
   /* ---- play screen: gold console body ----
      The console art (Up/Down buttons, lever, level label) still scales at full
      --s so it stays a comfortable booth tap target. We only close the slack the
-     phone layout leaves around the cluster: the button + lever + tick group
-     rides up to tighten the wide gap under the level label, and the hint and the
-     body cap follow so the panel is shorter with no clipping (owner 2026-09-18).
-     Offsets keep the ticks and slider travel in lockstep (all shifted -16px). */
+     phone layout leaves around the cluster: the level label, lever, ticks and
+     Up/Down group all ride up together and the hint tucks in right under the
+     lever, so the panel is shorter with no clipping (owner 2026-09-18). The 170px
+     lever height is untouched (its knob stops live in App.jsx's shared KNOB_TOP),
+     so the whole cluster shifts as a unit - label -4px, the lever/tick/button
+     group -6px, hint -12px - and the body cap drops from 250px to 230px, which
+     still leaves a few px of breathing room under the hint (no clipping). */
   .app-kiosk .body {
-    height: calc(250px * var(--s));
+    height: calc(230px * var(--s));
+  }
+  .app-kiosk .lev-label {
+    top: 10px;
   }
   .app-kiosk .btn-dir {
-    top: 80px;
+    top: 74px;
   }
   .app-kiosk .slider {
-    top: 44px;
+    top: 38px;
   }
   .app-kiosk .tick-5 {
-    top: 46px;
+    top: 40px;
   }
   .app-kiosk .tick-2 {
-    top: 113px;
+    top: 107px;
   }
   .app-kiosk .tick-1 {
-    top: 180px;
+    top: 174px;
   }
   .app-kiosk .body-hint {
-    top: 222px;
+    top: 210px;
     bottom: auto;
   }
 

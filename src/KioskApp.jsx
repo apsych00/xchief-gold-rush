@@ -9,8 +9,37 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { Console, TopBar } from './App.jsx';
+import { SHARE_URL } from './config.js';
 import { useLang } from './i18n.js';
 import { QR_MS, useKioskFlow } from './useKioskFlow.js';
+
+// A small "Play on web" QR on the attract screen (owner 2026-09-18): booth visitors can carry the
+// campaign home by scanning the public web version. SHARE_URL is the app's own public web origin
+// (VITE_SHARE_URL, src/config.js), never the kiosk's own host - the kiosk is not the web game.
+// Same qrcode-package approach as the win screen's claim QR above, generated a little larger than
+// it renders so it stays crisp.
+function AttractWebQr() {
+  const [qrSrc, setQrSrc] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    QRCode.toDataURL(SHARE_URL, { margin: 1, width: 240 }).then((url) => {
+      if (!cancelled) setQrSrc(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return (
+    <div className="attract-webqr">
+      {qrSrc ? (
+        <img className="attract-webqr-img" src={qrSrc} alt="" width={110} height={110} />
+      ) : (
+        <div className="attract-webqr-img attract-webqr-loading" aria-hidden="true" />
+      )}
+      <div className="attract-webqr-cap">Play on web</div>
+    </div>
+  );
+}
 
 // showButton is false for the no_codes screen (ticket C8, docs/layers.md): same attract
 // screen, minus the Play button, while KioskNoCodesModal sits on top of it.
@@ -40,6 +69,9 @@ function KioskAttract({ onTap, showButton = true, streakTarget }) {
                 never a number baked into this file - the owner may set it to 10. */}
             Predict whether gold goes up or down in 5 seconds. {streakTarget} wins in a row wins a $100 code.
           </div>
+          {/* Last element on the fresh attract screen (owner 2026-09-18): scan to keep playing on
+              the public web version. */}
+          <AttractWebQr />
         </div>
       )}
     </section>
