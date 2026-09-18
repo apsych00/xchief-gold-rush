@@ -1799,8 +1799,8 @@ button:focus:not(:focus-visible) {
   width: 100%;
   aspect-ratio: 16 / 9;
 }
-/* Overlay on the YouTube mission player: a skip button in the top-right and the white watch note
-   across the top. The note is plain white text (never red), well-spaced and shadowed so it stays
+/* Overlay on the local video mission player: a skip button in the top-right and the white watch
+   note across the top. The note is plain white text (never red), well-spaced and shadowed so it stays
    legible over any frame; it ignores pointer events so it never blocks the video underneath. */
 .youtube-skip {
   position: absolute;
@@ -1831,9 +1831,9 @@ button:focus:not(:focus-visible) {
   text-shadow: 0 1px 5px rgba(0, 0, 0, 0.75);
   pointer-events: none;
 }
-/* Graceful fallback when the embed stalls or errors (e.g. YouTube's bot-check interstitial
-   loads inside the frame instead of the video): a short hint plus a link to open the same
-   video on YouTube directly, so the mission never looks bricked. */
+/* Graceful fallback when the local mission video 404s or errors: a short hint so the mission
+   never looks bricked; the Skip button next to it (.youtube-skip, always rendered) still gets
+   the player out of the way. */
 .youtube-fallback {
   position: absolute;
   left: 14px;
@@ -1847,17 +1847,6 @@ button:focus:not(:focus-visible) {
 }
 .youtube-fallback .lead-error {
   text-shadow: 0 1px 5px rgba(0, 0, 0, 0.75);
-}
-.youtube-fallback-link {
-  border-radius: 9px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  font: 600 12px var(--fa);
-  padding: 6px 14px;
-  text-decoration: none;
-}
-.youtube-fallback-link:hover {
-  background: rgba(0, 0, 0, 0.78);
 }
 
 /* ---------- lead capture ---------- */

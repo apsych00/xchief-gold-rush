@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -72,8 +72,55 @@ function adsBannersDev() {
   };
 }
 
+// The self-hosted mission videos (ticket: self-host the mission videos, docs/tickets/
+// self-host-mission-videos.md) live under ads/videos/, git-ignored, same pattern as the banner
+// assets above - an operator drops an MP4 in and it is live with no rebuild. In production Caddy
+// already serves the whole ads/ tree at /ads* (handle_path, Caddyfile); this middleware answers
+// the same /ads/videos/<file> paths from disk in dev, including HTTP Range so the <video> element
+// buffers the same way a real static file server would.
+function adsVideosDev() {
+  const videosDir = resolve(__dirname, 'ads', 'videos');
+  return {
+    name: 'xchief-ads-videos-dev',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/ads/videos/', (req, res) => {
+        const rel = decodeURIComponent((req.url || '').split('?')[0]).replace(/^[/\\]+/, '');
+        const file = resolve(videosDir, rel);
+        if (!file.startsWith(videosDir + sep) || !existsSync(file)) {
+          res.statusCode = 404;
+          res.end();
+          return;
+        }
+        const { size } = statSync(file);
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Accept-Ranges', 'bytes');
+        const range = req.headers.range;
+        if (!range) {
+          res.setHeader('Content-Length', size);
+          createReadStream(file).pipe(res);
+          return;
+        }
+        const match = /bytes=(\d*)-(\d*)/.exec(range);
+        const start = match?.[1] ? Number.parseInt(match[1], 10) : 0;
+        const end = match?.[2] ? Number.parseInt(match[2], 10) : size - 1;
+        if (Number.isNaN(start) || Number.isNaN(end) || start > end || end >= size) {
+          res.statusCode = 416;
+          res.setHeader('Content-Range', `bytes */${size}`);
+          res.end();
+          return;
+        }
+        res.statusCode = 206;
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`);
+        res.setHeader('Content-Length', end - start + 1);
+        createReadStream(file, { start, end }).pipe(res);
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), versionFile(), adsBannersDev()],
+  plugins: [react(), versionFile(), adsBannersDev(), adsVideosDev()],
   base: './',
   server: gameApiTarget
     ? {

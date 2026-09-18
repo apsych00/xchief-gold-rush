@@ -76,89 +76,77 @@ function PinModal({ onOk, onCancel }) {
 }
 
 /**
- * Load the YouTube IFrame Player API once per page lifetime. The script is added only when a
- * YouTube mission is opened, and only on the web build (kiosk never reaches this screen).
+ * Accumulated watched time for a local <video> mission (self-host the mission videos ticket;
+ * replaces the old YouTube IFrame watch hook it was adapted from). Reads currentTime on every
+ * native `timeupdate` tick and adds the delta through the same accumulateWatchTime cap
+ * (watchTime.js) the IFrame path used, so a fast-forward cannot credit skipped time. Reports
+ * {seconds, duration} at most every 5 s and once on `ended`. A `seeking` guard snaps the element
+ * back to the last known position - there are no native controls to seek from, but this also
+ * catches a keyboard/media-key seek attempt - so the accumulated total can never jump ahead.
  */
-let youtubeApiPromise = null;
-function loadYouTubeApi() {
-  if (typeof document === 'undefined') return Promise.reject(new Error('no document'));
-  if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
-  if (!youtubeApiPromise) {
-    youtubeApiPromise = new Promise((resolve, reject) => {
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      tag.onerror = () => reject(new Error('youtube_api_load_failed'));
-      document.body.appendChild(tag);
-      const prev = window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady = () => {
-        if (prev) prev();
-        resolve(window.YT);
-      };
-      setTimeout(() => reject(new Error('youtube_api_timeout')), 15000);
-    });
-  }
-  return youtubeApiPromise;
-}
-
-/**
- * Accumulated watched time for the YouTube player. Reads getCurrentTime() once per second while
- * the video is playing and adds the delta to the running total, capping each tick at 1.5 s so a
- * programmatic seek cannot credit skipped time. Reports {seconds, duration} at most every 5 s and
- * once on ENDED.
- */
-function useYouTubeWatch({ getCurrentTime, playerState, duration, onProgress, onDone }) {
+function useVideoMissionWatch({ videoRef, onProgress, onDone }) {
   const watched = useRef(0);
   const lastCurrent = useRef(0);
   const lastReportAt = useRef(0);
   const reportedDone = useRef(false);
 
   const report = useCallback(
-    (force) => {
+    (duration, force) => {
       const now = Date.now();
       if (!force && now - lastReportAt.current < 5000) return;
       lastReportAt.current = now;
       onProgress(Math.round(watched.current), Math.round(duration || 0));
     },
-    [onProgress, duration],
+    [onProgress],
   );
 
   useEffect(() => {
-    const id = setInterval(() => {
-      if (playerState !== window.YT?.PlayerState?.PLAYING) return;
-      const current = getCurrentTime() || 0;
+    const el = videoRef.current;
+    if (!el) return undefined;
+
+    const onTimeUpdate = () => {
+      const current = el.currentTime || 0;
       watched.current = accumulateWatchTime({
         current,
         previous: lastCurrent.current,
         accumulated: watched.current,
       });
       lastCurrent.current = current;
-      report(false);
-    }, 1000);
-    return () => clearInterval(id);
-  }, [playerState, getCurrentTime, report]);
-
-  useEffect(() => {
-    if (playerState === window.YT?.PlayerState?.ENDED && !reportedDone.current) {
+      report(el.duration, false);
+    };
+    const onEnded = () => {
+      if (reportedDone.current) return;
       reportedDone.current = true;
-      report(true);
+      report(el.duration || el.currentTime, true);
       onDone();
-    }
-  }, [playerState, onDone, report]);
+    };
+    const onSeeking = () => {
+      if (Math.abs(el.currentTime - lastCurrent.current) > 1.5) {
+        el.currentTime = lastCurrent.current;
+      }
+    };
 
-  // Reset when the hook is re-created (task changes).
-  useEffect(() => {
-    watched.current = 0;
-    lastCurrent.current = 0;
-    lastReportAt.current = 0;
-    reportedDone.current = false;
+    el.addEventListener('timeupdate', onTimeUpdate);
+    el.addEventListener('ended', onEnded);
+    el.addEventListener('seeking', onSeeking);
+    return () => {
+      el.removeEventListener('timeupdate', onTimeUpdate);
+      el.removeEventListener('ended', onEnded);
+      el.removeEventListener('seeking', onSeeking);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }
 
 /**
- * The video reward modal (ticket B6 / K4). Supports three modes:
- *   - YouTube mission: the task row carries kind='youtube' and url=videoId; the IFrame Player API
- *     is loaded and an accumulated-watch timer reports progress.
- *   - Promo video: a hosted <video> asset reports currentTime directly.
+ * The video reward modal (ticket B6 / K4, reworked by the self-host the mission videos ticket).
+ * Supports three modes:
+ *   - Video mission: the task row carries kind='youtube' and url=a local MP4 path (ads/videos/,
+ *     see its README) - the three-video "x of 3" mission. Plays from a local <video> with no
+ *     native seek bar; useVideoMissionWatch reports capped watch time. The kind name is unchanged
+ *     from before (report_video_progress's 30 s release threshold keys off it) even though
+ *     nothing here talks to YouTube anymore.
+ *   - Promo video: a hosted <video> asset (PROMO_VIDEO_URL) reports currentTime directly.
  *   - Fallback countdown: used when no video asset is configured.
  *
  * The server decides when the reward releases; this component never grants anything on its own.
@@ -167,15 +155,11 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
   const { t } = useLang();
   const [left, setLeft] = useState(PROMO_VIDEO_SECONDS);
   const lastSentAt = useRef(0);
-  const containerRef = useRef(null);
-  const [player, setPlayer] = useState(null);
-  const [playerState, setPlayerState] = useState(-1);
-  const [playerError, setPlayerError] = useState(null);
-  const [playerStuck, setPlayerStuck] = useState(false);
-  const stuckTimerRef = useRef(null);
+  const videoRef = useRef(null);
+  const [videoError, setVideoError] = useState(false);
 
-  const isYouTube = task?.kind === 'youtube';
-  const isHostedVideo = !isYouTube && PROMO_VIDEO_URL;
+  const isVideoMission = task?.kind === 'youtube';
+  const isHostedVideo = !isVideoMission && PROMO_VIDEO_URL;
 
   const report = (seconds, duration, force) => {
     const now = Date.now();
@@ -186,13 +170,13 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
 
   // Hosted <video> / fallback countdown paths (unchanged from B6).
   useEffect(() => {
-    if (isYouTube || isHostedVideo) return undefined;
+    if (isVideoMission || isHostedVideo) return undefined;
     const id = setInterval(() => setLeft((s) => s - 1), 1000);
     return () => clearInterval(id);
-  }, [isYouTube, isHostedVideo]);
+  }, [isVideoMission, isHostedVideo]);
 
   useEffect(() => {
-    if (isYouTube || isHostedVideo) return undefined;
+    if (isVideoMission || isHostedVideo) return undefined;
     if (left <= 0) {
       report(PROMO_VIDEO_SECONDS, PROMO_VIDEO_SECONDS, true);
       onDone();
@@ -200,87 +184,11 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
       report(PROMO_VIDEO_SECONDS - left, PROMO_VIDEO_SECONDS, false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [left, onDone, isYouTube, isHostedVideo]);
+  }, [left, onDone, isVideoMission, isHostedVideo]);
 
-  // YouTube IFrame Player setup. Loaded on the privacy-enhanced youtube-nocookie.com domain and
-  // with `origin` + `enablejsapi` set, per YouTube's own IFrame API guidance - this is the
-  // documented way to identify an embed as a legitimate API client rather than an anonymous
-  // request, which is one of the signals YouTube's bot detection weighs. `playVideo()` is called
-  // once, from onReady, as the direct continuation of the user's Start tap that opened this
-  // modal - there is no autoplay player var and no seeking, since repeated reload/seek patterns
-  // are what reads as bot-like traffic, not a single play triggered by a real tap.
-  useEffect(() => {
-    if (!isYouTube) return undefined;
-    setPlayerError(null);
-    setPlayerStuck(false);
-    let destroyed = false;
-    let ytPlayer = null;
-    const clearStuckTimer = () => {
-      if (stuckTimerRef.current) {
-        clearTimeout(stuckTimerRef.current);
-        stuckTimerRef.current = null;
-      }
-    };
-    loadYouTubeApi()
-      .then((YT) => {
-        if (destroyed || !containerRef.current) return;
-        ytPlayer = new YT.Player(containerRef.current, {
-          videoId: task.url,
-          host: 'https://www.youtube-nocookie.com',
-          playerVars: {
-            controls: 0,
-            disablekb: 1,
-            rel: 0,
-            playsinline: 1,
-            enablejsapi: 1,
-            origin: window.location.origin,
-          },
-          events: {
-            onReady: () => {
-              if (destroyed) return;
-              ytPlayer.playVideo();
-              setPlayer(ytPlayer);
-              // If playback has not actually started a few seconds after the ready event, the
-              // most likely cause is YouTube showing its "confirm you're not a robot" page
-              // inside the frame instead of the video - there is no distinct error code for
-              // that state, so a stuck unstarted/cued player is the closest signal we get.
-              // Surface the fallback link rather than leaving the mission looking frozen.
-              clearStuckTimer();
-              stuckTimerRef.current = setTimeout(() => {
-                if (!destroyed) setPlayerStuck(true);
-              }, 8000);
-            },
-            onStateChange: (e) => {
-              if (destroyed) return;
-              setPlayerState(e.data);
-              if (e.data === window.YT?.PlayerState?.PLAYING) {
-                clearStuckTimer();
-                setPlayerStuck(false);
-              }
-            },
-            onError: (e) => {
-              if (!destroyed) setPlayerError(String(e.data));
-            },
-          },
-        });
-      })
-      .catch((err) => setPlayerError(err?.message || 'youtube_load_failed'));
-    return () => {
-      destroyed = true;
-      clearStuckTimer();
-      try {
-        ytPlayer?.destroy?.();
-      } catch {
-        /* ignore */
-      }
-    };
-  }, [isYouTube, task.url]);
-
-  useYouTubeWatch({
-    getCurrentTime: () => player?.getCurrentTime?.() || 0,
-    playerState,
-    duration: player?.getDuration?.() || 0,
-    onProgress,
+  useVideoMissionWatch({
+    videoRef,
+    onProgress: (seconds, duration) => report(seconds, duration, false),
     onDone,
   });
 
@@ -289,24 +197,27 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
       <div className="modal modal-video">
-        {isYouTube ? (
+        {isVideoMission ? (
           <div className="youtube-player-wrap">
-            <div ref={containerRef} className="youtube-player" />
+            {/* No `controls` attribute: this is the non-seekable player the ticket calls for -
+                there is no native seek bar to drag, and the `seeking` guard in
+                useVideoMissionWatch snaps back any programmatic/keyboard jump. */}
+            <video
+              ref={videoRef}
+              className="youtube-player"
+              src={task.url}
+              autoPlay
+              playsInline
+              onContextMenu={(e) => e.preventDefault()}
+              onError={() => setVideoError(true)}
+            />
             <button type="button" className="youtube-skip" onClick={onCancel}>
               {t('tasks.skip')}
             </button>
             <div className="youtube-watch-note">{t('tasks.videoWatchNote')}</div>
-            {(playerError || playerStuck) && (
+            {videoError && (
               <div className="youtube-fallback">
                 <div className="lead-error">{t('tasks.videoBlockedHint')}</div>
-                <a
-                  className="youtube-fallback-link"
-                  href={`https://www.youtube.com/watch?v=${task.url}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {t('tasks.videoOpenOnYoutube')}
-                </a>
               </div>
             )}
           </div>
@@ -340,7 +251,7 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
             </div>
           </div>
         )}
-        {!isYouTube && (
+        {!isVideoMission && (
           <div className="modal-actions">
             <button type="button" className="btn-ghost" onClick={onCancel}>
               {t('tasks.cancel')}
