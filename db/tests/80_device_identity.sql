@@ -96,11 +96,11 @@ select tests.create_confirmed_player('device-email-e@example.com', null, :'devic
 select tests.create_confirmed_player('device-email-f@example.com', null, :'device_f'::uuid) as claim_diff_p2 \gset
 
 select is(
-  ((public.release_task_reward(:'claim_diff_p1'::uuid, 'review_google'))->>'reward')::int, 500,
-  'a player on device E, own email, claims review_google'
+  ((public.release_task_reward(:'claim_diff_p1'::uuid, 'review_trustpilot'))->>'reward')::int, 500,
+  'a player on device E, own email, claims review_trustpilot'
 );
 select is(
-  ((public.release_task_reward(:'claim_diff_p2'::uuid, 'review_google'))->>'reward')::int, 500,
+  ((public.release_task_reward(:'claim_diff_p2'::uuid, 'review_trustpilot'))->>'reward')::int, 500,
   'a different player on device F, a different email, claims the same task independently'
 );
 
