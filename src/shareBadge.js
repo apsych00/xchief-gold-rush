@@ -16,16 +16,13 @@ const H = 1350;
 // Brand palette (mirrors src/styles.css :root and Logo.jsx).
 const GOLD = '#e9b62a';
 const GOLD_LIGHT = '#ffe38a';
-const GREEN = '#06d700';
 const INK = '#03160d';
 
-// The xChief logo mark, straight from Logo.jsx's LogoMark (viewBox 0 0 100 100) so the badge
-// carries the real brand mark, not a redrawn approximation.
-const MARK_GOLD_PATHS = ['M8 22h22l62 70H70L8 22z', 'M70 22h22L66 51 55 39 70 22z'];
-const MARK_GREEN_PATH = 'M6 92C22 58 44 34 92 20 60 30 36 52 24 92H6z';
+// The header logo asset (see Logo.jsx) is loaded and drawn as-is so the badge carries the exact
+// same mark + wordmark as the app header, not a redrawn approximation.
+const LOGO_CANDIDATES = ['/logo.svg', '/logo.png'];
 
 const FONT_NUM = '"Space Grotesk", system-ui, sans-serif';
-const FONT_SERIF = '"Playfair Display", Georgia, "Times New Roman", serif';
 
 function roundRect(ctx, x, y, w, h, r) {
   const radius = Math.min(r, w / 2, h / 2);
@@ -38,17 +35,6 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function drawLogoMark(ctx, cx, topY, size) {
-  ctx.save();
-  ctx.translate(cx - size / 2, topY);
-  ctx.scale(size / 100, size / 100);
-  ctx.fillStyle = GOLD;
-  for (const d of MARK_GOLD_PATHS) ctx.fill(new Path2D(d));
-  ctx.fillStyle = GREEN;
-  ctx.fill(new Path2D(MARK_GREEN_PATH));
-  ctx.restore();
-}
-
 async function loadFonts() {
   if (!document.fonts?.load) return;
   try {
@@ -56,7 +42,6 @@ async function loadFonts() {
       document.fonts.load(`900 210px ${FONT_NUM}`),
       document.fonts.load(`700 30px ${FONT_NUM}`),
       document.fonts.load(`800 34px ${FONT_NUM}`),
-      document.fonts.load(`italic 600 66px ${FONT_SERIF}`),
     ]);
   } catch {
     /* a font that fails to load just falls back to the next in its stack - the badge still renders */
@@ -70,6 +55,19 @@ function loadImage(src) {
     img.onerror = reject;
     img.src = src;
   });
+}
+
+// Same candidate chain as Logo.jsx: try the official SVG first, fall back to a PNG if present. If
+// neither loads, the badge still renders - just without the lockup - rather than failing the share.
+async function loadHeaderLogo() {
+  for (const src of LOGO_CANDIDATES) {
+    try {
+      return await loadImage(src);
+    } catch {
+      /* try the next candidate */
+    }
+  }
+  return null;
 }
 
 function canvasToBlob(canvas) {
@@ -93,6 +91,7 @@ export async function renderRecordBadge({ level, joinUrl, labels }) {
   const ctx = canvas.getContext('2d');
 
   await loadFonts();
+  const logoImg = await loadHeaderLogo();
 
   // The QR is dark ink on a cream field for reliable scanning, then framed in gold on the badge.
   const qrSrc = await QRCode.toDataURL(joinUrl, {
@@ -130,11 +129,13 @@ export async function renderRecordBadge({ level, joinUrl, labels }) {
 
   ctx.textAlign = 'center';
 
-  // Brand lockup: mark + wordmark.
-  drawLogoMark(ctx, W / 2, 150, 96);
-  ctx.font = `italic 600 66px ${FONT_SERIF}`;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText('xChief', W / 2, 330);
+  // Brand lockup: the real header logo asset, drawn at its native aspect ratio so the badge
+  // matches Logo.jsx pixel-for-pixel instead of a redrawn approximation.
+  if (logoImg) {
+    const logoH = 140;
+    const logoW = logoH * (logoImg.width / logoImg.height);
+    ctx.drawImage(logoImg, W / 2 - logoW / 2, 190, logoW, logoH);
+  }
 
   // Eyebrow.
   ctx.font = `700 30px ${FONT_NUM}`;
