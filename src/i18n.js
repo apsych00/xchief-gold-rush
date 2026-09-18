@@ -193,6 +193,8 @@ const dict = {
       videoTitle: 'Meet xChief',
       videoSub: 'A few seconds and your coins arrive',
       videoWatchNote: 'Watch for 30 seconds or more to get the reward',
+      videoBlockedHint: 'The video is taking a moment to load here',
+      videoOpenOnYoutube: 'Open on YouTube instead',
       videoStep: '{n} of {total}',
       videoCooldown: 'Next video in {t}',
       skip: 'Skip',

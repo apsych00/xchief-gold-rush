@@ -171,6 +171,8 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
   const [player, setPlayer] = useState(null);
   const [playerState, setPlayerState] = useState(-1);
   const [playerError, setPlayerError] = useState(null);
+  const [playerStuck, setPlayerStuck] = useState(false);
+  const stuckTimerRef = useRef(null);
 
   const isYouTube = task?.kind === 'youtube';
   const isHostedVideo = !isYouTube && PROMO_VIDEO_URL;
@@ -200,32 +202,61 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [left, onDone, isYouTube, isHostedVideo]);
 
-  // YouTube IFrame Player setup.
+  // YouTube IFrame Player setup. Loaded on the privacy-enhanced youtube-nocookie.com domain and
+  // with `origin` + `enablejsapi` set, per YouTube's own IFrame API guidance - this is the
+  // documented way to identify an embed as a legitimate API client rather than an anonymous
+  // request, which is one of the signals YouTube's bot detection weighs. `playVideo()` is called
+  // once, from onReady, as the direct continuation of the user's Start tap that opened this
+  // modal - there is no autoplay player var and no seeking, since repeated reload/seek patterns
+  // are what reads as bot-like traffic, not a single play triggered by a real tap.
   useEffect(() => {
     if (!isYouTube) return undefined;
+    setPlayerError(null);
+    setPlayerStuck(false);
     let destroyed = false;
     let ytPlayer = null;
+    const clearStuckTimer = () => {
+      if (stuckTimerRef.current) {
+        clearTimeout(stuckTimerRef.current);
+        stuckTimerRef.current = null;
+      }
+    };
     loadYouTubeApi()
       .then((YT) => {
         if (destroyed || !containerRef.current) return;
         ytPlayer = new YT.Player(containerRef.current, {
           videoId: task.url,
+          host: 'https://www.youtube-nocookie.com',
           playerVars: {
             controls: 0,
             disablekb: 1,
-            modestbranding: 1,
             rel: 0,
             playsinline: 1,
+            enablejsapi: 1,
+            origin: window.location.origin,
           },
           events: {
             onReady: () => {
-              if (!destroyed) {
-                ytPlayer.playVideo();
-                setPlayer(ytPlayer);
-              }
+              if (destroyed) return;
+              ytPlayer.playVideo();
+              setPlayer(ytPlayer);
+              // If playback has not actually started a few seconds after the ready event, the
+              // most likely cause is YouTube showing its "confirm you're not a robot" page
+              // inside the frame instead of the video - there is no distinct error code for
+              // that state, so a stuck unstarted/cued player is the closest signal we get.
+              // Surface the fallback link rather than leaving the mission looking frozen.
+              clearStuckTimer();
+              stuckTimerRef.current = setTimeout(() => {
+                if (!destroyed) setPlayerStuck(true);
+              }, 8000);
             },
             onStateChange: (e) => {
-              if (!destroyed) setPlayerState(e.data);
+              if (destroyed) return;
+              setPlayerState(e.data);
+              if (e.data === window.YT?.PlayerState?.PLAYING) {
+                clearStuckTimer();
+                setPlayerStuck(false);
+              }
             },
             onError: (e) => {
               if (!destroyed) setPlayerError(String(e.data));
@@ -236,6 +267,7 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
       .catch((err) => setPlayerError(err?.message || 'youtube_load_failed'));
     return () => {
       destroyed = true;
+      clearStuckTimer();
       try {
         ytPlayer?.destroy?.();
       } catch {
@@ -264,7 +296,19 @@ function VideoModal({ task, onProgress, onDone, onCancel }) {
               {t('tasks.skip')}
             </button>
             <div className="youtube-watch-note">{t('tasks.videoWatchNote')}</div>
-            {playerError && <div className="lead-error">{t('tasks.videoSub')}</div>}
+            {(playerError || playerStuck) && (
+              <div className="youtube-fallback">
+                <div className="lead-error">{t('tasks.videoBlockedHint')}</div>
+                <a
+                  className="youtube-fallback-link"
+                  href={`https://www.youtube.com/watch?v=${task.url}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {t('tasks.videoOpenOnYoutube')}
+                </a>
+              </div>
+            )}
           </div>
         ) : isHostedVideo ? (
           <video
