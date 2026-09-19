@@ -78,13 +78,20 @@ test('sendClaimCode\'s expiry is about 30 days out, matching the email copy', as
   const after = Date.now();
 
   const expiresAtText = formParams(calls[0]).get('merge_expires_at');
-  const expiresAt = Date.parse(expiresAtText);
   const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-  // formatExpiry renders a calendar day (UTC midnight), not a timestamp, so it can read up to a
-  // day earlier than the exact 30*24h mark depending on the time of day this test runs.
-  assert.ok(expiresAt >= before + THIRTY_DAYS_MS - ONE_DAY_MS, 'expiry is not sooner than ~30 days out');
-  assert.ok(expiresAt <= after + THIRTY_DAYS_MS + ONE_DAY_MS, 'expiry is not much later than 30 days out');
+  // sendClaimCode renders a UTC calendar day, so compare calendar days - never parse it back
+  // and do millisecond arithmetic. Date.parse reads 'October 19, 2026' as LOCAL midnight, so on
+  // a machine east of UTC the round trip lands hours before the real instant and a tolerance
+  // measured in whole days still loses. That is what made this test fail only after local
+  // midnight on a UTC+3:30 clock.
+  const asUtcDay = (ms) =>
+    new Date(ms).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+  // `before` and `after` can straddle UTC midnight, so either day is correct.
+  const acceptable = [asUtcDay(before + THIRTY_DAYS_MS), asUtcDay(after + THIRTY_DAYS_MS)];
+  assert.ok(
+    acceptable.includes(expiresAtText),
+    `expiry ${expiresAtText} is not 30 days out (expected one of ${acceptable.join(' or ')})`,
+  );
 });
 
 test('without a template id, sendClaimCode falls back to the plain-text body', async (t) => {
