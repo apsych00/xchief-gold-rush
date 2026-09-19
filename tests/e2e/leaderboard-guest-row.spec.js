@@ -39,13 +39,56 @@ test.describe('the guest note takes the own-row slot (U2)', () => {
 
     const guest = page.locator('.lb-list .lb-row-me');
     await expect(guest).toBeVisible({ timeout: 10000 });
-    await expect(guest).toContainText('Play as guest');
+    await expect(guest).toContainText('playing as guest');
     await expect(page.locator('.lb-row-sticky')).toHaveCount(0, 'a list that fits needs no pinned row');
-    // The rank cell stays empty and the text is the normal row colour, never black-on-green.
-    await expect(guest.locator('.lb-rank')).toHaveText('');
+    // The guest row is a prompt, not a ranked entry, so no rank cell is rendered at all - its
+    // width used to sit empty and unused ahead of the copy (bug: clipping fix).
+    await expect(guest.locator('.lb-rank')).toHaveCount(0);
     const color = await guest.locator('.lb-name').evaluate((el) => getComputedStyle(el).color);
     expect(color).toBe('rgb(255, 255, 255)');
+    // The full guest copy must always be visible - wrapping to two lines is fine, silent
+    // clipping/ellipsis/overflow is not (bug: the string used to be cut off mid-word).
+    const overflow = await guest.locator('.lb-name').evaluate((el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+      text: el.textContent,
+    }));
+    expect(overflow.scrollWidth, `guest note must not overflow its box: ${JSON.stringify(overflow)}`).toBeLessThanOrEqual(
+      overflow.clientWidth,
+    );
+    expect(overflow.text).toBe("You're playing as guest - add your email to be ranked");
     await page.screenshot({ path: path.join(REPORT_DIR, '05-guest-fits.png') });
+  });
+
+  test('the guest note is never clipped, at phone widths down to 320px', async ({ page }) => {
+    await page.goto('/');
+    await dismissFirstVisit(page);
+    await goLeaderboard(page);
+    await page.getByRole('button', { name: 'Gold Rush Week 2' }).click();
+    await expect(page.locator('.lb-head')).toContainText('Gold Rush Week 2');
+
+    const guest = page.locator('.lb-list .lb-row-me');
+    await expect(guest).toBeVisible({ timeout: 10000 });
+
+    for (const width of [320, 360, 390, 460]) {
+      await page.setViewportSize({ width, height: 844 });
+      const nameEl = guest.locator('.lb-name');
+      const box = await nameEl.evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+        text: el.textContent.trim(),
+      }));
+      expect(box.scrollWidth, `width ${width}: horizontal clip ${JSON.stringify(box)}`).toBeLessThanOrEqual(
+        box.clientWidth,
+      );
+      expect(box.scrollHeight, `width ${width}: vertical clip ${JSON.stringify(box)}`).toBeLessThanOrEqual(
+        box.clientHeight + 1,
+      );
+      expect(box.text).toBe("You're playing as guest - add your email to be ranked");
+    }
+    await page.screenshot({ path: path.join(REPORT_DIR, '05b-guest-fits-320.png') });
   });
 
   test('pins to the bottom of the list container when the rows overflow it', async ({ page }) => {
@@ -70,9 +113,18 @@ test.describe('the guest note takes the own-row slot (U2)', () => {
       const pinned = page.locator('.lb-row-sticky');
       await expect(pinned).toBeVisible({ timeout: 10000 });
       await expect(pinned).toHaveClass(/lb-row-guest/);
-      await expect(pinned).toContainText('Play as guest');
-      await expect(pinned.locator('.lb-rank')).toHaveText('');
+      await expect(pinned).toContainText('playing as guest');
+      await expect(pinned.locator('.lb-rank')).toHaveCount(0);
       await expect(page.locator('.lb-list .lb-row-me')).toHaveCount(0, 'the guest row is pinned, not a page row');
+      const overflow = await pinned.locator('.lb-name').evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        text: el.textContent,
+      }));
+      expect(overflow.scrollWidth, `guest note must not overflow its box: ${JSON.stringify(overflow)}`).toBeLessThanOrEqual(
+        overflow.clientWidth,
+      );
+      expect(overflow.text).toBe("You're playing as guest - add your email to be ranked");
       await page.screenshot({ path: path.join(REPORT_DIR, '06-guest-overflow.png') });
     } finally {
       await pool.end();

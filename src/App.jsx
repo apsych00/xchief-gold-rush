@@ -13,7 +13,7 @@ import { enabled as apiEnabled } from './api/client.js';
 import OtpModal, { IdentityBar } from './Identity.jsx';
 import Profile, { UserIcon } from './Profile.jsx';
 
-import { AdZone } from './ads.js';
+import { AdZone, warmBanners } from './ads.js';
 import { LEVERS, maxAffordableLever, stakeFor, useGame } from './useGame.js';
 
 // Offline-only fallback (docs/layers.md C5): the no-backend preview mode (VITE_GAME_WS unset -
@@ -1056,6 +1056,12 @@ function Leaderboard({
             </div>
           ))}
         </div>
+        {/* The ad zone used to sit only in the loaded-rows return below, so it never even started
+            fetching its banner list until the leaderboard's own row data had landed - stacking
+            its latency on top of the game server round trip instead of racing it. It has no
+            dependency on `others`, so it renders here too and starts warm (see App.jsx's
+            warmBanners()) the moment this skeleton shows. */}
+        <AdZone />
       </section>
     );
   }
@@ -1112,7 +1118,6 @@ function Leaderboard({
             style={{ '--i': rows.length + (loadingMore ? LOAD_MORE_SKELETON_ROWS : 0) }}
             onClick={onOpenIdentity}
           >
-            <span className="lb-rank" aria-hidden="true" />
             <span className="lb-name">{t('lb.guestNote')}</span>
           </button>
         )}
@@ -1126,7 +1131,6 @@ function Leaderboard({
           className="lb-row lb-row-me lb-row-sticky lb-row-guest"
           onClick={onOpenIdentity}
         >
-          <span className="lb-rank" aria-hidden="true" />
           <span className="lb-name">{t('lb.guestNote')}</span>
         </button>
       )}
@@ -1225,6 +1229,17 @@ export default function App() {
     document.documentElement.lang = lang;
     document.documentElement.dir = 'ltr';
   }, [lang]);
+
+  // Leaderboard ads (ticket: ad zone latency fix): the kiosk never shows the ad zone at all, so
+  // never spend a player's data on it there. On the web, fire the banner list fetch and warm each
+  // banner's ~1 MB creative as early as the app itself mounts - on Home, well before a player taps
+  // into the leaderboard - so by the time AdZone renders, its fetch (src/ads.jsx's loadBanners)
+  // resolves from an already-settled promise and the iframe loads from a warm cache instead of a
+  // cold multi-hundred-KB-to-MB-sized network fetch.
+  useEffect(() => {
+    if (IS_KIOSK) return;
+    warmBanners();
+  }, []);
 
   // Scale factor for the fixed-pixel console art: the design is 390×844, so
   // anything smaller (short Androids, landscape, small frames) shrinks it

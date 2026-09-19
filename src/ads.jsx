@@ -18,10 +18,10 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { adDurationMs, hasIframeAds, nextAd, pickRandomAd } from './adsPicker.js';
+import { loadBanners, prefetchBanner, warmBanners } from './adsWarmup.js';
 
-export { adDurationMs, hasIframeAds, nextAd, pickRandomAd };
+export { adDurationMs, hasIframeAds, nextAd, pickRandomAd, loadBanners, prefetchBanner, warmBanners };
 
-const BANNERS_URL = '/ads/banners.json';
 // Both banners (image and iframe) point here. Single constant so the destination changes in one
 // place; the image-banner path can still override per-entry via banners.json's `href`.
 const XCHIEF_AD_URL = 'https://www.xchief.com/?utm_source=goldrush&utm_campaign=goldrush';
@@ -42,17 +42,14 @@ export function AdZone() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(BANNERS_URL)
-      .then((res) => (res.ok ? res.json() : []))
-      .then((list) => {
-        if (cancelled || !Array.isArray(list) || list.length === 0) return;
-        setAds(list);
-        // Iframes lead the list in ads/banners.json, so an iframe-bearing list opens on entry 0.
-        setCurrent(hasIframeAds(list) ? list[0] : pickRandomAd(list));
-      })
-      .catch(() => {
-        /* fetch failed: ads/current stay empty, the zone renders nothing */
-      });
+    // loadBanners() shares the same in-flight/resolved fetch App.jsx's warmBanners() kicked off on
+    // mount, so this almost always resolves from an already-settled promise, not a fresh request.
+    loadBanners().then((list) => {
+      if (cancelled || list.length === 0) return;
+      setAds(list);
+      // Iframes lead the list in ads/banners.json, so an iframe-bearing list opens on entry 0.
+      setCurrent(hasIframeAds(list) ? list[0] : pickRandomAd(list));
+    });
     return () => {
       cancelled = true;
     };
@@ -64,6 +61,15 @@ export function AdZone() {
       setCurrent((prev) => (hasIframeAds(ads) ? nextAd(ads, prev) : pickRandomAd(ads, prev?.src)));
     }, adDurationMs(current));
     return () => clearTimeout(id);
+  }, [ads, current]);
+
+  // While `current` is on screen, warm the *next* banner in the rotation so its own swap is
+  // instant too - by the time the timer above fires, its creative is already sitting in cache.
+  useEffect(() => {
+    if (!current || ads.length < 2) return undefined;
+    const upcoming = hasIframeAds(ads) ? nextAd(ads, current) : pickRandomAd(ads, current.src);
+    if (upcoming && upcoming.src !== current.src) prefetchBanner(upcoming);
+    return undefined;
   }, [ads, current]);
 
   // Scale for the iframe banners: zone width over the banners' native canvas width. Measured with a
@@ -97,8 +103,7 @@ export function AdZone() {
         // minimum content height below ~800 px wide, so a frame sized to the zone clips their
         // bottom. The frame is therefore always the native canvas size and is scaled down as one
         // block to the zone's width (transform-origin top left), like any fixed-size creative.
-        // tabIndex -1 keeps the frame out of the keyboard tab order; loading="lazy" defers the
-        // offscreen load until the zone is near the viewport.
+        // tabIndex -1 keeps the frame out of the keyboard tab order.
         // The scale lives on a wrapper: .ad-zone-frame keeps the gr-rise entrance animation, whose
         // fill-mode would otherwise overwrite an inline transform on the frame itself.
         // The banner's own HTML has no click target of its own, so a transparent anchor is layered
@@ -115,7 +120,11 @@ export function AdZone() {
               className={`ad-zone-frame${frameLoaded ? ' is-loaded' : ''}`}
               src={current.src}
               title="xChief"
-              loading="lazy"
+              // Always on screen the moment this renders (the zone sits inside the visible
+              // leaderboard, never below an initial fold) and its creative is prefetched ahead of
+              // time by warmBanners()/the sibling-preload effect above, so deferring the load
+              // until an IntersectionObserver confirms visibility only adds latency for nothing.
+              loading="eager"
               tabIndex={-1}
               width={BANNER_W}
               height={BANNER_H}
