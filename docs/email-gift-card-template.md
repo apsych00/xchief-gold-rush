@@ -30,8 +30,10 @@ Once the template is created, send us the **template id** Elastic Mail assigns i
 only thing the server needs; everything else (subject, merge fields, sender) is already wired on
 our side.
 
-## One open question for the owner, not the admin
+## Outbound links in this template
 
-The email's footer links to `https://xchief-gold-rush.vercel.app` under "Play Gold Rush", but the
-game has since moved to `https://goldrush.xchief.academy`. We left it as found rather than
-guessing which one you want live in the sent email - flag back to us which URL should go there.
+Every link points at either `xchief.com` / `my.xchief.com` or the game's own
+`goldrush.xchief.academy`. The footer's "Play Gold Rush" link used to point at the old
+`xchief-gold-rush.vercel.app` preview host and now points at `https://goldrush.xchief.academy`
+(owner's call, 2026-09-19). If a future edit introduces a link to any other host, raise it with
+the owner rather than shipping it.
