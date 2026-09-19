@@ -129,6 +129,19 @@ const dict = {
         default: 'Something went wrong. Try again',
       },
     },
+    // The one shared email/OTP prompt shell (PromptModal.jsx, unify-email-modal ticket): generic
+    // chrome strings and the built-in client-side validation copy every step falls back to.
+    // Call-site-specific copy (titles, subtitles, submit labels) stays in each caller's own
+    // namespace (otp.*, lead.*, signup.*) so every dialog still reads like itself.
+    prompt: {
+      cancel: 'Not now',
+      working: 'Please wait…',
+      errors: {
+        invalidEmail: 'Enter a valid email',
+        invalidCode: 'Enter the {n}-digit code',
+        default: 'Something went wrong. Try again',
+      },
+    },
     nav: { home: 'Home', play: 'Play', tasks: 'Missions', lb: 'Board' },
     profile: {
       open: 'Your profile',

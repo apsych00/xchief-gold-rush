@@ -1349,12 +1349,25 @@ button:focus:not(:focus-visible) {
   box-shadow: 0 0 20px rgba(53, 227, 111, 0.35);
 }
 /* The guest note is a <button>, so without this its text would take the browser's own button
-   colour (black on the green row). Keep the normal row text colour (ticket U2); the rank cell
-   stays empty. */
+   colour (black on the green row). Keep the normal row text colour (ticket U2). No rank cell is
+   rendered for this row (it is a prompt, not a ranked entry), so the row's full width goes to
+   the copy instead of reserving the rank column's width for nothing.
+   The copy itself must never clip: unlike a player name (.lb-name, single line, ellipsized by
+   its own overflow:hidden), this is a full sentence, so it gets its own wrapping rule and the
+   row switches from the fixed --row height every ranked row uses to a min-height that grows
+   with the wrapped text. */
 .lb-row-guest {
+  height: auto;
+  min-height: var(--row);
+  padding: 10px 12px;
   color: #fff;
   text-align: start;
   width: 100%;
+}
+.lb-row-guest .lb-name {
+  white-space: normal;
+  overflow: visible;
+  line-height: 1.35;
 }
 .lb-rank {
   width: 22px;
@@ -1815,6 +1828,51 @@ button:focus:not(:focus-visible) {
   outline: none;
   border-color: var(--green);
 }
+
+/* ---------- unified email/OTP prompt (unify-email-modal ticket) ----------
+   One shared shell (PromptModal.jsx) for every place the app asks for an email or an OTP code:
+   the OTP modal's own two steps, the marketing lead capture, and the xChief signup form. Scoped
+   under .prompt-modal so it never touches the spacing of the other .modal users (PinModal,
+   InstagramModal, the tour, the connection-lost modal, kiosk modals). */
+.prompt-modal .modal-title {
+  margin-bottom: 6px;
+}
+.prompt-modal .modal-sub {
+  margin-top: 0;
+  margin-bottom: 4px;
+  min-height: 0;
+}
+.prompt-input {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+}
+.prompt-input[aria-invalid='true'] {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(255, 92, 92, 0.2);
+}
+/* Sized for two lines of the smallest copy this ever shows, at the narrowest supported width
+   (320px), so a wrapping error still does not push the actions around once it is on screen. */
+.prompt-error {
+  margin-top: 10px;
+  min-height: 34px;
+  font: 600 12px/1.4 var(--fa);
+  color: var(--red);
+}
+/* ...but an empty region claims no space at all: with no error the field sits directly above the
+   action row, instead of leaving a gap that reads as a layout bug. */
+.prompt-error:empty {
+  margin-top: 0;
+  min-height: 0;
+}
+.prompt-footnote {
+  margin-top: 2px;
+  font: 500 11px/1.5 var(--fa);
+  color: rgba(255, 255, 255, 0.4);
+}
+.prompt-modal .modal-actions {
+  margin-top: 14px;
+}
 .modal-video {
   padding: 12px;
 }
@@ -1954,11 +2012,6 @@ button:focus:not(:focus-visible) {
   font: 500 12px/1.5 var(--fa);
   color: rgba(255, 255, 255, 0.6);
 }
-.lead-form {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
 .lead-input {
   flex: 1;
   min-width: 0;
@@ -1981,10 +2034,6 @@ button:focus:not(:focus-visible) {
   border-color: var(--green);
   box-shadow: 0 0 0 3px rgba(53, 227, 111, 0.2);
 }
-.lead-input-error {
-  border-color: var(--red);
-  box-shadow: 0 0 0 3px rgba(255, 92, 92, 0.2);
-}
 .lead-input:-webkit-autofill {
   -webkit-text-fill-color: #fff;
   -webkit-box-shadow: 0 0 0 1000px #101812 inset;
@@ -2004,6 +2053,15 @@ button:focus:not(:focus-visible) {
 }
 .lead-btn:active {
   transform: scale(0.96);
+}
+/* The lead card's own CTA (unify-email-modal ticket): the card no longer holds an input, just a
+   title/subtitle and this one button, which opens the shared prompt modal. Full width so it reads
+   as the card's single action, not a small pill floating in a row. */
+.lead-btn-block {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  text-align: center;
 }
 .lead-foot {
   margin-top: 6px;
@@ -2088,12 +2146,9 @@ button:focus:not(:focus-visible) {
   margin-top: 1px;
   font-size: 11px;
 }
-.lead-result .lead-form {
-  margin-top: 6px;
-}
-.lead-result .lead-input,
-.lead-result .lead-btn {
+.lead-result .lead-btn-block {
   height: 38px;
+  margin-top: 8px;
 }
 .lead-foot {
   display: flex;
@@ -2118,46 +2173,6 @@ button:focus:not(:focus-visible) {
 
 .signup {
   padding: 18px;
-}
-.signup-inline {
-  margin-top: 10px;
-  padding: 10px 0 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-.signup-form {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.signup-head {
-  margin-bottom: 4px;
-}
-.signup-title {
-  font: 800 18px var(--fa);
-}
-.signup-inline .signup-title {
-  font-size: 14px;
-}
-.signup-sub {
-  margin-top: 3px;
-  font: 500 12px/1.5 var(--fa);
-  color: rgba(255, 255, 255, 0.6);
-}
-.signup-form .lead-input {
-  height: 44px;
-  width: 100%;
-}
-.signup-foot {
-  margin-top: 0;
-}
-.signup-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
-}
-.signup-actions .btn-primary {
-  flex: 1;
 }
 .signup-done {
   display: flex;
@@ -2311,9 +2326,9 @@ button:focus:not(:focus-visible) {
   max-width: 320px;
 }
 .claim-form .lead-input {
-  /* .claim-form is a vertical flex column, unlike .lead-form's row; the base .lead-input's
-     "flex: 1" (flex-basis 0) is a horizontal-layout rule that collapses the input's height to
-     its min-content in a column, so it must be reset here to keep the full fixed height. */
+  /* .claim-form is a vertical flex column; the base .lead-input's "flex: 1" (flex-basis 0) is a
+     horizontal-layout rule that collapses the input's height to its min-content in a column, so
+     it must be reset here to keep the full fixed height. */
   flex: none;
   width: 100%;
 }
@@ -3062,6 +3077,11 @@ button:focus:not(:focus-visible) {
     padding: 0 18px;
     border-radius: 16px;
   }
+  .app:not(.app-kiosk) .lb-row-guest {
+    height: auto;
+    min-height: var(--row);
+    padding: 14px 18px;
+  }
   .app:not(.app-kiosk) .lb-rank {
     width: 30px;
     font-size: 18px;
@@ -3199,15 +3219,13 @@ button:focus:not(:focus-visible) {
     font-size: 14px;
   }
 
-  /* ---- signup form ---- */
-  .app:not(.app-kiosk) .signup-title {
-    font-size: 22px;
+  /* ---- unified prompt modal (email/OTP steps, lead capture, signup) ---- */
+  .prompt-error {
+    min-height: 20px;
+    font-size: 14px;
   }
-  .app:not(.app-kiosk) .signup-sub {
-    font-size: 15px;
-  }
-  .app:not(.app-kiosk) .signup-form .lead-input {
-    height: 52px;
+  .prompt-footnote {
+    font-size: 13px;
   }
 
   /* ---- bottom nav ---- */
