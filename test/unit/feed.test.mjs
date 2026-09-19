@@ -1,10 +1,14 @@
-// Unit tests for server/feed.js. No network: the feed is driven entirely
-// through the _injectTick / _setConnected test hooks with an injected clock.
-// start() is never called, so no upstream socket is ever opened.
+// Unit tests for server/feed.js. No network: most of this file drives the feed entirely
+// through the _injectTick / _setConnected test hooks with an injected clock and never calls
+// start(), so no upstream socket is ever opened. The Finnhub key rotation section near the end
+// is the exception: it calls start() against a fake WebSocket (_WebSocket, an EventEmitter
+// standing in for `ws`) to exercise connect()'s real handshake-rejection handling - still no
+// real socket, no real Finnhub, ever.
 // Run: node --test test/unit/feed.test.mjs
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 
 import { createFeed } from '../../server/feed.js';
 
@@ -29,6 +33,7 @@ function seededRandom(seed = 1) {
 
 function harness({
   finnhubToken = 'test-token',
+  finnhubTokens = [],
   metaapiToken = null,
   metaapiAccountId = null,
   metaapiSymbol,
@@ -40,6 +45,7 @@ function harness({
   const ticks = [];
   const feed = createFeed({
     finnhubToken,
+    finnhubTokens,
     metaapiToken,
     metaapiAccountId,
     metaapiSymbol,
@@ -378,7 +384,7 @@ test('mt5BridgeWs alone produces an mt5 source at priority 0', () => {
   const h = harness({ mt5BridgeWs: 'ws://mt5:8765' });
   assert.deepEqual(h.feed.status(), {
     mt5: { connected: false, lastTickAt: null, raw: null },
-    finnhub: { connected: false, lastTickAt: null, raw: null },
+    finnhub: { connected: false, lastTickAt: null, raw: null, keyIndex: 0, keyCount: 1 },
     okx: { connected: false, lastTickAt: null, raw: null },
     binance: { connected: false, lastTickAt: null, raw: null },
   });
@@ -517,4 +523,163 @@ test('FEED_RELAY_WS replaces the direct Finnhub socket with the relay at the sam
 test('FEED_RELAY_WS wins over a Finnhub token: one socket per key, held by the relay', () => {
   const h = harness({ finnhubToken: 'test-token', feedRelayWs: 'ws://relay.test/ws' });
   assert.deepEqual(Object.keys(h.feed.status()), ['finnhub', 'okx', 'binance'], 'exactly one finnhub tier');
+});
+
+// --- Finnhub key rotation (connect()'s ws.on('error', ...), server/feed.js) -----------------
+// A fake WebSocket (a plain EventEmitter) stands in for `ws`, so these drive the exact events
+// `ws` itself emits (verified against node_modules/ws/lib/websocket.js: a rejected handshake is
+// an 'error' with message "Unexpected server response: <code>", nothing else) without opening
+// any socket, real or fake-network. feed.start() is called - the only tests in this file that do.
+
+class FakeWebSocket extends EventEmitter {
+  constructor(url) {
+    super();
+    this.url = url;
+    FakeWebSocket.instances.push(this);
+  }
+  send() {}
+  close() {}
+}
+
+function finnhubSockets() {
+  return FakeWebSocket.instances.filter((s) => s.url.startsWith('wss://ws.finnhub.io'));
+}
+
+function rotationHarness({ finnhubTokens, finnhubToken } = {}) {
+  FakeWebSocket.instances = [];
+  const ticks = [];
+  const feed = createFeed({
+    finnhubToken,
+    finnhubTokens,
+    onTick: (t) => ticks.push(t),
+    _WebSocket: FakeWebSocket,
+  });
+  return { feed, ticks };
+}
+
+test('a 429 (handshake rejection) advances to the next key, then reconnects on it after the existing backoff', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const h = rotationHarness({ finnhubTokens: ['key-a', 'key-b'] });
+  h.feed.start();
+
+  assert.equal(finnhubSockets().length, 1);
+  assert.equal(finnhubSockets()[0].url, 'wss://ws.finnhub.io?token=key-a');
+  assert.deepEqual(h.feed.status().finnhub, {
+    connected: false,
+    lastTickAt: null,
+    raw: null,
+    keyIndex: 0,
+    keyCount: 2,
+  });
+
+  finnhubSockets()[0].emit('error', new Error('Unexpected server response: 429'));
+  assert.equal(
+    h.feed.status().finnhub.keyIndex,
+    1,
+    'advances past the refused key immediately, before the socket even closes',
+  );
+  finnhubSockets()[0].emit('close');
+
+  // No key was ever opened, so this is the first-ever failure: attempt 1, delay 1000 * 2**1 = 2000ms
+  // (server/feed.js retry()) - the same schedule any other source's first failure gets.
+  t.mock.timers.tick(1999);
+  assert.equal(finnhubSockets().length, 1, 'does not reconnect before the backoff elapses');
+  t.mock.timers.tick(1);
+  assert.equal(finnhubSockets().length, 2, 'reconnects once the backoff elapses');
+  assert.equal(finnhubSockets()[1].url, 'wss://ws.finnhub.io?token=key-b', 'reconnects using the next key');
+
+  h.feed.stop();
+});
+
+test('an unrelated socket error does not advance the key: same key, same backoff, retried in place', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const h = rotationHarness({ finnhubTokens: ['key-a', 'key-b'] });
+  h.feed.start();
+
+  finnhubSockets()[0].emit('error', new Error('connect ECONNREFUSED 1.2.3.4:443'));
+  assert.equal(h.feed.status().finnhub.keyIndex, 0, 'a network error is not a key refusal');
+  finnhubSockets()[0].emit('close');
+
+  t.mock.timers.tick(2000);
+  assert.equal(finnhubSockets().length, 2);
+  assert.equal(finnhubSockets()[1].url, 'wss://ws.finnhub.io?token=key-a', 'retries the same key, not the next one');
+
+  h.feed.stop();
+});
+
+test('the key list cycles: after every key is refused it comes back round instead of giving up', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const h = rotationHarness({ finnhubTokens: ['key-a', 'key-b', 'key-c'] });
+  h.feed.start();
+
+  let delay = 2000; // first failure is attempt 1: 1000 * 2**1
+  for (let i = 0; i < 3; i++) {
+    const sock = finnhubSockets().at(-1);
+    sock.emit('error', new Error('Unexpected server response: 429'));
+    sock.emit('close');
+    t.mock.timers.tick(delay);
+    delay *= 2; // retry()'s backoff doubles each attempt (capped at 30 s, never reached here)
+  }
+
+  assert.equal(finnhubSockets().length, 4, 'one initial connection plus three reconnects');
+  assert.deepEqual(
+    finnhubSockets().map((s) => s.url),
+    [
+      'wss://ws.finnhub.io?token=key-a',
+      'wss://ws.finnhub.io?token=key-b',
+      'wss://ws.finnhub.io?token=key-c',
+      'wss://ws.finnhub.io?token=key-a', // wrapped
+    ],
+  );
+  assert.equal(h.feed.status().finnhub.keyIndex, 0);
+
+  h.feed.stop();
+});
+
+test('all keys refused: finnhub never ticks, but okx (lower priority) still serves a price', () => {
+  // Pure ingest-pipeline check, no sockets needed: a finnhub source that is configured but has
+  // never ticked (exactly what "every key refused" looks like from ingest()'s perspective, since
+  // a refused handshake never reaches onTick) is indistinguishable from one that is still
+  // connecting - pickActive() only ever looks at lastTickAt, so the fallback picks up exactly as
+  // it does today. This is the same degrade path as an unconfigured Finnhub (see the "no finnhub
+  // token" test above), reached here through the rotation feature's failure mode instead.
+  const h = harness({ finnhubToken: null, finnhubTokens: ['key-a', 'key-b', 'key-c'] });
+  assert.deepEqual(Object.keys(h.feed.status()), ['finnhub', 'okx', 'binance']);
+  h.inject('okx', 4349.0, 0);
+  assert.equal(h.ticks.length, 1);
+  assert.equal(h.feed.latest().source, 'okx', 'the game keeps running on the fallback');
+  assert.equal(h.feed.status().finnhub.connected, false);
+  assert.equal(
+    h.feed.status().finnhub.lastTickAt,
+    null,
+    'finnhub never ticked - exactly what "every key refused" looks like',
+  );
+});
+
+test('no key material reaches status() or a log line, only the key index and count', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const warnCalls = [];
+  t.mock.method(console, 'warn', (...args) => {
+    warnCalls.push(args.map(String).join(' '));
+  });
+
+  const h = rotationHarness({ finnhubTokens: ['top-secret-key-a', 'top-secret-key-b'] });
+  h.feed.start();
+
+  finnhubSockets()[0].emit('error', new Error('Unexpected server response: 429'));
+  finnhubSockets()[0].emit('close');
+  t.mock.timers.tick(2000);
+  finnhubSockets().at(-1).emit('error', new Error('Unexpected server response: 401'));
+  finnhubSockets().at(-1).emit('close');
+  t.mock.timers.tick(4000);
+
+  const statusJson = JSON.stringify(h.feed.status());
+  assert.ok(!statusJson.includes('top-secret-key'), 'status() carries no key material');
+
+  const logged = warnCalls.join('\n');
+  assert.ok(!logged.includes('top-secret-key'), 'no log line carries a key, not even truncated');
+  assert.ok(logged.includes('key 0 refused'), 'the log still names which index was refused');
+  assert.ok(logged.includes('key 1 refused'), 'and the second refusal too');
+
+  h.feed.stop();
 });
