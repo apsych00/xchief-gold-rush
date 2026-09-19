@@ -120,6 +120,8 @@ function readBody(req) {
 export function createFakeBoxApi() {
   let server = null;
   let url = null;
+  let calls = 0; // total requests this fake has answered (ticket K3 second-try grant tests: the
+  // second-or-later check must never call out at all, and this is what proves it)
   const byUsername = new Map(); // normalized username -> account
   const byId = new Map(); // id -> account
   const pending = new Map(); // normalized handle -> appearAfterReads (get_followers read count)
@@ -144,7 +146,14 @@ export function createFakeBoxApi() {
     byId.clear();
     pending.clear();
     readCounts.clear();
+    calls = 0;
     for (const account of DEFAULT_ACCOUNTS) addAccount(account);
+  }
+
+  // Total requests answered since the last reset() (health checks excluded). Ticket K3: the
+  // second-or-later instagram_check must grant without calling BoxAPI at all.
+  function callCount() {
+    return calls;
   }
 
   // Replace an account's ordered (newest-first) follower list. Used by the retry test to isolate a
@@ -178,6 +187,7 @@ export function createFakeBoxApi() {
           sendJson(res, 200, { ok: true });
           return;
         }
+        calls += 1;
 
         // Every data endpoint is a POST that must carry the Bearer token (never inspected for a
         // value here - only that the adapter sent one).
@@ -293,6 +303,7 @@ export function createFakeBoxApi() {
     setFollowers,
     setPendingFollower,
     reset,
+    callCount,
     get url() {
       return url;
     },

@@ -86,6 +86,12 @@ function send(ws, frame) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// instagram_check also sits under the per-socket 1/s query budget (limits.checkQueryRate,
+// ticket S2/K3 decision 3), unrelated to and unchanged by the per-player BoxAPI window this file
+// tests. Every second-check case here waits past it first so what it observes is the BoxAPI
+// window's own behaviour, not this unrelated per-socket budget.
+const QUERY_BUDGET_CLEAR_MS = 1100;
+
 async function authAnonymous(ws) {
   send(ws, { type: 'auth' });
   return nextFrame(ws, (f) => f.type === 'welcome');
@@ -108,9 +114,11 @@ before(async () => {
   process.env.INSTAGRAM_HANDLE = 'xchief.global';
   // Run the freshness-retry loop instantly, and shrink the per-player check window so the
   // second-try grant test can make two genuine checks without a 20 s wait (both env vars are read
-  // at call time by server/instagram.js and server/index.js).
+  // at call time by server/instagram.js and server/index.js). The grant delay (ticket K3 second
+  // try) is zeroed too so the suite stays fast.
   process.env.INSTAGRAM_RETRY_DELAY_MS = '0';
   process.env.INSTAGRAM_CHECK_INTERVAL_MS = '50';
+  process.env.INSTAGRAM_GRANT_DELAY_MS = '0';
   instagram.resetCache();
 
   app = createApp({ finnhubToken: null });
@@ -123,6 +131,7 @@ beforeEach(async () => {
   // The kept database survives across test runs, so clear Instagram state before every test.
   await pool.query("delete from public.task_claims where task_id = 'instagram'");
   await pool.query('delete from public.instagram_accounts');
+  fake.reset(); // also zeroes callCount() so "no BoxAPI call" assertions start from a clean slate
   instagram.resetCache();
 });
 
@@ -135,6 +144,7 @@ after(async () => {
   delete process.env.INSTAGRAM_HANDLE;
   delete process.env.INSTAGRAM_RETRY_DELAY_MS;
   delete process.env.INSTAGRAM_CHECK_INTERVAL_MS;
+  delete process.env.INSTAGRAM_GRANT_DELAY_MS;
 });
 
 test('happy path: a follower is verified and the reward is released once', async () => {
@@ -155,10 +165,11 @@ test('happy path: a follower is verified and the reward is released once', async
   assert.equal(claims.length, 1, 'a task_claims row was created');
 
   const { rows: accounts } = await pool.query(
-    'select * from public.instagram_accounts where player_id = $1 and verified_at is not null',
+    'select check_attempts from public.instagram_accounts where player_id = $1 and verified_at is not null',
     [welcome.me.id],
   );
   assert.equal(accounts.length, 1, 'the instagram_accounts row is marked verified');
+  assert.equal(accounts[0].check_attempts, 0, 'a first-check confirm grants without the attempt-based path');
 
   send(ws, { type: 'tasks' });
   const tasksFrame = await nextFrame(ws, (f) => f.type === 'tasks');
@@ -167,7 +178,7 @@ test('happy path: a follower is verified and the reward is released once', async
   ws.close();
 });
 
-test('a public non-follower is refused with not_following and gets no reward', async () => {
+test('a public non-follower is refused with not_following, and the attempt is recorded', async () => {
   const { ws, welcome } = await startedPlayer('nonfollower');
   send(ws, { type: 'instagram_check' });
   const result = await nextFrame(ws, (f) => f.type === 'instagram_result');
@@ -179,6 +190,13 @@ test('a public non-follower is refused with not_following and gets no reward', a
     [welcome.me.id],
   );
   assert.equal(claims.length, 0, 'no reward for a non-follower');
+
+  const { rows: accounts } = await pool.query(
+    'select check_attempts, verified_at from public.instagram_accounts where player_id = $1',
+    [welcome.me.id],
+  );
+  assert.equal(accounts[0].check_attempts, 1, 'the first genuine check is recorded as one attempt');
+  assert.equal(accounts[0].verified_at, null, 'not verified yet - only the second check grants');
   ws.close();
 });
 
@@ -267,9 +285,9 @@ test('a private player who is in our followers is verified (our-followers path, 
 });
 
 test('second-try grant: a first failed check is refused, the second grants the reward anyway', async () => {
-  // Owner policy (ticket K3): a genuine follower can still fail our read (freshness lag, privacy,
-  // paging). We count genuine attempts on the player's row and grant on the second, server-side.
-  // Here nonfollower never confirms, which is the strictest case the policy is meant to forgive.
+  // Owner policy (ticket K3, second try): "if it errored out or did not find it ... on the check
+  // again request, we wait 3 secs (fake) and grant them the reward, no more API calling to
+  // verify." Here nonfollower never confirms, which is the strictest case the policy forgives.
   const { ws, welcome } = await startedPlayer('nonfollower');
 
   send(ws, { type: 'instagram_check' });
@@ -283,14 +301,15 @@ test('second-try grant: a first failed check is refused, the second grants the r
   );
   assert.equal(claims.rows.length, 0, 'no reward on the first check');
 
-  // Wait past the 1/s query budget and the (shrunk) per-player check window so the next check is a
-  // genuine second BoxAPI read, not a rate-limited no-op.
-  await sleep(1100);
+  const callsAfterFirst = fake.callCount();
+  assert.ok(callsAfterFirst > 0, 'the first check made at least one genuine BoxAPI call');
 
+  await sleep(QUERY_BUDGET_CLEAR_MS); // clear the unrelated per-socket 1/s query budget, not the BoxAPI window
   send(ws, { type: 'instagram_check' });
   const second = await nextFrame(ws, (f) => f.type === 'instagram_result');
-  assert.equal(second.ok, true, 'the second genuine check grants the reward');
+  assert.equal(second.ok, true, 'the second check grants the reward');
   assert.equal(second.reward, 300);
+  assert.equal(fake.callCount(), callsAfterFirst, 'the second check made no BoxAPI call at all');
 
   claims = await pool.query(
     "select * from public.task_claims where player_id = $1 and task_id = 'instagram'",
@@ -302,65 +321,165 @@ test('second-try grant: a first failed check is refused, the second grants the r
     'select verified_at, check_attempts from public.instagram_accounts where player_id = $1',
     [welcome.me.id],
   );
-  assert.equal(accounts[0].check_attempts, 2, 'both genuine attempts were counted on the row');
+  assert.equal(accounts[0].check_attempts, 1, 'only the one genuine BoxAPI read ever counted');
   assert.ok(accounts[0].verified_at, 'the row is marked verified by the grant');
   ws.close();
 });
 
-test('second-try grant needs two GENUINE attempts: rate-limited retries never count', async () => {
-  const { ws, welcome } = await startedPlayer('nonfollower');
+test('the second-try grant is never held by the per-player BoxAPI check window', async () => {
+  const { ws } = await startedPlayer('nonfollower');
 
   send(ws, { type: 'instagram_check' });
   const first = await nextFrame(ws, (f) => f.type === 'instagram_result');
   assert.equal(first.ok, false);
   assert.equal(first.reason, 'not_following');
 
-  // A second check inside the per-player window is a rate_limited no-op - it must not count as a
-  // genuine attempt, so it neither grants nor increments check_attempts.
-  send(ws, { type: 'instagram_check' });
-  const rateLimited = await nextFrame(ws, (f) => f.type === 'error' || f.type === 'instagram_result');
-  assert.equal(rateLimited.type, 'error');
-  assert.equal(rateLimited.code, 'rate_limited');
-
-  const claims = await pool.query(
-    "select * from public.task_claims where player_id = $1 and task_id = 'instagram'",
-    [welcome.me.id],
-  );
-  assert.equal(claims.rows.length, 0, 'a rate-limited retry never grants');
-
-  const { rows: accounts } = await pool.query(
-    'select check_attempts from public.instagram_accounts where player_id = $1',
-    [welcome.me.id],
-  );
-  assert.equal(accounts[0].check_attempts, 1, 'only the one genuine read counted');
+  // Widen the BoxAPI window back to its real default for this one test, then check again with no
+  // wait at all - a second-or-later check must never be refused rate_limited by that window (it
+  // never calls BoxAPI, so there is nothing left for the window to protect).
+  const savedWindow = process.env.INSTAGRAM_CHECK_INTERVAL_MS;
+  process.env.INSTAGRAM_CHECK_INTERVAL_MS = '20000';
+  try {
+    // Only the unrelated per-socket 1/s query budget needs clearing here - at 20 s the BoxAPI
+    // window itself is nowhere close to elapsed, which is the whole point of this case.
+    await sleep(QUERY_BUDGET_CLEAR_MS);
+    send(ws, { type: 'instagram_check' });
+    const second = await nextFrame(ws, (f) => f.type === 'error' || f.type === 'instagram_result');
+    assert.equal(second.type, 'instagram_result', 'not refused rate_limited by the BoxAPI window');
+    assert.equal(second.ok, true, 'the second check still grants immediately');
+    assert.equal(second.reward, 300);
+  } finally {
+    process.env.INSTAGRAM_CHECK_INTERVAL_MS = savedWindow;
+  }
   ws.close();
 });
 
-test('not configured: instagram_start says not_configured and no reward is ever released', async () => {
+test('an upstream network error on the first check still records the attempt, so the second check grants', async () => {
+  const { ws, welcome } = await startedPlayer('nonfollower');
+
+  // Point the adapter at an unreachable port for this one read so verifyFollow fails transport-
+  // side (server/instagram.js: a fetch failure is 'network_error'), without touching the token the
+  // start step already used to create the account row.
+  const savedBase = process.env.BOXAPI_BASE;
+  process.env.BOXAPI_BASE = 'http://127.0.0.1:1/';
+  instagram.resetCache();
+  try {
+    send(ws, { type: 'instagram_check' });
+    const first = await nextFrame(ws, (f) => f.type === 'instagram_result');
+    assert.equal(first.ok, false);
+    assert.equal(first.reason, 'network_error');
+  } finally {
+    process.env.BOXAPI_BASE = savedBase;
+    instagram.resetCache();
+  }
+
+  const { rows: midway } = await pool.query('select check_attempts from public.instagram_accounts where player_id = $1', [
+    welcome.me.id,
+  ]);
+  assert.equal(midway[0].check_attempts, 1, 'an upstream error still counts as one genuine attempt');
+
+  await sleep(QUERY_BUDGET_CLEAR_MS);
+  send(ws, { type: 'instagram_check' });
+  const second = await nextFrame(ws, (f) => f.type === 'instagram_result');
+  assert.equal(second.ok, true, 'the second check grants even though the first never reached BoxAPI cleanly');
+  assert.equal(second.reward, 300);
+  ws.close();
+});
+
+test('not_configured on the first check behaves like any other upstream failure: attempt recorded, second check grants', async () => {
+  // The account has to exist first, which needs the token present at instagram_start (K3 decision:
+  // instagram_start's own not_configured "coming soon" gate is unrelated and untouched here).
+  const { ws, welcome } = await startedPlayer('follower');
+
   const saved = process.env.BOXAPI_TOKEN;
   delete process.env.BOXAPI_TOKEN;
+  instagram.resetCache();
   try {
-    const ws = connect();
-    await whenOpen(ws);
-    const welcome = await authAnonymous(ws);
-
-    send(ws, { type: 'instagram_start', handle: 'follower' });
-    const started = await nextFrame(ws, (f) => f.type === 'instagram_started');
-    assert.equal(started.status, 'not_configured', 'start reports not_configured');
-
     send(ws, { type: 'instagram_check' });
-    const result = await nextFrame(ws, (f) => f.type === 'instagram_result');
-    assert.equal(result.ok, false);
-    assert.equal(result.reason, 'not_configured');
+    const first = await nextFrame(ws, (f) => f.type === 'instagram_result');
+    assert.equal(first.ok, false);
+    assert.equal(first.reason, 'not_configured');
+
+    const { rows: midway } = await pool.query(
+      'select check_attempts from public.instagram_accounts where player_id = $1',
+      [welcome.me.id],
+    );
+    assert.equal(midway[0].check_attempts, 1, 'not_configured still counts as one genuine attempt');
+    assert.equal(fake.callCount(), 0, 'not_configured never called BoxAPI at all');
+
+    await sleep(QUERY_BUDGET_CLEAR_MS);
+    send(ws, { type: 'instagram_check' });
+    const second = await nextFrame(ws, (f) => f.type === 'instagram_result');
+    assert.equal(second.ok, true, 'the second check grants without ever needing BoxAPI configured');
+    assert.equal(second.reward, 300);
 
     const { rows: claims } = await pool.query(
       "select * from public.task_claims where player_id = $1 and task_id = 'instagram'",
       [welcome.me.id],
     );
-    assert.equal(claims.length, 0, 'no reward when not configured');
-    ws.close();
+    assert.equal(claims.length, 1, 'the reward was released once');
   } finally {
     process.env.BOXAPI_TOKEN = saved;
     instagram.resetCache();
   }
+  ws.close();
+});
+
+test('an auto/background check never bumps the attempt count and never takes the second-try grant', async () => {
+  const { ws, welcome } = await startedPlayer('nonfollower');
+
+  // A background check (tab focus, a rate-limit retry) may still take a first-attempt BoxAPI read,
+  // but it must never record it as a genuine attempt.
+  send(ws, { type: 'instagram_check', auto: true });
+  const autoFirst = await nextFrame(ws, (f) => f.type === 'instagram_result');
+  assert.equal(autoFirst.ok, false);
+
+  let { rows: accounts } = await pool.query(
+    'select check_attempts, verified_at from public.instagram_accounts where player_id = $1',
+    [welcome.me.id],
+  );
+  assert.equal(accounts[0].check_attempts, 0, 'an auto check never records an attempt');
+  assert.equal(accounts[0].verified_at, null);
+
+  // The player's own explicit tap is the first genuine attempt.
+  await sleep(QUERY_BUDGET_CLEAR_MS);
+  send(ws, { type: 'instagram_check' });
+  const explicitFirst = await nextFrame(ws, (f) => f.type === 'instagram_result');
+  assert.equal(explicitFirst.ok, false);
+  assert.equal(explicitFirst.reason, 'not_following');
+
+  ({ rows: accounts } = await pool.query(
+    'select check_attempts, verified_at from public.instagram_accounts where player_id = $1',
+    [welcome.me.id],
+  ));
+  assert.equal(accounts[0].check_attempts, 1, 'the explicit tap recorded the one genuine attempt');
+
+  // Now check_attempts is 1 (a real second-try grant is available), but a background check must
+  // still never take that path on its own - the reward always traces back to a real tap.
+  const callsBeforeAuto = fake.callCount();
+  await sleep(QUERY_BUDGET_CLEAR_MS);
+  send(ws, { type: 'instagram_check', auto: true });
+  const autoSecond = await nextFrame(ws, (f) => f.type === 'instagram_result');
+  assert.equal(autoSecond.ok, false, 'an auto check never takes the second-try grant');
+  assert.equal(fake.callCount(), callsBeforeAuto, 'an auto check past the first attempt makes no BoxAPI call either');
+
+  let claims = await pool.query(
+    "select * from public.task_claims where player_id = $1 and task_id = 'instagram'",
+    [welcome.me.id],
+  );
+  assert.equal(claims.rows.length, 0, 'the auto checks never granted the reward');
+
+  // The player's own second tap still grants.
+  await sleep(QUERY_BUDGET_CLEAR_MS);
+  send(ws, { type: 'instagram_check' });
+  const explicitSecond = await nextFrame(ws, (f) => f.type === 'instagram_result');
+  assert.equal(explicitSecond.ok, true, 'the explicit second tap grants');
+  assert.equal(explicitSecond.reward, 300);
+
+  claims = await pool.query(
+    "select * from public.task_claims where player_id = $1 and task_id = 'instagram'",
+    [welcome.me.id],
+  );
+  assert.equal(claims.rows.length, 1, 'the reward was released once, on the explicit second tap');
+  ws.close();
 });

@@ -35,4 +35,4 @@ export const getLeaderboard = (opts) => socket.getLeaderboard(opts);
 /** Instagram follow reward (ticket K3): step 1 stores the handle and returns the follow URLs;
  * step 2 asks the server to verify the follow through BoxAPI and release the reward itself. */
 export const instagramStart = (handle) => socket.instagramStart(handle);
-export const instagramCheck = () => socket.instagramCheck();
+export const instagramCheck = (auto) => socket.instagramCheck(auto);
