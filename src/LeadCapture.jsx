@@ -1,12 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useLang } from './i18n.js';
 import { readLead, submitLead } from './leads.js';
+import PromptModal from './PromptModal.jsx';
 
 export { readLead, submitLead } from './leads.js';
 
 /**
- * One-field email capture. Uses a real <form> with the standard email
- * attributes so browsers and password managers autofill it in one tap.
+ * One-field email capture, marketing lead only (no OTP, no server verification - just the
+ * address, kept locally and shipped to /api/lead). A small card with a title, a subtitle and one
+ * button; tapping the button opens the one shared email/OTP prompt (PromptModal, unify-email-
+ * modal ticket) instead of an inline input, so every "type your email" moment in the app - this
+ * one, the xChief signup, and the real OTP flow - is the same dialog.
  *
  * variant: 'card' (default) | 'slim' | 'inline' | 'result'
  * onDone / onDismiss: optional callbacks for the prompt flows.
@@ -23,14 +27,7 @@ export default function LeadCapture({
 }) {
   const { t, lang } = useLang();
   const [done, setDone] = useState(() => !!readLead());
-  const [error, setError] = useState('');
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    if (!error) return undefined;
-    const id = setTimeout(() => setError(''), 2500);
-    return () => clearTimeout(id);
-  }, [error]);
+  const [open, setOpen] = useState(false);
 
   if (done) {
     return (
@@ -40,63 +37,45 @@ export default function LeadCapture({
     );
   }
 
-  const onSubmit = (e) => {
-    e.preventDefault();
-    const input = inputRef.current;
-    const email = (input?.value || '').trim();
-    if (!input || !input.checkValidity() || !email.includes('@')) {
-      setError(t('lead.invalid'));
-      input?.focus();
-      return;
-    }
+  const submitEmail = (email) => {
     submitLead({ email, source, balance, lang, page: window.location.pathname });
     setDone(true);
+    setOpen(false);
     onDone?.();
   };
 
   return (
-    <section className={`lead lead-${variant}`} aria-labelledby={`lead-title-${source}`}>
-      <div id={`lead-title-${source}`} className="lead-title">
-        {title || t('lead.title')}
-      </div>
-      <div className="lead-sub">{subtitle || t('lead.sub')}</div>
-      <form className="lead-form" onSubmit={onSubmit} noValidate autoComplete="on">
-        <input
-          ref={inputRef}
-          className={error ? 'lead-input lead-input-error' : 'lead-input'}
-          type="email"
-          name="email"
-          id={`lead-email-${source}`}
-          autoComplete="email"
-          inputMode="email"
-          enterKeyHint="send"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          required
-          placeholder={t('lead.placeholder')}
-          aria-label={t('lead.placeholder')}
-          aria-invalid={!!error}
-          dir="ltr"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              e.currentTarget.form?.requestSubmit();
-            }
-          }}
-        />
-        <button type="submit" className="lead-btn">
+    <>
+      <section className={`lead lead-${variant}`} aria-labelledby={`lead-title-${source}`}>
+        <div id={`lead-title-${source}`} className="lead-title">
+          {title || t('lead.title')}
+        </div>
+        <div className="lead-sub">{subtitle || t('lead.sub')}</div>
+        <button type="button" className="lead-btn lead-btn-block" onClick={() => setOpen(true)}>
           {t('lead.cta')}
         </button>
-      </form>
-      <div className="lead-foot" aria-live="polite">
-        {error ? <span className="lead-error">{error}</span> : t('lead.privacy')}
-        {onDismiss && (
-          <button type="button" className="lead-skip" onClick={onDismiss}>
-            {dismissLabel || t('lead.skip')}
-          </button>
-        )}
-      </div>
-    </section>
+        <div className="lead-foot">
+          <span>{t('lead.privacy')}</span>
+          {onDismiss && (
+            <button type="button" className="lead-skip" onClick={onDismiss}>
+              {dismissLabel || t('lead.skip')}
+            </button>
+          )}
+        </div>
+      </section>
+      {open && (
+        <PromptModal
+          resetKey={source}
+          title={title || t('lead.title')}
+          subtitle={subtitle || t('lead.sub')}
+          fieldType="email"
+          placeholder={t('lead.placeholder')}
+          submitLabel={t('lead.cta')}
+          onSubmit={submitEmail}
+          onCancel={() => setOpen(false)}
+          dialogLabel={title || t('lead.title')}
+        />
+      )}
+    </>
   );
 }
