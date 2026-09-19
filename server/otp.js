@@ -46,31 +46,58 @@ export async function send(email, code) {
   }
 }
 
+// The gift card's own copy ("Valid for 30 days from today") - claim_prize (db/schema.sql)
+// stamps claimed_at but nothing tracks a separate redemption deadline in Postgres, so "today"
+// is the moment this send runs, right after the claim committed.
+const CLAIM_CODE_VALID_MS = 30 * 24 * 60 * 60 * 1000;
+
+function formatExpiry(date) {
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+}
+
 /**
  * The $100 bonus code, once a /claim/<token> visitor's email has actually claimed it (ticket
- * C9, docs/tickets/c9-qr-claim.md decision 4): a plain-text body, not the OTP's merge-field
- * template - there is no template built for this in Elastic. Without ELASTIC_API_KEY (dev) the
- * code is just logged, same shape as send()'s own dev fallback; the caller (server/index.js)
- * already logs and swallows any failure here itself - a mail failure never undoes a claim that
- * already committed in Postgres.
+ * C9, docs/tickets/c9-qr-claim.md decision 4). Without ELASTIC_API_KEY (dev) the code is just
+ * logged, same shape as send()'s own dev fallback; the caller (server/index.js) already logs
+ * and swallows any failure here itself - a mail failure never undoes a claim that already
+ * committed in Postgres.
+ *
+ * With ELASTIC_CLAIM_TEMPLATE_ID set, this sends through that Elastic Mail template (the
+ * decoded "xChief Gold Rush Gift Email.html", docs/email-gift-card-template.md) with
+ * merge_code/merge_expires_at/merge_claim_url filling its {code}/{expires_at}/{claim_url}
+ * placeholders - the owner only has to hand over the id once the template exists there. Until
+ * then this falls back to the original plain-text body, so dev keeps working unchanged.
  */
-export async function sendClaimCode(email, code) {
+export async function sendClaimCode(email, code, { claimUrl } = {}) {
   const apiKey = process.env.ELASTIC_API_KEY;
-  const body = `Congratulations! Your xChief $100 bonus code is: ${code}\n\nScreenshot this email or the gift card on screen to redeem it at the xChief booth.`;
   if (!apiKey) {
     console.log(`dev claim code captured for ${email}: ${code}`);
     return;
   }
 
+  const templateId = process.env.ELASTIC_CLAIM_TEMPLATE_ID;
   const form = new URLSearchParams({
     apikey: apiKey,
     to: email,
     from: process.env.OTP_SENDER || '',
     fromName: 'xChief Gold Rush',
-    subject: 'Your xChief $100 bonus code',
-    bodyText: body,
     isTransactional: 'true',
   });
+
+  if (templateId) {
+    const expiresAt = formatExpiry(new Date(Date.now() + CLAIM_CODE_VALID_MS));
+    form.set('template', templateId);
+    form.set('subject', 'Your xChief $100 gift card code');
+    form.set('merge_code', code);
+    form.set('merge_expires_at', expiresAt);
+    form.set('merge_claim_url', claimUrl || '');
+  } else {
+    form.set('subject', 'Your xChief $100 bonus code');
+    form.set(
+      'bodyText',
+      `Congratulations! Your xChief $100 bonus code is: ${code}\n\nScreenshot this email or the gift card on screen to redeem it at the xChief booth.`,
+    );
+  }
 
   const res = await fetch(ELASTIC_SEND_URL, {
     method: 'POST',
