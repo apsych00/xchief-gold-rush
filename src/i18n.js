@@ -178,6 +178,10 @@ const dict = {
       download: 'Download image',
       joinLabel: 'Play the challenge',
       close: 'Close',
+      // Share your record mission (src/ShareModal.jsx `mission` mode): shown only when this modal
+      // was opened from the Tasks row, never on a standalone profile share.
+      missionHint: 'Press Share to earn +{n} coins',
+      missionCountdown: 'Crediting… {n}',
       // Toasts
       failed: 'Could not share. Try again',
       saved: 'Image saved',

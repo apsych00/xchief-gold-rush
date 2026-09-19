@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { COMBO_MAX, comboMult, LEVELS, levelFor, nextLevel } from './config.js';
 import { num, useLang } from './i18n.js';
 import { readLead, readSignup } from './leads.js';
@@ -60,7 +60,7 @@ function ProgressRing({ pct, size = 84, stroke = 7, children }) {
   );
 }
 
-export default function Profile({ profile, actions, onToast }) {
+export default function Profile({ profile, actions, onToast, shareMission }) {
   const { t, lang } = useLang();
   const signup = readSignup();
   const lead = readLead();
@@ -72,7 +72,21 @@ export default function Profile({ profile, actions, onToast }) {
   const pct = next ? (profile.record - from) / (to - from) : 1;
   const winRate = profile.rounds ? Math.round((profile.wins / profile.rounds) * 100) : 0;
   const name = signup?.name || t('profile.guest');
-  const [shareOpen, setShareOpen] = useState(false);
+
+  // The "share your record" mission (Tasks.jsx's 'story' row -> App.jsx) lands here with
+  // shareMission.pending true and opens this same share modal automatically instead of granting
+  // on the tap that got us here. Snapshot it once at mount: App clears its own pending flag right
+  // after (so a later, unrelated visit to this screen never re-triggers it), but the modal needs
+  // a stable reward/onClaim pair for as long as it stays open on this visit.
+  const [missionSnapshot] = useState(() =>
+    shareMission?.pending ? { reward: shareMission.reward, onClaim: shareMission.onClaim } : null,
+  );
+  const [shareOpen, setShareOpen] = useState(!!missionSnapshot);
+  useEffect(() => {
+    if (missionSnapshot) shareMission.onConsumed?.();
+    // Runs once on mount only - shareMission is read from the closure captured above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <section className="pf">
@@ -197,6 +211,7 @@ export default function Profile({ profile, actions, onToast }) {
           profile={profile}
           onClose={() => setShareOpen(false)}
           onToast={(txt) => onToast?.(txt)}
+          mission={missionSnapshot}
         />
       )}
     </section>
