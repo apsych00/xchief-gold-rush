@@ -662,10 +662,9 @@ export function instagramStart(handle) {
 }
 
 /** Instagram follow reward, step 2 (ticket K3): asks the server to read BoxAPI and decide.
- * `auto` marks a background check (tab focus, a rate-limit retry) as opposed to the player's
- * explicit tap - the server never bumps the genuine-attempt count or takes the second-try grant
- * path for one of these. Resolves with {ok, reason?, reward?, me?} - the server released the
- * reward, never this call. */
-export function instagramCheck(auto = false) {
-  return request(['instagram_result'], { type: 'instagram_check', auto: Boolean(auto) }).then(payloadOf);
+ * The server treats every check the same way regardless of what triggered it on the client -
+ * there is no client-asserted "this one was automatic". Resolves with {ok, reason?, reward?, me?}
+ * - the server released the reward, never this call. */
+export function instagramCheck() {
+  return request(['instagram_result'], { type: 'instagram_check' }).then(payloadOf);
 }

@@ -50,14 +50,6 @@ const TOKEN_RENEW_AFTER_SECONDS = 7 * 24 * 60 * 60; // sliding renewal: reissue 
 
 const LEADERBOARD_DEBOUNCE_MS = 1000; // docs/layers.md C4: "debounced to at most once per second"
 
-// Ticket K3 decision 2: at most one Instagram follow check per 20 s per player, tracked in
-// memory - a BoxAPI read is not free and a player mashing "check" gains nothing by it. Read at
-// call time (not frozen at module load) so tests can shrink the window via env before a check.
-// Only gates a check that would actually call BoxAPI - the second-try grant path below never
-// calls out, so it is never held by this window.
-function instagramCheckIntervalMs() {
-  return Number(process.env.INSTAGRAM_CHECK_INTERVAL_MS) || 20000;
-}
 // Owner policy (ticket K3, second try): on the second or later genuine check the server no
 // longer calls BoxAPI at all - it waits this long (so "Checking..." does not look instant/fake)
 // and grants. Read at call time, like the other Instagram env knobs, so tests can zero it out.
@@ -334,7 +326,6 @@ export function createApp({
 } = {}) {
   const playerSockets = new Map(); // playerId -> ws
   const kioskSockets = new Map(); // kioskId -> ws
-  const instagramCheckAt = new Map(); // playerId -> last instagram_check timestamp (ticket K3)
   let statusCache = null; // { at, aggregates } - see STATUS_CACHE_MS
   // Assigned once, after `limits` and `alerts` exist below - declared here so
   // effectiveLeaderboardDebounceMs and handleAuth (defined ahead of that point) close over the
@@ -1143,11 +1134,13 @@ export function createApp({
             send(ws, { type: 'error', code: 'rate_limited', retry_ms: queryBudget.retryMs });
             break;
           }
-          // A background check (tab regaining focus, a rate-limit retry) as opposed to the
-          // player's explicit tap - threaded from src/Tasks.jsx's check(auto). An auto check may
-          // still take a first-attempt BoxAPI read below, but it never records the attempt and
-          // never takes the second-try grant path: the reward always traces back to a real tap.
-          const auto = frame.auto === true;
+          // Owner policy: every instagram_check - whether fired by the player's tap or by the
+          // client's background focus listener - is treated the same way by the server. There is
+          // no client-asserted "this one was automatic"; the
+          // server has no such concept any more. At most one BoxAPI read ever happens per
+          // player, on the check_attempts 0 -> 1 transition; any later check just waits out the
+          // grant delay and releases. This also removes the old per-player 20 s BoxAPI window:
+          // with at most one read per player ever, there is nothing left for it to protect.
           const account = await ledger.getInstagramAccount(id);
           if (!account) {
             // No handle stored: the player never ran instagram_start. Not an error - the row just
@@ -1165,20 +1158,11 @@ export function createApp({
           let grant = false;
 
           if ((account.check_attempts || 0) === 0) {
-            // First genuine check. not_configured never calls out, so it skips the BoxAPI window
-            // below entirely; every other outcome is a real read, gated by the per-player 20 s
-            // window (ticket K3 decision 2).
+            // First genuine check. not_configured never calls out; every other outcome is a real
+            // BoxAPI read.
             if (instagram.status() === 'not_configured') {
               verdict = { ok: false, reason: 'not_configured' };
             } else {
-              const last = instagramCheckAt.get(id) || 0;
-              const sinceLast = Date.now() - last;
-              const windowMs = instagramCheckIntervalMs();
-              if (sinceLast < windowMs) {
-                send(ws, { type: 'error', code: 'rate_limited', retry_ms: windowMs - sinceLast });
-                break;
-              }
-              instagramCheckAt.set(id, Date.now());
               verdict = await instagram.verifyFollow({ handle: account.handle });
               // Log the handle and the outcome, never the token (ticket K3 decision 2).
               console.log(
@@ -1187,18 +1171,17 @@ export function createApp({
             }
             if (verdict.ok) {
               grant = true;
-            } else if (!auto) {
+            } else {
               // Owner policy (ticket K3 - an intentional UX-over-strictness decision): any non-ok
               // first outcome - not_following, private, not_found, a transport or config error -
-              // counts as one genuine attempt and unlocks the second-try grant below. An auto
-              // check learns the same soft "not yet" without starting that clock.
+              // counts as one genuine attempt and unlocks the second-try grant below, no matter
+              // what triggered this check.
               await ledger.bumpInstagramAttempt(id);
             }
-          } else if (!auto) {
+          } else {
             // Second or later genuine attempt already on the row (owner policy): "no more API
             // calling to verify" - wait a beat so Checking... does not look instant/fake, then
-            // grant. The server still decides and releases through the normal path below; an
-            // auto check never reaches this branch, so the reward always traces back to a tap.
+            // grant. The server still decides and releases through the normal path below.
             console.log(`[instagram] second-try grant handle=${account.handle} player=${id} attempts=${account.check_attempts}`);
             await sleep(instagramGrantDelayMs());
             grant = true;
@@ -1419,7 +1402,6 @@ export function createApp({
     ws.on('close', () => {
       if (ws.kind === 'player' && playerSockets.get(ws.identity) === ws) {
         playerSockets.delete(ws.identity);
-        instagramCheckAt.delete(ws.identity); // ticket K3: forget the per-player check window
       }
       if (ws.kind === 'kiosk' && kioskSockets.get(ws.identity) === ws) kioskSockets.delete(ws.identity);
       limits.trackSocketClose(ws.clientIp);
