@@ -117,12 +117,13 @@ function send(ws, frame) {
   ws.send(JSON.stringify(frame));
 }
 
-/** Drives a kiosk from streak 4 to its 5th win over the real socket, returning the winning
- * round_settled frame - the one place claim_url/claim_expires_at actually get minted. */
-async function winFifthRound(secret) {
+/** Drives a kiosk from streak 2 to its 3rd win (the default kiosk_streak_target) over the real
+ * socket, returning the winning round_settled frame - the one place claim_url/claim_expires_at
+ * actually get minted. */
+async function winThirdRound(secret) {
   const kioskId = await createTestKiosk(`claim-${secret}`, secret);
   await pool.query(
-    "update public.kiosks set streak = 4, session_state = 'playing', session_coins = 1000, last_round_at = now() where id = $1",
+    "update public.kiosks set streak = 2, session_state = 'playing', session_coins = 1000, last_round_at = now() where id = $1",
     [kioskId],
   );
   const ws = connect();
@@ -143,8 +144,8 @@ async function winFifthRound(secret) {
   return { settled, session, kioskId };
 }
 
-test('a 5th win carries claim_url and claim_expires_at, and no coupon code anywhere in the frame', async () => {
-  const { settled, session } = await winFifthRound('claim-flow-secret-0000000001');
+test('a 3rd win carries claim_url and claim_expires_at, and no coupon code anywhere in the frame', async () => {
+  const { settled, session } = await winThirdRound('claim-flow-secret-0000000001');
   assert.equal(settled.state, 'won');
   assert.equal(settled.streak, 0, 'the win resets the streak');
   assert.ok(settled.claim_url, 'round_settled carries an absolute claim_url');
@@ -154,12 +155,12 @@ test('a 5th win carries claim_url and claim_expires_at, and no coupon code anywh
   assert.equal(settled.code, undefined);
 
   assert.equal(session.claim_url, settled.claim_url, "kiosk_session mirrors round_settled's own claim_url");
-  assert.equal(session.streak_target, 5, 'kiosk_session reports the default streak target');
+  assert.equal(session.streak_target, 3, 'kiosk_session reports the default streak target');
   assert.equal(session.coupon, undefined);
 });
 
 test('GET /api/claim/<token> answers ready, then claimed after a successful POST', async () => {
-  const { settled } = await winFifthRound('claim-flow-secret-0000000002');
+  const { settled } = await winThirdRound('claim-flow-secret-0000000002');
   const token = new URL(settled.claim_url).pathname.split('/').pop();
 
   const readyRes = await fetch(`http://localhost:${port}/api/claim/${token}`);
@@ -201,7 +202,7 @@ test('GET /api/claim/<unknown token> answers invalid, never a 500', async () => 
 });
 
 test('POST /api/claim/<token> with a bad email is refused before touching the database', async () => {
-  const { settled } = await winFifthRound('claim-flow-secret-0000000003');
+  const { settled } = await winThirdRound('claim-flow-secret-0000000003');
   const token = new URL(settled.claim_url).pathname.split('/').pop();
   const res = await fetch(`http://localhost:${port}/api/claim/${token}`, {
     method: 'POST',
@@ -217,7 +218,7 @@ test('POST /api/claim/<token> with a bad email is refused before touching the da
 });
 
 test('an expired claim link is refused, and the sweep releases its coupon back to available', async () => {
-  const { settled, kioskId } = await winFifthRound('claim-flow-secret-0000000004');
+  const { settled, kioskId } = await winThirdRound('claim-flow-secret-0000000004');
   const token = new URL(settled.claim_url).pathname.split('/').pop();
 
   await pool.query("update public.claim_links set expires_at = now() - interval '1 minute' where token = $1", [

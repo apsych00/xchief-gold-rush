@@ -972,7 +972,7 @@ begin
     v_delta := round(r.stake * v_mult)::int;
     v_coins := k.session_coins + v_delta;
     v_streak := k.streak + 1;
-    v_target := public.get_setting_int('kiosk_streak_target', 5);
+    v_target := public.get_setting_int('kiosk_streak_target', 3);
     if v_streak >= v_target then
       update public.coupons set status = 'reserved', claimed_by_kiosk = k.id
       where id = (

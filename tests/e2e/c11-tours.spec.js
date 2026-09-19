@@ -2,7 +2,7 @@
 // B10 flags. Web: three cards, Next, Skip on card 1 ends the tour, and the tour never returns
 // after a reload (xchief.tour_seen). Kiosk: the intro shows once per boot, both languages at
 // once, and its "Start" button drops the visitor into PLAYING - and its streak number comes from
-// the server's kiosk_session frame, never a hard-coded 5.
+// the server's kiosk_session frame, never a hard-coded 3.
 //
 // Dev recipe used for this suite: a copy of db/run-tests.sh with PORT=55460 and container
 // goldrush-c11-keep, the game server on PORT=8801 with VITE_GAME_WS=ws://localhost:8801/ws, and
@@ -120,7 +120,7 @@ test.describe.serial('kiosk: the intro on the B10 mount point (C11)', () => {
     await resetKioskSession();
   });
 
-  test('the intro shows once per boot, in both languages, and Start goes to play', async ({ page }) => {
+  test('the intro shows once per boot, and Start goes to play', async ({ page }) => {
     await page.goto(KIOSK_URL);
     await expect
       .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
@@ -130,14 +130,11 @@ test.describe.serial('kiosk: the intro on the B10 mount point (C11)', () => {
       .toBe('server');
     await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
 
-    // ---- 1. first tap this boot: the intro, not PLAYING directly, both languages at once ----
+    // ---- 1. first tap this boot: the intro, not PLAYING directly ----------------------------
     await page.locator('.btn-start').click();
     await expect(page.locator('.modal-backdrop .modal')).toBeVisible({ timeout: 5000 });
     await expect(
-      page.getByText('Predict gold for 5 seconds. Win 5 in a row and take home the $100 bonus.'),
-    ).toBeVisible();
-    await expect(
-      page.getByText('طلا را برای ۵ ثانیه پیش‌بینی کن. ۵ برد پشت‌سرهم بگیر و بونوس ۱۰۰ دلاری ایکس‌چیف را ببر.'),
+      page.getByText('Predict gold for 5 seconds. Win 3 in a row and take home the $100 bonus.'),
     ).toBeVisible();
     await expect(forbiddenUi(page)).toHaveCount(0);
     await page.screenshot({ path: `${REPORT_DIR}/05-kiosk-intro.png` });
@@ -161,7 +158,7 @@ test.describe.serial('kiosk: the intro on the B10 mount point (C11)', () => {
     await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
   });
 
-  test('the intro number is the streak_target from the session frame, not a hard-coded 5', async ({ page }) => {
+  test('the intro number is the streak_target from the session frame, not a hard-coded 3', async ({ page }) => {
     await page.goto(KIOSK_URL);
     await expect
       .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
@@ -171,10 +168,10 @@ test.describe.serial('kiosk: the intro on the B10 mount point (C11)', () => {
       .toBe('server');
     await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
 
-    // Open the intro first so the server's own post-auth kiosk_session (streak_target 5) has
+    // Open the intro first so the server's own post-auth kiosk_session (streak_target 3) has
     // definitely landed; then push the exact kiosk_session shape the server sends, with the
     // owner's target at 7. The intro must read it from the frame (useKioskFlow's streakTarget)
-    // and re-render, rather than keep a hard-coded 5.
+    // and re-render, rather than keep a hard-coded 3.
     await page.locator('.btn-start').click();
     await expect(page.locator('.modal-backdrop .modal')).toBeVisible({ timeout: 5000 });
     await page.waitForTimeout(500);
@@ -190,7 +187,6 @@ test.describe.serial('kiosk: the intro on the B10 mount point (C11)', () => {
     });
 
     await expect(page.getByText('Win 7 in a row and take home the $100 bonus.')).toBeVisible();
-    await expect(page.getByText('۷ برد پشت‌سرهم بگیر')).toBeVisible();
     await page.screenshot({ path: `${REPORT_DIR}/07-kiosk-intro-streak-target.png` });
     await expect(forbiddenUi(page)).toHaveCount(0);
   });

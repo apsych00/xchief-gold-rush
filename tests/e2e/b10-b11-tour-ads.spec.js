@@ -119,7 +119,7 @@ test.describe.serial('kiosk: no ad zone or web chrome, intro once per boot (B10,
     await page.locator('.btn-start').click();
     await expect(page.locator('.modal-backdrop .modal')).toBeVisible({ timeout: 5000 });
     await expect(
-      page.getByText('Predict gold for 5 seconds. Win 5 in a row and take home the $100 bonus.'),
+      page.getByText('Predict gold for 5 seconds. Win 3 in a row and take home the $100 bonus.'),
     ).toBeVisible();
     await expect(forbiddenUi(page)).toHaveCount(0);
     await page.screenshot({ path: `${REPORT_DIR}/04-kiosk-intro.png` });

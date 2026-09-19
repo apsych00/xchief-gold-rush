@@ -1,5 +1,6 @@
-// Blind E2E for the five-win kiosk streak. Synthetic frames enter through the DEV-only socket
-// hook, while the assertions exercise the same client rendering path as server frames.
+// Blind E2E for the kiosk streak QR/claim screen (default kiosk_streak_target is 3). Synthetic
+// frames enter through the DEV-only socket hook, while the assertions exercise the same client
+// rendering path as server frames.
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import { WebSocket } from 'ws';
@@ -86,7 +87,7 @@ async function expectDisplayedStreak(page, streak) {
   await expect(page.locator('.combo-on')).toHaveCount(1);
 }
 
-test.describe.serial('five-win kiosk streak', () => {
+test.describe.serial('kiosk streak QR claim screen', () => {
   test.setTimeout(45000);
 
   test.beforeEach(async () => {
@@ -100,7 +101,9 @@ test.describe.serial('five-win kiosk streak', () => {
     await dismissFirstVisit(page);
     await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 10000 });
 
-    for (const streak of [1, 2, 3, 4]) {
+    // Streaks below the default target of 3 (a real kiosk win would already show the QR screen
+    // at streak 3, so only 1 and 2 are the plausible pre-win states here).
+    for (const streak of [1, 2]) {
       await injectSettled(page, streak);
       await expectDisplayedStreak(page, streak);
     }

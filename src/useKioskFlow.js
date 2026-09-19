@@ -21,7 +21,7 @@ import { onSettled, onStatus } from './api/socket.js';
 // stays up 20 s, same as the EXIT modal (docs/layers.md "Product defaults taken").
 export const QR_MS = 20000;
 export const KIOSK_BROKE_MODAL_MS = 20000;
-export const DEFAULT_STREAK_TARGET = 5;
+export const DEFAULT_STREAK_TARGET = 3;
 // Idle countdown (ticket C2b): 20 s of no activity shows the overlay, which then counts down
 // 20 s to the flush - 40 s total. The server's own idle sweep (server/kiosk.js IDLE_MS) resets a
 // session after 60 s without a round, so 20 + 20 = 40 s keeps the client's flush ahead of it and

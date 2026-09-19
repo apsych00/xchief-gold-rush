@@ -1461,7 +1461,7 @@ export function createApp({
       // env var is actually set, so a restart with nothing set never clobbers a value the
       // owner changed by hand with a running box's own SQL update.
       if (process.env.KIOSK_STREAK_TARGET) {
-        await ledger.upsertSetting('kiosk_streak_target', String(Number(process.env.KIOSK_STREAK_TARGET) || 5));
+        await ledger.upsertSetting('kiosk_streak_target', String(Number(process.env.KIOSK_STREAK_TARGET) || 3));
       }
       if (startFeed) feed.start();
       limits.start();

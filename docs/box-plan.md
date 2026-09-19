@@ -11,7 +11,7 @@ Short version of `box-spec.md` plus the review's fixes, for sign-off. Layer 1 on
 | Price feed | All sources stay hot (Finnhub XAU, OKX and Binance PAXG). The server publishes ONE continuous series: on a source switch it carries an offset so the level never jumps. Clients and settlement use only that series. No voids mid-round; if nothing moved, the result is flat and the screen already said QUIET MARKET. Re-anchor to true XAU only when no round has been open anywhere for 2 s. `rounds.source` is recorded for audit only. |
 | Lead capture | The box's server owns `/api/lead` (same JSON, same optional webhook). |
 | Rate cap | 400 rounds per player per hour. The 5-second round is the real throttle. |
-| Empty coupon pool | The 5th win keeps the streak, returns `coupons_exhausted`, logs loudly. Kiosk shows "tell the staff". |
+| Empty coupon pool | The Nth win (the streak target) keeps the streak, returns `coupons_exhausted`, logs loudly. Kiosk shows "tell the staff". |
 | Late verdict | If `round_settled` has not arrived 2 s after the countdown, the client shows a small "settling" state and waits; it never fabricates. |
 | Client badge | LIVE (tick within 3 s) or QUIET MARKET (none for 3 s). No source names anywhere in the UI; the quiet-market micro-move animation is removed. |
 | Kiosk streak between players | Resets after 60 s with no round on that kiosk. Also resets on a loss or a claim, as today. |
@@ -33,7 +33,7 @@ Short version of `box-spec.md` plus the review's fixes, for sign-off. Layer 1 on
 
 1. Staff open the kiosk's own launch URL (`/?k=<secret>`) in Chrome kiosk mode. The browser sends `auth {kiosk}`; the server verifies the hash, replies `welcome {kiosk: true, streak}`, streams prices. No email prompt, no leaderboard, no token stored.
 2. A visitor plays: same `play` -> `round_opened` -> local countdown -> `round_settled` at 5 s, with prices and streak from the server. Coins on the kiosk are cosmetic and also come from the server frame, so screen and server never disagree.
-3. Fifth consecutive win: `settle_kiosk_round` claims one code atomically and returns it in `round_settled {coupon}`. The kiosk shows it once. Streak resets to 0. If no code is left: `coupons_exhausted`, streak kept, staff told.
+3. Nth consecutive win (the streak target, `public.settings.kiosk_streak_target`, default 3): `settle_kiosk_round` claims one code atomically and returns it in `round_settled {coupon}`. The kiosk shows it once. Streak resets to 0. If no code is left: `coupons_exhausted`, streak kept, staff told.
 4. Visitor walks away: after 60 s without a round the kiosk streak resets, so the next person starts fresh. Any loss also resets it.
 5. Venue wifi drops: the socket reconnects with backoff; a round in flight still settles on the server and the verdict arrives on reconnect. If the box is unreachable for longer, the kiosk shows "reconnecting", never a fake verdict.
 
