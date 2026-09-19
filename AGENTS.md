@@ -17,7 +17,7 @@ Full decisions: `gold-prediction-game-architecture.md`. Read it before backend w
 
 **The client never reports its own result.** The server issues a round, independently reads the price from the Fly relay at start and at resolve, and decides win or loss itself. There is no code path where a client asserts "I won."
 
-Same for coupons: a kiosk reports "I hit a 5-win streak," the server verifies that against state it tracked itself before releasing a code. Coupon claim is atomic (pick-available-and-mark-claimed in one step) so two simultaneous claims cannot take the same code. Each kiosk holds a bearer secret; the server stores only its hash and checks it on every kiosk action.
+Same for coupons: a kiosk reports "I hit a 3-win streak," the server verifies that against state it tracked itself before releasing a code. Coupon claim is atomic (pick-available-and-mark-claimed in one step) so two simultaneous claims cannot take the same code. Each kiosk holds a bearer secret; the server stores only its hash and checks it on every kiosk action.
 
 If a change would let the client influence its own outcome or coupon eligibility, it is wrong regardless of how clean it looks.
 

@@ -292,8 +292,8 @@ function devSnapshot(frame) {
   // the verdict polls this counter instead, which only round_settled ever moves.
   if (frame.type === 'round_settled') g.settledCount = (g.settledCount || 0) + 1;
   g.token = token;
-  // Ticket C2: lets a test drive a scenario that is rare to hit for real (a kiosk five-win
-  // streak) by feeding a synthetic frame through the exact same path a real server frame takes -
+  // Ticket C2: lets a test drive a scenario that is rare to hit for real (a kiosk streak-target
+  // win) by feeding a synthetic frame through the exact same path a real server frame takes -
   // it is not a shortcut that skips any client logic, just a way to supply the input.
   g.inject = g.inject || handleMessage;
 }

@@ -8,7 +8,7 @@
 // test - the same "ask the server directly, not through the page" pattern player-promises.spec.js
 // uses for get_me, applied here to kiosk_reset so tests never see each other's leftover state.
 //
-// The five-win WON scenario is rare to hit for real inside a test's time budget. It is driven
+// The streak-target WON scenario is rare to hit for real inside a test's time budget. It is driven
 // the way the ticket allows: a synthetic round_settled (and its kiosk_session mirror) fed through
 // the dev-only window.__xchief.inject hook (src/api/socket.js, DEV-guarded) - the exact frame
 // shape the real server sends, run through the exact same client handler a real frame takes.
@@ -178,7 +178,7 @@ test.describe.serial('kiosk visitor flow', () => {
     await expect(forbiddenUi(page)).toHaveCount(0);
   });
 
-  test('4. a five-win streak shows the QR claim screen with both texts, and the button returns to ATTRACT', async ({
+  test('4. a third-win streak shows the QR claim screen with both texts, and the button returns to ATTRACT', async ({
     page,
   }) => {
     await tapToPlay(page);
@@ -209,7 +209,7 @@ test.describe.serial('kiosk visitor flow', () => {
         streak: 0,
         state: 'won',
         codes_left: 1,
-        streak_target: 5,
+        streak_target: 3,
         claim_url: url,
         claim_expires_at: new Date(Date.now() + 86400000).toISOString(),
       });

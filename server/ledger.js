@@ -428,7 +428,7 @@ export async function kioskSession(kioskId) {
   const { rows } = await getPool().query(
     `select k.session_coins as coins, k.streak, k.session_state as state,
        (select count(*)::int from public.coupons where status = 'available') as codes_left,
-       public.get_setting_int('kiosk_streak_target', 5) as streak_target,
+       public.get_setting_int('kiosk_streak_target', 3) as streak_target,
        cl.token as claim_token, cl.expires_at as claim_expires_at
      from public.kiosks k
      left join public.claim_links cl on cl.kiosk_id = k.id and cl.claimed_at is null and cl.expired_at is null
@@ -438,7 +438,7 @@ export async function kioskSession(kioskId) {
     [kioskId],
   );
   const row = rows[0];
-  if (!row) return { coins: 1000, streak: 0, state: 'idle', codes_left: 0, streak_target: 5 };
+  if (!row) return { coins: 1000, streak: 0, state: 'idle', codes_left: 0, streak_target: 3 };
   const { claim_token: claimToken, ...rest } = row;
   return { ...rest, claim_url: claimUrlFor(claimToken) };
 }
