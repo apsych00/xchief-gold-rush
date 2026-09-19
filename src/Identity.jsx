@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { num, useLang } from './i18n.js';
+import PromptModal from './PromptModal.jsx';
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const RESEND_COOLDOWN_MS = 30000;
 
-function errorText(t, code) {
+// The server error -> copy mapping for both OTP steps (unify-email-modal ticket: this is the one
+// place that maps an OTP error code to a sentence; PromptModal never duplicates it - every call
+// site that can get an OTP-shaped error back passes it through here via PromptModal's mapError).
+export function errorText(t, code) {
   const key = `otp.errors.${code || 'default'}`;
   const msg = t(key);
   return msg === key ? t('otp.errors.default') : msg;
@@ -33,29 +36,24 @@ export function IdentityBar({ profile, onSignOut }) {
 }
 
 /**
- * The OTP entry screen (docs/layers.md C3): email -> 8-digit code -> done. Every class here is
- * lifted from an existing modal (Tasks.jsx's PinModal, SignupForm's own done state) - design
- * fidelity rule, no new components or styles.
+ * The OTP entry screen (docs/layers.md C3): email -> 8-digit code -> done. Both steps render
+ * through the one shared PromptModal (unify-email-modal ticket) - same backdrop, same spacing,
+ * same reserved error region - so moving from the email field to the code field never looks like
+ * two different dialogs. The done screen has no input, so it keeps its own small result card
+ * (lifted from SignupForm's own done state, same design-fidelity reuse as before).
  *
  * onRequestOtp/onVerifyOtp are the server round trips (useGame.js's actions.requestOtp/
- * verifyOtp); this component owns only its own step/error/resend-timer UI state, never a
- * verdict - onVerifyOtp's resolution IS the server's answer, shown as-is.
+ * verifyOtp); this component owns only its own step/resend-timer UI state, never a verdict -
+ * onVerifyOtp's resolution IS the server's answer, shown as-is.
  */
 export default function OtpModal({ onRequestOtp, onVerifyOtp, onClose }) {
   const { t, lang } = useLang();
   const [step, setStep] = useState('email'); // 'email' | 'code'
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
   const [resendAt, setResendAt] = useState(0);
+  const [resendBusy, setResendBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [result, setResult] = useState(null);
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, [step]);
 
   // Only ticks while the resend link can still be disabled - no timer running once it is live.
   useEffect(() => {
@@ -64,50 +62,25 @@ export default function OtpModal({ onRequestOtp, onVerifyOtp, onClose }) {
     return () => clearInterval(id);
   }, [step, resendAt]);
 
-  const sendCode = (em) => {
-    setBusy(true);
-    setError('');
-    onRequestOtp(em)
-      .then(() => {
-        setStep('code');
-        setCode('');
-        setResendAt(Date.now() + RESEND_COOLDOWN_MS);
-      })
-      .catch((err) => setError(errorText(t, err?.code)))
-      .finally(() => setBusy(false));
-  };
+  const requestCode = (em) =>
+    onRequestOtp(em).then(() => {
+      setResendAt(Date.now() + RESEND_COOLDOWN_MS);
+    });
 
-  const submitEmail = (e) => {
-    e.preventDefault();
-    const em = email.trim().toLowerCase();
-    if (!EMAIL_RE.test(em)) {
-      setError(errorText(t, 'invalid_email'));
-      return;
-    }
-    setEmail(em);
-    sendCode(em);
-  };
+  const submitEmail = (em) =>
+    requestCode(em).then(() => {
+      setEmail(em);
+      setStep('code');
+    });
 
-  const submitCode = (e) => {
-    e.preventDefault();
-    setBusy(true);
-    setError('');
-    onVerifyOtp(email, code)
-      .then((me) => setResult(me))
-      .catch((err) => {
-        setError(errorText(t, err?.code));
-        setCode('');
-        inputRef.current?.focus();
-      })
-      .finally(() => setBusy(false));
-  };
-
-  const resend = () => {
-    if (busy || Date.now() < resendAt) return;
-    sendCode(email);
-  };
+  const submitCode = (code) => onVerifyOtp(email, code).then((me) => setResult(me));
 
   const resendLeft = Math.max(0, Math.ceil((resendAt - now) / 1000));
+  const resend = () => {
+    if (resendBusy || Date.now() < resendAt) return;
+    setResendBusy(true);
+    requestCode(email).finally(() => setResendBusy(false));
+  };
 
   if (result) {
     return (
@@ -128,73 +101,45 @@ export default function OtpModal({ onRequestOtp, onVerifyOtp, onClose }) {
     );
   }
 
+  if (step === 'email') {
+    return (
+      <PromptModal
+        resetKey="email"
+        title={t('otp.title')}
+        subtitle={t('otp.emailSub')}
+        fieldType="email"
+        placeholder={t('otp.emailPlaceholder')}
+        submitLabel={t('otp.send')}
+        cancelLabel={t('otp.cancel')}
+        onSubmit={submitEmail}
+        onCancel={onClose}
+        mapError={(err) => errorText(t, err?.code)}
+        dialogLabel={t('otp.title')}
+      />
+    );
+  }
+
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t('otp.title')}>
-      <div className="modal">
-        {step === 'email' ? (
-          <form onSubmit={submitEmail} noValidate>
-            <div className="modal-title">{t('otp.title')}</div>
-            <div className="modal-sub">{error ? <span className="lead-error">{error}</span> : t('otp.emailSub')}</div>
-            <input
-              ref={inputRef}
-              className="lead-input"
-              type="email"
-              name="email"
-              autoComplete="email"
-              inputMode="email"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              placeholder={t('otp.emailPlaceholder')}
-              aria-label={t('otp.emailPlaceholder')}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              dir="ltr"
-              required
-            />
-            <div className="modal-actions">
-              <button type="button" className="btn-ghost" onClick={onClose}>
-                {t('otp.cancel')}
-              </button>
-              <button type="submit" className="btn-primary" disabled={busy}>
-                {t('otp.send')}
-              </button>
-            </div>
-          </form>
-        ) : (
-          <form onSubmit={submitCode} noValidate>
-            <div className="modal-title">{t('otp.codeTitle')}</div>
-            <div className="modal-sub">
-              {error ? <span className="lead-error">{error}</span> : t('otp.codeSub', { email })}
-            </div>
-            <input
-              ref={inputRef}
-              className="pin-input"
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              autoComplete="one-time-code"
-              maxLength={8}
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
-              aria-label={t('otp.codeTitle')}
-            />
-            <div className="lead-foot" aria-live="polite">
-              <button type="button" className="lead-skip" onClick={resend} disabled={busy || resendLeft > 0}>
-                {resendLeft > 0 ? t('otp.resendWait', { s: resendLeft }) : t('otp.resend')}
-              </button>
-            </div>
-            <div className="modal-actions">
-              <button type="button" className="btn-ghost" onClick={onClose}>
-                {t('otp.cancel')}
-              </button>
-              <button type="submit" className="btn-primary" disabled={busy || code.length !== 8}>
-                {t('otp.verify')}
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
+    <PromptModal
+      resetKey={`code-${resendAt}`}
+      title={t('otp.codeTitle')}
+      subtitle={t('otp.codeSub', { email })}
+      fieldType="code"
+      codeLength={8}
+      ariaLabel={t('otp.codeTitle')}
+      submitLabel={t('otp.verify')}
+      cancelLabel={t('otp.cancel')}
+      onSubmit={submitCode}
+      onCancel={onClose}
+      mapError={(err) => errorText(t, err?.code)}
+      dialogLabel={t('otp.codeTitle')}
+      footer={
+        <div className="lead-foot" aria-live="polite">
+          <button type="button" className="lead-skip" onClick={resend} disabled={resendBusy || resendLeft > 0}>
+            {resendLeft > 0 ? t('otp.resendWait', { s: resendLeft }) : t('otp.resend')}
+          </button>
+        </div>
+      }
+    />
   );
 }
