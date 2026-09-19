@@ -1349,12 +1349,25 @@ button:focus:not(:focus-visible) {
   box-shadow: 0 0 20px rgba(53, 227, 111, 0.35);
 }
 /* The guest note is a <button>, so without this its text would take the browser's own button
-   colour (black on the green row). Keep the normal row text colour (ticket U2); the rank cell
-   stays empty. */
+   colour (black on the green row). Keep the normal row text colour (ticket U2). No rank cell is
+   rendered for this row (it is a prompt, not a ranked entry), so the row's full width goes to
+   the copy instead of reserving the rank column's width for nothing.
+   The copy itself must never clip: unlike a player name (.lb-name, single line, ellipsized by
+   its own overflow:hidden), this is a full sentence, so it gets its own wrapping rule and the
+   row switches from the fixed --row height every ranked row uses to a min-height that grows
+   with the wrapped text. */
 .lb-row-guest {
+  height: auto;
+  min-height: var(--row);
+  padding: 10px 12px;
   color: #fff;
   text-align: start;
   width: 100%;
+}
+.lb-row-guest .lb-name {
+  white-space: normal;
+  overflow: visible;
+  line-height: 1.35;
 }
 .lb-rank {
   width: 22px;
@@ -3061,6 +3074,11 @@ button:focus:not(:focus-visible) {
     gap: 14px;
     padding: 0 18px;
     border-radius: 16px;
+  }
+  .app:not(.app-kiosk) .lb-row-guest {
+    height: auto;
+    min-height: var(--row);
+    padding: 14px 18px;
   }
   .app:not(.app-kiosk) .lb-rank {
     width: 30px;
