@@ -350,6 +350,23 @@ deploy/deploy.sh
 Same command as the first deploy (section 5 above). It always pulls the
 latest commit of the campaign branch first, then rebuilds and restarts.
 
+## Database migrations
+
+A database change (a function body, a default, a column) that lands in `db/schema.sql` and a
+file under `db/migrations/` needs nothing extra from you - it is just another push. The deploy
+sequence is the same one above (`deploy/deploy.sh`, or the cron autodeploy): rebuild, restart the
+server container, and on that container's own boot, before the game server ever starts listening,
+it runs every migration nobody has applied to this database yet. A deploy that cannot migrate
+fails outright rather than starting a server against a half-migrated database - watch for that the
+same way you would watch for any other deploy failure (see "Reading the deploy log" above).
+
+This removes every hand-patch step that used to follow a schema change. Before this system
+existed, editing `db/schema.sql` changed nothing on a database that had already booted once -
+production included - and someone had to notice the drift and run the SQL by hand on the box.
+That already happened three times: the leaderboard page size, the OTP code length, and the kiosk
+streak target all had to be patched manually after a deploy that looked successful. None of that
+is needed anymore; a schema change that ships with its migration file applies itself.
+
 ## If the box is attacked
 
 The threat this section answers: a script spawning many headless browsers or raw sockets, from
