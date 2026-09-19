@@ -7,7 +7,7 @@ Agent-facing guide for xChief Gold Rush. Harness-agnostic: Claude Code, Codex, a
 A marketing-campaign game: predict whether the XAU/USD gold price goes up or down over the next 5 seconds. Correct predictions score points. One core game engine, two modes:
 
 - **Web** - email + OTP auth, score feeds a persistent top-10 leaderboard over a ~1-month campaign. Top 3 win prizes.
-- **Kiosk** - no email, runs at the Forex Expo Dubai 2026 booth. Five wins in a row triggers a one-time `$100` bonus code. Code is claimed once, then gone. Next player starts fresh.
+- **Kiosk** - no email, runs at the Forex Expo Dubai 2026 booth. Three wins in a row trigger a one-time `$100` bonus code. Code is claimed once, then gone. Next player starts fresh.
 
 Traffic to design for: ~50 concurrent, ~1000 users/day, one month. Everything must auto-scale on managed services and stay fast, especially the kiosk.
 
