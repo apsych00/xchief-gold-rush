@@ -1,4 +1,4 @@
--- Invariant: login codes (db/migrations/0011_otp_codes.sql, docs/box-plan.md 1.5) - an 8-digit
+-- Invariant: login codes (db/migrations/0011_otp_codes.sql, docs/box-plan.md 1.5) - a 4-digit
 -- code is stored only as a hash, five wrong guesses lock it out, an expired code cannot verify,
 -- and a right code for an email already confirmed elsewhere logs the caller into that existing
 -- player (docs/layers.md C3a: "re-login by OTP") rather than overwriting anything.
@@ -6,11 +6,11 @@ begin;
 
 select plan(16);
 
--- request_otp_code returns an 8-digit code and stores only its hash --------
+-- request_otp_code returns a 4-digit code and stores only its hash --------
 select tests.create_anonymous_player() as p1 \gset
 
 select public.request_otp_code(:'p1'::uuid, 'otp1@example.com') as code1 \gset
-select ok(:'code1' ~ '^[0-9]{8}$', 'request_otp_code returns an 8-digit numeric code');
+select ok(:'code1' ~ '^[0-9]{4}$', 'request_otp_code returns a 4-digit numeric code');
 select isnt(
   (select code_hash from public.otp_codes where email = 'otp1@example.com' order by created_at desc limit 1),
   :'code1',
@@ -36,27 +36,27 @@ select tests.create_anonymous_player() as p2 \gset
 select public.request_otp_code(:'p2'::uuid, 'otp2@example.com') as code2 \gset
 
 select is(
-  public.verify_otp_code(:'p2'::uuid, 'otp2@example.com', '00000000'),
+  public.verify_otp_code(:'p2'::uuid, 'otp2@example.com', '0000'),
   'invalid_code',
   'wrong guess 1 of 5 returns invalid_code'
 );
 select is(
-  public.verify_otp_code(:'p2'::uuid, 'otp2@example.com', '00000000'),
+  public.verify_otp_code(:'p2'::uuid, 'otp2@example.com', '0000'),
   'invalid_code',
   'wrong guess 2 of 5 returns invalid_code'
 );
 select is(
-  public.verify_otp_code(:'p2'::uuid, 'otp2@example.com', '00000000'),
+  public.verify_otp_code(:'p2'::uuid, 'otp2@example.com', '0000'),
   'invalid_code',
   'wrong guess 3 of 5 returns invalid_code'
 );
 select is(
-  public.verify_otp_code(:'p2'::uuid, 'otp2@example.com', '00000000'),
+  public.verify_otp_code(:'p2'::uuid, 'otp2@example.com', '0000'),
   'invalid_code',
   'wrong guess 4 of 5 returns invalid_code'
 );
 select is(
-  public.verify_otp_code(:'p2'::uuid, 'otp2@example.com', '00000000'),
+  public.verify_otp_code(:'p2'::uuid, 'otp2@example.com', '0000'),
   'too_many_attempts',
   'the 5th wrong guess returns too_many_attempts'
 );

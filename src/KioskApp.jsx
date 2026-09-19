@@ -188,7 +188,7 @@ function KioskNoCodesModal() {
 // Ticket C11: the real kiosk intro (A6) on the B10 once-per-boot mount point, shown between
 // ATTRACT and the first play. One card, both languages at once like the C9 QR screen, larger
 // type for the booth. The streak target comes from the server's kiosk_session frame
-// (useKioskFlow's streakTarget, default 5 before the first frame), never a number baked in here.
+// (useKioskFlow's streakTarget, default 3 before the first frame), never a number baked in here.
 function KioskIntroModal({ streakTarget, onDone }) {
   const { t } = useLang();
   return (

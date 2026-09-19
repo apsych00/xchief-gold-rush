@@ -1085,6 +1085,13 @@ function Leaderboard({
         <div className="lb-spacer" style={{ '--n': rows.length + (loadingMore ? LOAD_MORE_SKELETON_ROWS : 0) }} />
         {rows.map((r, i) => {
           const mine = me != null && r.rank === me.rank;
+          // Score-desync fix: rank/display/tier only exist server-side (this row's position
+          // depends on every other player's own score, which the client cannot know), but the
+          // number itself is exactly profile.record once this is the player's own row - reading
+          // it from `profile` instead of this row's own snapshot means it is always as fresh as
+          // the topbar, never lagging behind a reward the client already knows about but this
+          // board has not been re-fetched since.
+          const score = mine ? profile.record : r.record;
           return (
             <div key={r.rank} className={mine ? 'lb-row lb-row-me' : 'lb-row'} style={{ '--i': i }}>
               <span className="lb-rank">{num(r.rank, lang)}</span>
@@ -1092,7 +1099,7 @@ function Leaderboard({
                 {r.display}
                 <BadgeIcon tier={r.tier} legend={legend} />
               </span>
-              <span className="lb-score">{num(r.record, lang)}</span>
+              <span className="lb-score">{num(score, lang)}</span>
             </div>
           );
         })}
@@ -1141,7 +1148,9 @@ function Leaderboard({
             {me.display}
             <BadgeIcon tier={me.tier} legend={legend} />
           </span>
-          <span className="lb-score">{num(me.record, lang)}</span>
+          {/* Same reasoning as the in-page own row above: the number is profile.record, not
+              this snapshot's own me.record. */}
+          <span className="lb-score">{num(profile.record, lang)}</span>
         </div>
       )}
       {legend?.length > 0 && (
@@ -1209,6 +1218,12 @@ export default function App() {
   const { screen } = state;
   const [lang, setLangState] = useState(readStoredLang);
   const [otpOpen, setOtpOpen] = useState(false);
+  // The "share your record" mission (Tasks.jsx's 'story' row): tapping it navigates to Profile and
+  // opens its share modal instead of granting anything on the tap (see src/Profile.jsx's
+  // shareMission handling). Holds the tapped task row while that hand-off is pending; Profile
+  // consumes it once on mount so a later, unrelated visit to the profile screen never re-triggers
+  // the auto-open.
+  const [shareMissionRow, setShareMissionRow] = useState(null);
   // A guest is a web player (never a kiosk, which never shows email or the leaderboard at all)
   // who has not verified an email yet (docs/layers.md C3, C4).
   const guestMode = apiEnabled && !isKiosk && !profile.emailVerified;
@@ -1306,7 +1321,19 @@ export default function App() {
                 />
               )}
               {screen === 'profile' && (
-                <Profile profile={profile} actions={actions} onToast={(txt) => actions.toast?.(txt)} />
+                <Profile
+                  profile={profile}
+                  actions={actions}
+                  onToast={(txt) => actions.toast?.(txt)}
+                  shareMission={
+                    shareMissionRow && {
+                      pending: true,
+                      reward: shareMissionRow.reward,
+                      onConsumed: () => setShareMissionRow(null),
+                      onClaim: () => actions.claimTask(shareMissionRow.id),
+                    }
+                  }
+                />
               )}
               {screen === 'tasks' && (
                 <Tasks
@@ -1320,6 +1347,10 @@ export default function App() {
                   onInstagramCheck={actions.instagramCheck}
                   ourInstagramHandle={state.ourInstagramHandle}
                   onOpenIdentity={() => setOtpOpen(true)}
+                  onShareMission={(row) => {
+                    setShareMissionRow(row);
+                    actions.goProfile();
+                  }}
                   onToast={(txt) => actions.toast?.(txt)}
                 />
               )}

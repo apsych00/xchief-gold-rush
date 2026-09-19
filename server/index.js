@@ -311,10 +311,17 @@ async function handleLead(req, res) {
 /**
  * Build the server without starting it. `finnhubToken` defaults from the environment; tests
  * pass `null` (or nothing, with FINNHUB_TOKEN unset) to get a PAXG-only feed they drive
- * themselves through the returned `feed._injectTick`.
+ * themselves through the returned `feed._injectTick`. `finnhubTokens` is FINNHUB_TOKENS, a
+ * comma-separated list the feed rotates through on a 429/handshake rejection (server/feed.js);
+ * it wins over finnhubToken when set, which stays as single-key sugar for anyone who hasn't
+ * filled in the list.
  */
 export function createApp({
   finnhubToken = process.env.FINNHUB_TOKEN || null,
+  finnhubTokens = (process.env.FINNHUB_TOKENS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
   // Kiosk idle-sweep timing (server/kiosk.js). Left undefined in production so kiosk.js's own
   // 60 s / 10 s defaults apply; tests shrink both so they do not wait on a real minute.
   kioskIdleMs = undefined,
@@ -479,7 +486,7 @@ export function createApp({
     );
   }
 
-  const feed = createFeed({ finnhubToken, onTick: broadcastPrice });
+  const feed = createFeed({ finnhubToken, finnhubTokens, onTick: broadcastPrice });
   const rounds = createRoundManager({
     feed,
     ledger,
@@ -527,6 +534,9 @@ export function createApp({
         connected: s.connected,
         lastTickAt: s.lastTickAt,
         ageMs: s.lastTickAt === null ? null : now - s.lastTickAt,
+        // Finnhub key rotation state (server/feed.js status()): which key index is live and how
+        // many are configured, never the keys themselves. Absent for sources with no key list.
+        ...(s.keyIndex !== undefined ? { keyIndex: s.keyIndex, keyCount: s.keyCount } : {}),
       };
     }
     const p = feed.latest();
@@ -620,7 +630,16 @@ export function createApp({
     }
     try {
       const result = await ledger.claimPrize(token, email, ip && ip !== 'unknown' ? ip : null);
-      otp.sendClaimCode(email, result.code).catch((err) => {
+      // claimUrlFor throws if PUBLIC_URL is unset; the claim already committed above, so that
+      // must never turn into a false failure response - fall back to no link, same as
+      // sendClaimCode already does for the plain-text path.
+      let claimUrl = null;
+      try {
+        claimUrl = ledger.claimUrlFor(token);
+      } catch (err) {
+        console.error('[claim] claimUrlFor failed', err?.message || err);
+      }
+      otp.sendClaimCode(email, result.code, { claimUrl }).catch((err) => {
         console.error('[claim] sendClaimCode failed', err?.message || err);
       });
       sendJson(res, 200, { ok: true, code: result.code, email });
@@ -1461,7 +1480,7 @@ export function createApp({
       // env var is actually set, so a restart with nothing set never clobbers a value the
       // owner changed by hand with a running box's own SQL update.
       if (process.env.KIOSK_STREAK_TARGET) {
-        await ledger.upsertSetting('kiosk_streak_target', String(Number(process.env.KIOSK_STREAK_TARGET) || 5));
+        await ledger.upsertSetting('kiosk_streak_target', String(Number(process.env.KIOSK_STREAK_TARGET) || 3));
       }
       if (startFeed) feed.start();
       limits.start();

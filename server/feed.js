@@ -9,6 +9,15 @@
  *   3. Binance  PAXG/USDT bookTicker mid
  * Reconnect with exponential backoff 1 s..30 s.
  *
+ * Finnhub key rotation: a Finnhub key allows exactly ONE socket, so a 429 on the handshake means
+ * the key is refused, not that the network hiccuped. FINNHUB_TOKENS (finnhubTokens here) is a
+ * list of keys tried in order; on a handshake rejection (ws surfaces this as an 'error' with
+ * message "Unexpected server response: <code>" - see connect()'s ws.on('error', ...)) the source
+ * advances to the next key and wraps at the end, rather than giving up. A plain network error
+ * (ECONNREFUSED, ENOTFOUND, a timeout - anything that never got an HTTP response back) does not
+ * advance the key: same key, same backoff, retried in place. FINNHUB_TOKEN alone is sugar for a
+ * one-key list, so rotation is a no-op and the source behaves exactly as it always has.
+ *
  * MT5 is a "custom" source (server/feed-mt5.js for MetaApi,
  * server/feed-mt5-bridge.js for our own terminal+bridge, docs/mt5-feed.md):
  * it does not speak the raw WebSocket protocol the others share, so it
@@ -59,13 +68,21 @@ const isValidPrice = (p) => typeof p === 'number' && Number.isFinite(p) && p > P
 const round3 = (p) => Math.round(p * 1000) / 1000;
 
 /**
- * Source definitions in priority order. Finnhub only exists when a token is
- * given; mt5 only exists when either MetaApi (METAAPI_TOKEN +
+ * Source definitions in priority order. Finnhub only exists when a token (or
+ * a token list) is given; mt5 only exists when either MetaApi (METAAPI_TOKEN +
  * METAAPI_ACCOUNT_ID) or our own bridge (MT5_BRIDGE_WS, docs/mt5-feed.md
  * "Bridge route") is configured. MetaApi wins if both are set - it is the
  * hosted route and the one already vetted against the success bar.
  */
-function sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbol, mt5BridgeWs, feedRelayWs }) {
+function sourceDefs({
+  finnhubToken,
+  finnhubTokens = [],
+  metaapiToken,
+  metaapiAccountId,
+  metaapiSymbol,
+  mt5BridgeWs,
+  feedRelayWs,
+}) {
   const defs = [];
   if (metaapiToken && metaapiAccountId) {
     defs.push({
@@ -98,20 +115,26 @@ function sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbo
         return typeof m.price === 'number' ? m.price : null;
       },
     });
-  } else if (finnhubToken) {
-    defs.push({
-      id: 'finnhub',
-      priority: 1,
-      url: `wss://ws.finnhub.io?token=${encodeURIComponent(finnhubToken)}`,
-      subscribe: [JSON.stringify({ type: 'subscribe', symbol: 'OANDA:XAU_USD' })],
-      parse(m) {
-        if (!m || m.type !== 'trade' || !Array.isArray(m.data)) return null;
-        for (const d of m.data) {
-          if (d && d.s === 'OANDA:XAU_USD' && typeof d.p === 'number') return d.p;
-        }
-        return null;
-      },
-    });
+  } else {
+    // FINNHUB_TOKENS (a comma-separated list) wins when set; FINNHUB_TOKEN alone is sugar for a
+    // one-key list, so a single-key setup is just rotation with nowhere to rotate to.
+    const keys = finnhubTokens.length ? finnhubTokens : finnhubToken ? [finnhubToken] : [];
+    if (keys.length) {
+      defs.push({
+        id: 'finnhub',
+        priority: 1,
+        keys,
+        urlForKey: (token) => `wss://ws.finnhub.io?token=${encodeURIComponent(token)}`,
+        subscribe: [JSON.stringify({ type: 'subscribe', symbol: 'OANDA:XAU_USD' })],
+        parse(m) {
+          if (!m || m.type !== 'trade' || !Array.isArray(m.data)) return null;
+          for (const d of m.data) {
+            if (d && d.s === 'OANDA:XAU_USD' && typeof d.p === 'number') return d.p;
+          }
+          return null;
+        },
+      });
+    }
   }
   defs.push(
     {
@@ -146,6 +169,7 @@ function sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbo
  */
 export function createFeed({
   finnhubToken,
+  finnhubTokens = [],
   metaapiToken = process.env.METAAPI_TOKEN || null,
   metaapiAccountId = process.env.METAAPI_ACCOUNT_ID || null,
   metaapiSymbol = process.env.METAAPI_SYMBOL || 'XAUUSD',
@@ -154,10 +178,20 @@ export function createFeed({
   onTick,
   now = Date.now,
   random = Math.random, // injectable for deterministic tests of the quiet-market walk
+  _WebSocket, // test hook: replaces the `ws` client so key rotation can be tested with no socket
 } = {}) {
+  const WS = _WebSocket || WebSocket;
   const sources = new Map(); // id -> state, iteration order = priority order
-  for (const def of sourceDefs({ finnhubToken, metaapiToken, metaapiAccountId, metaapiSymbol, mt5BridgeWs, feedRelayWs })) {
-    sources.set(def.id, { def, connected: false, lastTickAt: null, raw: null, offset: 0 });
+  for (const def of sourceDefs({
+    finnhubToken,
+    finnhubTokens,
+    metaapiToken,
+    metaapiAccountId,
+    metaapiSymbol,
+    mt5BridgeWs,
+    feedRelayWs,
+  })) {
+    sources.set(def.id, { def, connected: false, lastTickAt: null, raw: null, offset: 0, keyIndex: 0 });
   }
 
   let activeId = null; // source id currently publishing the series
@@ -268,17 +302,28 @@ export function createFeed({
 
   // --------------------------------------------------------------- upstream --
 
+  // A rejected WebSocket handshake surfaces from `ws` as an 'error' with exactly this message
+  // (no URL, no headers - just the status code: see node_modules/ws/lib/websocket.js
+  // abortHandshake()). Any status here means the server answered, so this is never a network
+  // problem - it is the key being refused (429 one-socket-per-key or rate limit, 401/403 a bad
+  // key). A network-level failure (ECONNREFUSED, ENOTFOUND, a timeout) never reaches this regex.
+  const UNEXPECTED_RESPONSE = /^Unexpected server response: (\d+)$/;
+
   function connect(src) {
     if (src.def.custom) {
       connectCustom(src);
       return;
     }
     const id = src.def.id;
+    const url = src.def.keys ? src.def.urlForKey(src.def.keys[src.keyIndex]) : src.def.url;
     let ws;
     try {
-      ws = new WebSocket(src.def.url);
+      ws = new WS(url);
     } catch (err) {
-      retry(id, (attempts.get(id) || 0) + 1, err);
+      // The URL is built by us (encodeURIComponent'd token); a throw here would be a malformed
+      // key, and err.message from a bad URL can echo the URL back - never log it.
+      if (src.def.keys) console.warn(`[feed] upstream ${id} failed to open a socket for key ${src.keyIndex}`);
+      retry(id, (attempts.get(id) || 0) + 1, src.def.keys ? undefined : err);
       return;
     }
     sockets.set(id, ws);
@@ -314,6 +359,15 @@ export function createFeed({
       if (running) retry(id, opened ? 0 : (attempts.get(id) || 0) + 1);
     });
     ws.on('error', (err) => {
+      const refusal = src.def.keys ? UNEXPECTED_RESPONSE.exec(err.message || '') : null;
+      if (refusal) {
+        const refusedIndex = src.keyIndex;
+        src.keyIndex = (src.keyIndex + 1) % src.def.keys.length;
+        console.warn(
+          `[feed] upstream ${id} key ${refusedIndex} refused (HTTP ${refusal[1]}); rotating to key ${src.keyIndex}/${src.def.keys.length}`,
+        );
+        return;
+      }
       console.warn(`[feed] upstream ${id} socket error:`, err.message);
     });
   }
@@ -413,10 +467,20 @@ export function createFeed({
     return { price: published.price, t: published.t, source: activeId, quiet: q };
   }
 
-  /** Per-source operator detail for the health endpoint. */
+  /**
+   * Per-source operator detail for the health endpoint. Keyed sources (finnhub with a token
+   * list) also report keyIndex/keyCount so an operator can see rotation happening - never the
+   * keys themselves, an index into a list they already hold.
+   */
   function status() {
     const out = {};
-    for (const [id, s] of sources) out[id] = { connected: s.connected, lastTickAt: s.lastTickAt, raw: s.raw };
+    for (const [id, s] of sources) {
+      out[id] = { connected: s.connected, lastTickAt: s.lastTickAt, raw: s.raw };
+      if (s.def.keys) {
+        out[id].keyIndex = s.keyIndex;
+        out[id].keyCount = s.def.keys.length;
+      }
+    }
     return out;
   }
 

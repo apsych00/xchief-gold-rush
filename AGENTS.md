@@ -7,7 +7,7 @@ Agent-facing guide for xChief Gold Rush. Harness-agnostic: Claude Code, Codex, a
 A marketing-campaign game: predict whether the XAU/USD gold price goes up or down over the next 5 seconds. Correct predictions score points. One core game engine, two modes:
 
 - **Web** - email + OTP auth, score feeds a persistent top-10 leaderboard over a ~1-month campaign. Top 3 win prizes.
-- **Kiosk** - no email, runs at the Forex Expo Dubai 2026 booth. Five wins in a row triggers a one-time `$100` bonus code. Code is claimed once, then gone. Next player starts fresh.
+- **Kiosk** - no email, runs at the Forex Expo Dubai 2026 booth. Three wins in a row trigger a one-time `$100` bonus code. Code is claimed once, then gone. Next player starts fresh.
 
 Traffic to design for: ~50 concurrent, ~1000 users/day, one month. Everything must auto-scale on managed services and stay fast, especially the kiosk.
 
@@ -17,7 +17,7 @@ Full decisions: `gold-prediction-game-architecture.md`. Read it before backend w
 
 **The client never reports its own result.** The server issues a round, independently reads the price from the Fly relay at start and at resolve, and decides win or loss itself. There is no code path where a client asserts "I won."
 
-Same for coupons: a kiosk reports "I hit a 5-win streak," the server verifies that against state it tracked itself before releasing a code. Coupon claim is atomic (pick-available-and-mark-claimed in one step) so two simultaneous claims cannot take the same code. Each kiosk holds a bearer secret; the server stores only its hash and checks it on every kiosk action.
+Same for coupons: a kiosk reports "I hit a 3-win streak," the server verifies that against state it tracked itself before releasing a code. Coupon claim is atomic (pick-available-and-mark-claimed in one step) so two simultaneous claims cannot take the same code. Each kiosk holds a bearer secret; the server stores only its hash and checks it on every kiosk action.
 
 If a change would let the client influence its own outcome or coupon eligibility, it is wrong regardless of how clean it looks.
 

@@ -109,11 +109,11 @@ const dict = {
     },
     otp: {
       title: 'Verify your email',
-      emailSub: "We'll send you an 8-digit code",
+      emailSub: "We'll send you a {n}-digit code",
       emailPlaceholder: 'you@email.com',
       send: 'Send code',
       codeTitle: 'Enter the code',
-      codeSub: 'We sent an 8-digit code to {email}',
+      codeSub: 'We sent a {n}-digit code to {email}',
       verify: 'Verify',
       resend: 'Resend code',
       resendWait: 'Resend in {s}s',
@@ -178,6 +178,10 @@ const dict = {
       download: 'Download image',
       joinLabel: 'Play the challenge',
       close: 'Close',
+      // Share your record mission (src/ShareModal.jsx `mission` mode): shown only when this modal
+      // was opened from the Tasks row, never on a standalone profile share.
+      missionHint: 'Press Share to earn +{n} coins',
+      missionCountdown: 'Crediting… {n}',
       // Toasts
       failed: 'Could not share. Try again',
       saved: 'Image saved',

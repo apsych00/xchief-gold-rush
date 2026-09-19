@@ -1,6 +1,7 @@
-# Game server image (docs/box-spec.md 1.7, ticket 6).
-# Boots by applying db/schema.sql + db/seed.sql through server/migrate.mjs
-# (a schema_migrations table makes re-runs a no-op), then starts the game server.
+# Game server image (docs/box-spec.md 1.7, ticket 6, db-migrations).
+# Boots by applying db/schema.sql + db/seed.sql, then every pending file in db/migrations/,
+# through server/migrate.mjs (a schema_migrations table makes re-runs a no-op), then starts the
+# game server. `&&` means a failed migration exits before the server ever starts.
 FROM node:22-alpine
 
 WORKDIR /app

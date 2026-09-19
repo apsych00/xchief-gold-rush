@@ -5,6 +5,13 @@
  */
 const env = import.meta.env || {};
 
+// The login code length, the client half of a contract with db/schema.sql's request_otp_code
+// (the server generator, which keeps its own literal since SQL cannot import this file). Every
+// client surface - the input's maxLength, the client-side isValidCode check, the "N-digit code"
+// copy - derives from this one constant so the three never drift apart again. Bound to the
+// server's real output by test/integration-box/otp.test.mjs, which imports this same constant.
+export const OTP_CODE_LENGTH = 4;
+
 export const ECON = {
   startCoins: 1000, // welcome balance
   stakeBase: 100, // stake = stakeBase × lever

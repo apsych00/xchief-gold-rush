@@ -29,7 +29,10 @@ function peekOtp(email) {
 }
 
 async function goHome(page) {
-  await page.getByRole('button', { name: 'Home' }).click();
+  // Exact match: the logo's own aria-label ("xChief home") also contains the substring "Home",
+  // so a loose name match resolves to two buttons under Playwright's default fuzzy matching -
+  // this is the nav's own Home tab, never the logo.
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
 }
 
 async function goLeaderboard(page) {
@@ -71,7 +74,7 @@ test.describe('web identity and the live, masked leaderboard (C3, C4)', () => {
 
     // ---- 3. the code step, then a deliberate wrong code for the error-state screenshot --------
     await expect(page.locator('.modal .pin-input')).toBeVisible({ timeout: 10000 });
-    await page.locator('.modal .pin-input').fill('00000000');
+    await page.locator('.modal .pin-input').fill('0000');
     await page.locator('.modal').getByRole('button', { name: /verify/i }).click();
     await expect(page.locator('.modal .lead-error')).toBeVisible({ timeout: 5000 });
     await page.screenshot({ path: path.join(REPORT_DIR, '04-otp-code-error-state.png') });

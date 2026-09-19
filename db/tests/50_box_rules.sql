@@ -69,28 +69,30 @@ select is(
   'a kiosk still inside the 60 s window keeps its session coins untouched'
 );
 
--- 5th win with an empty pool: keep the streak, report exhausted, session stays playing ------
+-- Nth win (the streak target, public.settings 'kiosk_streak_target', seeded default 3) with an
+-- empty pool: keep the streak, report exhausted, session stays playing ---------------------
 -- (docs/layers.md C8: open_kiosk_round now refuses a NEW round outright while the pool is
 -- empty, so this round opens while a coupon is still there, and the pool is emptied out from
 -- under it before settling - a round already open still settles normally.)
+select public.get_setting_int('kiosk_streak_target', 3)::int - 1 as target_minus_one \gset
 select tests.create_kiosk('no-coupon', 'no-coupon-secret-00000000000') as k_nocoup \gset
-update public.kiosks set streak = 4, session_state = 'playing' where id = :'k_nocoup';
+update public.kiosks set streak = :target_minus_one, session_state = 'playing' where id = :'k_nocoup';
 select (public.open_kiosk_round(:'k_nocoup'::uuid, 'up', 100)->>'round_id')::uuid as rd_nocoup \gset
 update public.coupons set status = 'claimed', claimed_at = now() where status = 'available';
 select public.settle_kiosk_round(:'rd_nocoup'::uuid, 101) as settle_nocoup \gset
 select ok(
   (:'settle_nocoup'::json->>'claim_token') is null,
-  'a 5th win with no coupon available returns no claim token'
+  'the Nth win with no coupon available returns no claim token'
 );
 select is(
   (:'settle_nocoup'::json->>'coupons_exhausted'),
   'true',
-  'a 5th win with an empty pool reports coupons_exhausted'
+  'the Nth win with an empty pool reports coupons_exhausted'
 );
 select is(
   (select streak from public.kiosks where id = :'k_nocoup'),
-  5,
-  'the 5-win streak is kept (not reset) when the pool is empty'
+  :target_minus_one + 1,
+  'the streak at the target is kept (not reset) when the pool is empty'
 );
 select is(
   (:'settle_nocoup'::json->>'state'),
@@ -98,15 +100,15 @@ select is(
   'an exhausted pool leaves the session playing, not won'
 );
 
--- 5th win with one coupon available: hand it over, reset the streak, end the session --------
+-- Nth win with one coupon available: hand it over, reset the streak, end the session --------
 insert into public.coupons (code) values ('BOX-TEST-CODE');
 select tests.create_kiosk('has-coupon', 'has-coupon-secret-0000000000') as k_coup \gset
-update public.kiosks set streak = 4, session_state = 'playing' where id = :'k_coup';
+update public.kiosks set streak = :target_minus_one, session_state = 'playing' where id = :'k_coup';
 select (public.open_kiosk_round(:'k_coup'::uuid, 'up', 100)->>'round_id')::uuid as rd_coup \gset
 select public.settle_kiosk_round(:'rd_coup'::uuid, 101) as settle_coup \gset
 select ok(
   (:'settle_coup'::json->>'claim_token') is not null,
-  'a 5th win reserves the one available coupon and returns a claim token'
+  'the Nth win reserves the one available coupon and returns a claim token'
 );
 select is(
   (select status from public.coupons where code = 'BOX-TEST-CODE'),

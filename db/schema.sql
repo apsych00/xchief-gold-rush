@@ -3,10 +3,16 @@
 -- This is the entire database that migrations 0000..0011 used to add up to,
 -- written as if designed in one pass: each table once with its final columns,
 -- each function once with its final body and signature, each grant and revoke
--- stated once, at the end. There are no users of this database yet, so there is
--- no migration history to preserve: apply this file once to a fresh
--- PostgreSQL 16, then db/seed.sql. server/migrate.mjs and db/run-tests.sh do
--- exactly that.
+-- stated once, at the end. Apply this file once to a fresh PostgreSQL 16, then
+-- db/seed.sql. server/migrate.mjs and db/run-tests.sh do exactly that.
+--
+-- This file is ONLY what a brand-new database gets. Production and every dev
+-- database already exist, and server/migrate.mjs never re-runs this file
+-- against them (recorded once in public.schema_migrations, then skipped
+-- forever) - so editing it alone changes nothing anywhere but a database that
+-- has not been created yet. A change here needs a matching file added under
+-- db/migrations/ that carries an already-running database to the same state.
+-- See db/migrations/README.md before you change anything below.
 --
 -- The server owns every outcome and every coin. Clients never write these
 -- tables directly (see the RLS section); every mutation goes through one of the
@@ -687,15 +693,53 @@ begin
   return json_build_object('round_id', v_id, 'stake', v_stake, 'start_price', p_start_price);
 end $$;
 
+-- Score-desync fix: the one place that keeps a player's tournament_scores row in step with
+-- players.coins. tournament_scores holds the player's peak balance reached inside the currently
+-- running tournament - the number the public leaderboard and my_rank() actually rank on -
+-- separately from players.record's all-time peak. Before this function existed, only
+-- settle_round touched tournament_scores: every other coin-granting path (release_task_reward,
+-- the email/signup grant inside verify_otp, free_refill) updated players.coins/record and
+-- stopped there, so a player who verified their email or claimed a mission reward saw their own
+-- balance move but never showed up - or moved - on the tournament board until they next played a
+-- round. That is the real desync the client-side report traced to "the topbar": the board and
+-- the balance are two different tables, and only one of the paths that can raise a balance was
+-- writing to both. Every function that can change players.coins now calls this afterwards, with
+-- the coins value it just wrote, so tournament_scores is never more than that one write behind
+-- coins itself. A no-op when no tournament is running - a round or a reward earned outside a
+-- tournament window counts for nothing on any board, same as settle_round always documented.
+-- p_tournament lets settle_round pass the one tournament id it already read at the top of its
+-- own call (docs/box-plan.md: the round belongs to whichever tournament is running at its own
+-- end_at, read once so the whole call sees one instant) instead of this function reading
+-- current_tournament() a second time and risking a different answer if a boundary falls exactly
+-- between the two reads. Every other caller (release_task_reward, free_refill) has no round-
+-- shaped "one instant" to pin to, so they pass null and this function resolves the currently
+-- running tournament itself.
+create function public.bump_tournament_score(p_player uuid, p_coins int, p_tournament text default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_tournament_id text := p_tournament;
+begin
+  if v_tournament_id is null then
+    select id into v_tournament_id from public.current_tournament();
+  end if;
+  if v_tournament_id is null then return; end if;
+  insert into public.tournament_scores (tournament_id, player_id, record, updated_at)
+  values (v_tournament_id, p_player, p_coins, now())
+  on conflict (tournament_id, player_id) do update
+    set record = excluded.record, updated_at = excluded.updated_at
+    where excluded.record > public.tournament_scores.record;
+end $$;
+
 -- round_settled carries best_streak; return it instead of a second read.
 --
 -- Tournaments (ticket B1): the round belongs to whichever tournament is running at its own
 -- end_at (now(), read once at the top so the whole call sees one instant), never the one
 -- running when it was opened - null when no tournament is running, and the round then counts
 -- for nothing on any tournament board. tournament_scores holds the player's peak balance
--- reached inside that one tournament, separately from players.record's all-time peak; the
--- ON CONFLICT's WHERE clause is what makes the upsert a no-op except when this settle actually
--- raised the record, so a plain loss inside a tournament never rewrites updated_at.
+-- reached inside that one tournament, separately from players.record's all-time peak; bump_
+-- tournament_score's own ON CONFLICT WHERE clause is what makes the upsert a no-op except when
+-- this settle actually raised the record, so a plain loss inside a tournament never rewrites
+-- updated_at.
 create function public.settle_round(p_round uuid, p_end_price numeric)
 returns json language plpgsql security definer set search_path = public as $$
 declare
@@ -731,13 +775,7 @@ begin
   end if;
   update public.rounds set end_price = p_end_price, end_at = now(), outcome = v_outcome, delta = v_delta, mult = v_mult,
     status = 'settled', tournament_id = v_tournament_id where id = p_round;
-  if v_tournament_id is not null then
-    insert into public.tournament_scores (tournament_id, player_id, record, updated_at)
-    values (v_tournament_id, p.id, v_coins, now())
-    on conflict (tournament_id, player_id) do update
-      set record = excluded.record, updated_at = excluded.updated_at
-      where excluded.record > public.tournament_scores.record;
-  end if;
+  perform public.bump_tournament_score(p.id, v_coins, v_tournament_id);
   return json_build_object('outcome', v_outcome, 'delta', v_delta, 'mult', v_mult, 'coins', v_coins, 'streak', v_streak,
     'record', greatest(p.record, v_coins), 'best_streak', greatest(p.best_streak, v_streak), 'start_price', r.start_price, 'end_price', p_end_price);
 end $$;
@@ -972,7 +1010,7 @@ begin
     v_delta := round(r.stake * v_mult)::int;
     v_coins := k.session_coins + v_delta;
     v_streak := k.streak + 1;
-    v_target := public.get_setting_int('kiosk_streak_target', 5);
+    v_target := public.get_setting_int('kiosk_streak_target', 3);
     if v_streak >= v_target then
       update public.coupons set status = 'reserved', claimed_by_kiosk = k.id
       where id = (
@@ -1158,6 +1196,7 @@ begin
   where id = v_uid
   returning coins into v_coins;
 
+  perform public.bump_tournament_score(v_uid, v_coins);
   return json_build_object('coins', v_coins, 'reward', t.reward);
 end $$;
 
@@ -1201,6 +1240,7 @@ begin
     raise exception 'already_refilled';
   end;
 
+  perform public.bump_tournament_score(v_uid, v_coins);
   return json_build_object('coins', v_coins, 'reward', 300);
 end $$;
 
@@ -1290,6 +1330,7 @@ begin
   where id = p_player
   returning coins into v_coins;
 
+  perform public.bump_tournament_score(p_player, v_coins);
   return json_build_object('coins', v_coins, 'reward', t.reward);
 end $$;
 
@@ -1591,8 +1632,11 @@ join public.players p on p.id = tc.player_id;
 
 -- -------------------------------------------------------------------------- otp codes --
 
--- Generates an 8-digit code, stores only its hash, returns the plain code once so the caller
--- (server/otp.js) can mail it or, in dev, capture it in dev_otps.
+-- Generates a 4-digit code, stores only its hash, returns the plain code once so the caller
+-- (server/otp.js) can mail it or, in dev, capture it in dev_otps. SQL cannot import
+-- src/config.js's OTP_CODE_LENGTH, so this literal is the other half of that contract by hand -
+-- keep both in sync, and test/integration-box/otp.test.mjs binds them by asserting the server's
+-- real output matches the client constant.
 create function public.request_otp_code(p_player uuid, p_email text)
 returns text language plpgsql security definer set search_path = public, extensions as $$
 declare
@@ -1603,7 +1647,8 @@ begin
   -- an older still-live code stops being a way to keep the 5-attempt budget going forever.
   update public.otp_codes set used_at = now() where email = p_email and used_at is null;
 
-  v_code := to_char(floor(random() * 100000000)::int, 'FM00000000');
+  -- 4 digits zero-padded (0000-9999 is a legal code, "0042" stays 4 characters).
+  v_code := to_char(floor(random() * 10000)::int, 'FM0000');
   insert into public.otp_codes (player_id, email, code_hash, expires_at)
   values (p_player, p_email, encode(extensions.digest(v_code, 'sha256'), 'hex'), now() + interval '10 minutes');
   return v_code;
@@ -1741,5 +1786,6 @@ revoke execute on function
   public.release_task_reward(uuid, text),
   public.start_instagram(uuid, text),
   public.verify_instagram(uuid, text),
-  public.bump_instagram_attempt(uuid)
+  public.bump_instagram_attempt(uuid),
+  public.bump_tournament_score(uuid, int, text)
 from public, anon, authenticated;

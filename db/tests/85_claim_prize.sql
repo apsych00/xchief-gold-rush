@@ -109,7 +109,7 @@ select throws_like(
   'the now-released link itself still refuses a claim'
 );
 
--- settle_kiosk_round reads its streak target from public.settings, not a hardcoded 5 ----------
+-- settle_kiosk_round reads its streak target from public.settings, not a hardcoded 3 ----------
 update public.settings set value = '2' where key = 'kiosk_streak_target';
 insert into public.coupons (code) values ('CLAIM-TEST-TARGET') on conflict (code) do nothing;
 update public.coupons set status = 'claimed', claimed_at = now() where status = 'available' and code <> 'CLAIM-TEST-TARGET';
@@ -119,9 +119,9 @@ select (public.open_kiosk_round(:'k_target'::uuid, 'up', 100)->>'round_id')::uui
 select public.settle_kiosk_round(:'rd_target'::uuid, 101) as settle_target \gset
 select ok(
   (:'settle_target'::json->>'claim_token') is not null,
-  'a target of 2 (public.settings) reserves the coupon on the 2nd win, not the 5th'
+  'a target of 2 (public.settings) reserves the coupon on the 2nd win, not the default 3rd'
 );
-update public.settings set value = '5' where key = 'kiosk_streak_target';
+update public.settings set value = '3' where key = 'kiosk_streak_target';
 
 select * from finish();
 rollback;

@@ -10,11 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # guard:schema-migration diffs against the PR base, which needs history
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - run: npm run guard:schema-migration
       - run: npm run lint
       - run: npm run format:check
       - run: npm run test:unit

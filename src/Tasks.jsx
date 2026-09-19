@@ -585,6 +585,7 @@ export default function Tasks({
   onInstagramCheck,
   ourInstagramHandle,
   onOpenIdentity,
+  onShareMission,
   onToast,
 }) {
   const { t, lang } = useLang();
@@ -751,8 +752,17 @@ export default function Tasks({
       setIgModalOpen(true);
       return;
     }
-    // 'manual' (none seeded, kept for future use): the same instant-claim / PIN-gated path this
-    // screen always had for a task with no server-tracked progress of its own.
+    // 'story' (share your record, kind='manual'): this row grants nothing on tap. It hands off to
+    // Profile, which opens the same share modal a player already knows from its own "Share my
+    // record" button and only claims once a fake countdown after the share/download press
+    // completes (src/ShareModal.jsx's `mission` mode) - see docs/tickets for the "share mission
+    // grants on tap" bug this replaces.
+    if (row.id === 'story') {
+      onShareMission?.(row);
+      return;
+    }
+    // 'manual' (no other rows seeded, kept for future use): the same instant-claim / PIN-gated
+    // path this screen always had for a task with no server-tracked progress of its own.
     if (VERIFY_MODE === 'pin') {
       setPinFor(row.id);
       return;

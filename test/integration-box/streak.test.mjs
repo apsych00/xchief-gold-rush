@@ -1,4 +1,5 @@
-// Blind integration cases for the five-win streak contract in docs/test-contract.md.
+// Blind integration cases for the kiosk streak contract in docs/test-contract.md (the default
+// kiosk_streak_target is 3, ticket "kiosk win threshold 5 -> 3").
 // Prices are injected through the feed boundary, so the server still decides every outcome.
 
 import { test, before, after } from 'node:test';
@@ -126,6 +127,16 @@ async function playWin(ws, startPrice) {
   return nextFrame(ws, (frame) => frame.type === 'round_settled', 5500);
 }
 
+async function playLose(ws, startPrice) {
+  currentPrice = startPrice;
+  await sleep(150);
+  send(ws, { type: 'play', dir: 'up', lever: 1 });
+  const opened = await nextFrame(ws, (frame) => frame.type === 'round_opened');
+  assert.ok(opened.round_id);
+  currentPrice = startPrice - 1; // dir up, end < start: a loss
+  return nextFrame(ws, (frame) => frame.type === 'round_settled', 5500);
+}
+
 async function authKiosk(ws, secret) {
   await whenOpen(ws);
   send(ws, { type: 'auth', kiosk: secret });
@@ -139,7 +150,7 @@ async function authWeb(ws) {
   return nextFrame(ws, (frame) => frame.type === 'welcome');
 }
 
-test('kiosk claims a coupon on the fifth win, ends, then reset starts a fresh session', async () => {
+test('kiosk claims a coupon on the third win (default streak target), ends, then reset starts a fresh session', async () => {
   const kiosk = await createKiosk('b14-kiosk-won');
   const ws = connect();
   try {
@@ -148,25 +159,27 @@ test('kiosk claims a coupon on the fifth win, ends, then reset starts a fresh se
       { coins: initial.coins, streak: initial.streak, state: initial.state },
       { coins: 1000, streak: 0, state: 'idle' },
     );
+    assert.equal(initial.streak_target, 3, 'the seeded default streak target is 3');
 
-    let fifth;
-    for (let round = 1; round <= 5; round += 1) {
+    let third;
+    for (let round = 1; round <= 3; round += 1) {
       const settled = await playWin(ws, 3000 + round * 10);
       assert.equal(settled.outcome, 'win');
-      if (round < 5) assert.equal(settled.streak, round);
-      if (round === 5) fifth = settled;
+      if (round < 3) assert.equal(settled.streak, round);
+      if (round === 3) third = settled;
       await nextFrame(ws, (frame) => frame.type === 'kiosk_session');
     }
 
-    // ticket C9: the fifth win reserves a coupon and opens a one-time claim link - it never
-    // hands the code itself to the kiosk any more, only the absolute claim_url.
-    assert.equal(typeof fifth.claim_url, 'string');
-    assert.notEqual(fifth.claim_url, '');
-    assert.equal(fifth.state, 'won');
-    assert.equal(fifth.streak, 0);
-    assert.equal(fifth.coupon, undefined, 'no coupon code ever rides on round_settled any more');
+    // ticket C9: the win that reaches the streak target reserves a coupon and opens a one-time
+    // claim link - it never hands the code itself to the kiosk any more, only the absolute
+    // claim_url.
+    assert.equal(typeof third.claim_url, 'string');
+    assert.notEqual(third.claim_url, '');
+    assert.equal(third.state, 'won');
+    assert.equal(third.streak, 0);
+    assert.equal(third.coupon, undefined, 'no coupon code ever rides on round_settled any more');
 
-    const token = new URL(fifth.claim_url).pathname.split('/').pop();
+    const token = new URL(third.claim_url).pathname.split('/').pop();
     const linkRows = await pool.query(
       `select c.status, c.claimed_by_kiosk
        from public.claim_links cl join public.coupons c on c.id = cl.coupon_id
@@ -200,18 +213,57 @@ test('kiosk claims a coupon on the fifth win, ends, then reset starts a fresh se
   }
 });
 
-test('an empty coupon pool keeps the fifth-win streak and the kiosk playing', async () => {
+test('no coupon at two wins, a loss resets the streak, then the coupon lands on the next third win', async () => {
+  const kiosk = await createKiosk('b14-kiosk-boundary');
+  const ws = connect();
+  try {
+    await authKiosk(ws, kiosk.secret);
+
+    const first = await playWin(ws, 8000);
+    assert.equal(first.streak, 1);
+    assert.equal(first.claim_url, null, 'one win never reserves a coupon');
+    await nextFrame(ws, (frame) => frame.type === 'kiosk_session');
+
+    const second = await playWin(ws, 8100);
+    assert.equal(second.streak, 2, 'two wins is one short of the default streak target of 3');
+    assert.equal(second.claim_url, null, 'no coupon is reserved one win short of the target');
+    assert.equal(second.state, 'playing', 'the session does not end on a below-target win');
+    await nextFrame(ws, (frame) => frame.type === 'kiosk_session');
+
+    const lost = await playLose(ws, 8200);
+    assert.equal(lost.outcome, 'lose');
+    assert.equal(lost.streak, 0, 'a loss resets the streak, even one win short of the target');
+    assert.equal(lost.claim_url, null, 'a loss never reserves a coupon');
+    await nextFrame(ws, (frame) => frame.type === 'kiosk_session');
+
+    let third;
+    for (let round = 1; round <= 3; round += 1) {
+      const settled = await playWin(ws, 8300 + round * 10);
+      assert.equal(settled.outcome, 'win');
+      if (round < 3) assert.equal(settled.streak, round);
+      if (round === 3) third = settled;
+      await nextFrame(ws, (frame) => frame.type === 'kiosk_session');
+    }
+    assert.ok(third.claim_url, 'the streak released the coupon on the third win after the reset');
+    assert.equal(third.streak, 0);
+  } finally {
+    ws.close();
+  }
+});
+
+test('an empty coupon pool keeps the third-win streak and the kiosk playing', async () => {
   // open_kiosk_round now refuses a NEW round outright once the pool is empty (ticket C8,
   // docs/layers.md), so the pool cannot start this test already empty the way it used to - the
-  // 5th round would never even open. It opens while a coupon is still there instead, and the
-  // pool is emptied out from under it before it settles: the same race a concurrent kiosk's own
-  // win would cause, and exactly the case docs/layers.md C8 says settles normally.
+  // 3rd round (the default streak target) would never even open. It opens while a coupon is
+  // still there instead, and the pool is emptied out from under it before it settles: the same
+  // race a concurrent kiosk's own win would cause, and exactly the case docs/layers.md C8 says
+  // settles normally.
   const kiosk = await createKiosk('b14-kiosk-empty');
   const ws = connect();
   let claimed = { rows: [] };
   try {
     await authKiosk(ws, kiosk.secret);
-    for (let round = 1; round <= 4; round += 1) {
+    for (let round = 1; round <= 2; round += 1) {
       const settled = await playWin(ws, 5000 + round * 10);
       assert.equal(settled.outcome, 'win');
       assert.equal(settled.streak, round);
@@ -233,14 +285,14 @@ test('an empty coupon pool keeps the fifth-win streak and the kiosk playing', as
     );
 
     currentPrice = 5051;
-    const fifth = await nextFrame(ws, (frame) => frame.type === 'round_settled', 5500);
+    const third = await nextFrame(ws, (frame) => frame.type === 'round_settled', 5500);
 
-    assert.equal(fifth.outcome, 'win');
-    assert.equal(fifth.coupons_exhausted, true);
-    assert.equal(fifth.claim_url, null, 'nothing to reserve: no claim link is opened');
-    assert.equal(fifth.coupon, undefined);
-    assert.equal(fifth.state, 'playing');
-    assert.equal(fifth.streak, 5);
+    assert.equal(third.outcome, 'win');
+    assert.equal(third.coupons_exhausted, true);
+    assert.equal(third.claim_url, null, 'nothing to reserve: no claim link is opened');
+    assert.equal(third.coupon, undefined);
+    assert.equal(third.state, 'playing');
+    assert.equal(third.streak, 3);
   } finally {
     ws.close();
     if (claimed.rows.length > 0) {
@@ -254,7 +306,11 @@ test('an empty coupon pool keeps the fifth-win streak and the kiosk playing', as
   }
 });
 
-test('a web player sees the fifth-win streak and multiplier and can play a sixth round', async () => {
+// combo_mult (db/schema.sql) caps the web payout multiplier at streak 3+, independent of the
+// kiosk coupon streak target - a web player has no coupon and never stops on a win. Kept at five
+// consecutive wins on purpose: it proves the multiplier stays capped past the point a kiosk
+// visitor would have already won a coupon.
+test('a web player sees the streak multiplier cap past a fifth win and can play a sixth round', async () => {
   const ws = connect();
   try {
     const welcome = await authWeb(ws);

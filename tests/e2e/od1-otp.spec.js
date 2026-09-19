@@ -92,7 +92,7 @@ test.describe('OD1: OTP gibberish codes never 429 a single visitor', () => {
       'That code expired. Send a new one',
     ];
     for (let i = 0; i < 6; i++) {
-      await page.locator('.modal .pin-input').fill(String(10000000 + i));
+      await page.locator('.modal .pin-input').fill(String(9000 + i));
       await page.locator('.modal').getByRole('button', { name: /verify/i }).click();
       await expect(page.locator('.modal .lead-error')).toBeVisible({ timeout: 5000 });
       await expect(page.locator('.modal .lead-error')).toHaveText(expectedTexts[i]);
