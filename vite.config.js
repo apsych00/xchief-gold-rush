@@ -121,7 +121,11 @@ function adsVideosDev() {
 
 export default defineConfig({
   plugins: [react(), versionFile(), adsBannersDev(), adsVideosDev()],
-  base: './',
+  // Absolute, not './': the SPA is served from the domain root (Caddyfile's handle block) and
+  // has routes more than one segment deep, e.g. /claim/<token>. A relative base makes those pages
+  // resolve ./assets/* against /claim/, where try_files hands back index.html and the module
+  // script dies on the MIME check - a blank page.
+  base: '/',
   server: gameApiTarget
     ? {
         proxy: {

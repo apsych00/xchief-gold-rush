@@ -153,9 +153,11 @@ export default function ClaimPage({ token }) {
         <div className="phone">
           <header className="topbar">
             <div className="topbar-start">
-              <div className="logo" dir="ltr">
+              {/* The claim page is its own tree with no in-app router (src/main.jsx), so the
+                  header logo is a real link back to the game, not a screen switch. */}
+              <a className="logo logo-home" href="/" dir="ltr" aria-label="xChief home">
                 <Logo height={26} />
-              </div>
+              </a>
             </div>
           </header>
           <section className="home claim-home">

@@ -285,6 +285,8 @@ button:focus:not(:focus-visible) {
   padding: 0;
   background: none;
   cursor: pointer;
+  /* Also worn by the claim page header, where the logo is an <a> back to the game. */
+  text-decoration: none;
   -webkit-tap-highlight-color: transparent;
   transition: opacity 0.15s;
 }
