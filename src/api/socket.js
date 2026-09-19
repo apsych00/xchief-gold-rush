@@ -348,9 +348,14 @@ function settlePending(frame) {
     if (isError) return true;
     if (!entry.kinds.has(frame.type)) return false;
     if (frame.type !== 'leaderboard') return true;
+    // A request that named no tournament asked for "whichever is running", so any tournament in
+    // the reply answers it - only compare when the request actually pinned one down. Comparing a
+    // null request against the server's resolved id would never match, and the reply (the only
+    // frame carrying `legend` and `me`) would time out instead of settling.
     const sentTournament = entry.frame.tournament ?? null;
     const replyTournament = frame.tournament?.id ?? null;
-    return frame.page === entry.frame.page && replyTournament === sentTournament;
+    const tournamentMatches = sentTournament === null || replyTournament === sentTournament;
+    return frame.page === entry.frame.page && tournamentMatches;
   });
   if (idx === -1) return false;
   const [entry] = pending.splice(idx, 1);
