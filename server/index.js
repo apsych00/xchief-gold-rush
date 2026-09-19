@@ -311,10 +311,17 @@ async function handleLead(req, res) {
 /**
  * Build the server without starting it. `finnhubToken` defaults from the environment; tests
  * pass `null` (or nothing, with FINNHUB_TOKEN unset) to get a PAXG-only feed they drive
- * themselves through the returned `feed._injectTick`.
+ * themselves through the returned `feed._injectTick`. `finnhubTokens` is FINNHUB_TOKENS, a
+ * comma-separated list the feed rotates through on a 429/handshake rejection (server/feed.js);
+ * it wins over finnhubToken when set, which stays as single-key sugar for anyone who hasn't
+ * filled in the list.
  */
 export function createApp({
   finnhubToken = process.env.FINNHUB_TOKEN || null,
+  finnhubTokens = (process.env.FINNHUB_TOKENS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
   // Kiosk idle-sweep timing (server/kiosk.js). Left undefined in production so kiosk.js's own
   // 60 s / 10 s defaults apply; tests shrink both so they do not wait on a real minute.
   kioskIdleMs = undefined,
@@ -479,7 +486,7 @@ export function createApp({
     );
   }
 
-  const feed = createFeed({ finnhubToken, onTick: broadcastPrice });
+  const feed = createFeed({ finnhubToken, finnhubTokens, onTick: broadcastPrice });
   const rounds = createRoundManager({
     feed,
     ledger,
@@ -527,6 +534,9 @@ export function createApp({
         connected: s.connected,
         lastTickAt: s.lastTickAt,
         ageMs: s.lastTickAt === null ? null : now - s.lastTickAt,
+        // Finnhub key rotation state (server/feed.js status()): which key index is live and how
+        // many are configured, never the keys themselves. Absent for sources with no key list.
+        ...(s.keyIndex !== undefined ? { keyIndex: s.keyIndex, keyCount: s.keyCount } : {}),
       };
     }
     const p = feed.latest();

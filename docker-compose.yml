@@ -27,7 +27,7 @@ services:
       context: .
       dockerfile: server/Dockerfile
     restart: unless-stopped
-    # Everything the game server reads (DATABASE_URL, FINNHUB_TOKEN,
+    # Everything the game server reads (DATABASE_URL, FINNHUB_TOKEN, FINNHUB_TOKENS,
     # PLAYER_TOKEN_SECRET, ELASTIC_API_KEY, OTP_SENDER, PORT) comes from .env.
     env_file: .env.box
     # On start the image applies db/schema.sql + db/seed.sql (idempotent) and
