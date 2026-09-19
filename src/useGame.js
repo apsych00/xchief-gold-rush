@@ -145,6 +145,19 @@ export function useGame() {
     return next;
   }, []);
 
+  // Score-desync fix: the one place that flips a tasksRows entry to claimed. Every reward path
+  // that tells the client exactly which task it just released (claim_task, task_progress,
+  // task_return, instagram_check) goes through this instead of each writing its own copy of the
+  // same tasksRows.map() - one path for this piece of state, same reasoning as applyMe above for
+  // coins/record/streak. verify_otp's email/signup grant has no single task id to pass here (it
+  // can release two at once and, on a re-login, none) - refreshTasks() covers that one instead.
+  const markTaskClaimed = useCallback((taskId) => {
+    setState((s) => ({
+      ...s,
+      tasksRows: s.tasksRows.map((r) => (r.id === taskId ? { ...r, claimed: true } : r)),
+    }));
+  }, []);
+
   // Applies one `leaderboard`-shaped frame (ticket B2) as a fresh board: used for the first
   // fetch when the screen mounts and whenever the player switches tournament (ticket B1) -
   // both replace every accumulated row rather than appending to it. `rows` are already ranked
@@ -568,16 +581,13 @@ export function useGame() {
           // reward the ledger just granted (docs/layers.md C5) - never guessed from a coin
           // delta or a client-side reward table.
           applyMe(res);
-          setState((s) => ({
-            ...s,
-            tasksRows: s.tasksRows.map((r) => (r.id === res.task ? { ...r, claimed: true } : r)),
-          }));
+          markTaskClaimed(res.task);
           toast(`+${res.reward}`);
         })
         .catch((err) => toast(err?.code || 'error'));
       return true;
     },
-    [applyMe, toast],
+    [applyMe, markTaskClaimed, toast],
   );
 
   // Video watch progress (ticket B6): reported by the player's own <video> element (or the
@@ -593,16 +603,13 @@ export function useGame() {
         .then((res) => {
           applyMe(res);
           if (res.reward != null) {
-            setState((s) => ({
-              ...s,
-              tasksRows: s.tasksRows.map((r) => (r.id === taskId ? { ...r, claimed: true } : r)),
-            }));
+            markTaskClaimed(taskId);
             toast(`+${res.reward}`);
           }
         })
         .catch((err) => console.error('[api] task_progress failed', err));
     },
-    [applyMe, toast],
+    [applyMe, markTaskClaimed, toast],
   );
 
   // Redirect and return (ticket B7): opens the server's 5 s window before the destination URL
@@ -619,15 +626,12 @@ export function useGame() {
       if (!apiEnabled || IS_KIOSK) return Promise.reject(Object.assign(new Error('not_available'), { code: 'not_available' }));
       return api.returnTaskVisit(taskId).then((res) => {
         applyMe(res);
-        setState((s) => ({
-          ...s,
-          tasksRows: s.tasksRows.map((r) => (r.id === taskId ? { ...r, claimed: true } : r)),
-        }));
+        markTaskClaimed(taskId);
         toast(`+${res.reward}`);
         return res;
       });
     },
-    [applyMe, toast],
+    [applyMe, markTaskClaimed, toast],
   );
 
   // Instagram follow reward, step 1 (ticket K3): store the handle and get the follow URLs back.
@@ -648,15 +652,12 @@ export function useGame() {
     return api.instagramCheck().then((res) => {
       if (res.ok) {
         if (res.me) applyMe(res.me);
-        setState((s) => ({
-          ...s,
-          tasksRows: s.tasksRows.map((r) => (r.id === 'instagram' ? { ...r, claimed: true } : r)),
-        }));
+        markTaskClaimed('instagram');
         if (res.reward != null) toast(`+${res.reward}`);
       }
       return res;
     });
-  }, [applyMe, toast]);
+  }, [applyMe, markTaskClaimed, toast]);
 
   const freeRefill = useCallback(() => {
     if (apiEnabled && !IS_KIOSK) {
@@ -740,15 +741,24 @@ export function useGame() {
    * The OTP entry point lives on the leaderboard screen itself (the guest row); a live push
    * only arrives after this player's next round settles, so without this the leaderboard
    * behind the modal would keep showing the pre-verification guest row until the player left
-   * the screen and came back. A verify is rare enough that one extra fetch here is free. */
+   * the screen and came back. A verify is rare enough that one extra fetch here is free.
+   *
+   * Score-desync fix: this is also the one reward path whose server reply carries no task id
+   * (verify_otp_code can release the email task and, on a first verify, the signup task too, in
+   * one call - server/index.js's verify_otp), so markTaskClaimed above has nothing to key off.
+   * refreshTasks() re-pulls the real claimed state from the server instead, the same "one extra
+   * fetch is free" reasoning as refreshLeaderboard() just above - without it the Missions screen
+   * would keep showing "Start" on a task the server already paid out until its own 5 s poll (or
+   * the player leaving and coming back) caught up. */
   const verifyOtp = useCallback(
     (email, code) =>
       sessionVerifyOtp(email, code).then((me) => {
         const next = applyMe(me);
         refreshLeaderboard();
+        refreshTasks();
         return { ...next, identityChanged: !!me.token };
       }),
-    [applyMe, refreshLeaderboard],
+    [applyMe, refreshLeaderboard, refreshTasks],
   );
 
   const signOut = useCallback(() => sessionSignOut(), []);

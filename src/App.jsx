@@ -1085,6 +1085,13 @@ function Leaderboard({
         <div className="lb-spacer" style={{ '--n': rows.length + (loadingMore ? LOAD_MORE_SKELETON_ROWS : 0) }} />
         {rows.map((r, i) => {
           const mine = me != null && r.rank === me.rank;
+          // Score-desync fix: rank/display/tier only exist server-side (this row's position
+          // depends on every other player's own score, which the client cannot know), but the
+          // number itself is exactly profile.record once this is the player's own row - reading
+          // it from `profile` instead of this row's own snapshot means it is always as fresh as
+          // the topbar, never lagging behind a reward the client already knows about but this
+          // board has not been re-fetched since.
+          const score = mine ? profile.record : r.record;
           return (
             <div key={r.rank} className={mine ? 'lb-row lb-row-me' : 'lb-row'} style={{ '--i': i }}>
               <span className="lb-rank">{num(r.rank, lang)}</span>
@@ -1092,7 +1099,7 @@ function Leaderboard({
                 {r.display}
                 <BadgeIcon tier={r.tier} legend={legend} />
               </span>
-              <span className="lb-score">{num(r.record, lang)}</span>
+              <span className="lb-score">{num(score, lang)}</span>
             </div>
           );
         })}
@@ -1141,7 +1148,9 @@ function Leaderboard({
             {me.display}
             <BadgeIcon tier={me.tier} legend={legend} />
           </span>
-          <span className="lb-score">{num(me.record, lang)}</span>
+          {/* Same reasoning as the in-page own row above: the number is profile.record, not
+              this snapshot's own me.record. */}
+          <span className="lb-score">{num(profile.record, lang)}</span>
         </div>
       )}
       {legend?.length > 0 && (
