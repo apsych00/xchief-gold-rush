@@ -54,7 +54,11 @@ const dict = {
       waiting: 'Waiting for market price…',
       note: 'Live gold price ({symbol})',
       noteQuiet: 'Market is flat; micro-moves simulated on the last price',
-      tooManyConnections: 'Too many connections from this network, try again in a minute',
+    },
+    conn: {
+      lostTitle: 'Connection lost',
+      refusedTitle: 'Too many players on this network',
+      reconnecting: 'Reconnecting',
     },
     result: {
       winTitle: 'You called it!',
@@ -317,7 +321,9 @@ const dict = {
 };
 
 export function num(n) {
-  return Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '—';
+  return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 export function money(v) {

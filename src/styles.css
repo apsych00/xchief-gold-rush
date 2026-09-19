@@ -884,14 +884,6 @@ button:focus:not(:focus-visible) {
   letter-spacing: 0;
   color: rgba(255, 255, 255, 0.55);
 }
-/* Ticket OD1: the "too many connections" line under the feed badge - same corner, own line so
-   it never fights the badge's fixed height, capped so it never runs past the display's edge. */
-.feed-refused {
-  margin-top: 6px;
-  max-width: 200px;
-  text-align: end;
-  font: 700 11px var(--fa);
-}
 .feed-dot {
   width: 8px;
   height: 8px;
@@ -1385,6 +1377,45 @@ button:focus:not(:focus-visible) {
   color: #fff;
 }
 
+/* Leaderboard skeleton (no data yet - src/App.jsx's Leaderboard, others == null): same
+   .lb-row geometry and --i row indexing as a real row, so the layout does not jump once data
+   lands, with plain shimmering blocks standing in for rank/name/score. */
+.lb-row-skeleton {
+  background: rgba(255, 255, 255, 0.04);
+}
+.lb-skel {
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.06) 25%,
+    rgba(255, 255, 255, 0.14) 37%,
+    rgba(255, 255, 255, 0.06) 63%
+  );
+  background-size: 400% 100%;
+  animation: lb-skel-pulse 1.6s ease-in-out infinite;
+}
+.lb-skel-rank {
+  width: 18px;
+  height: 12px;
+}
+.lb-skel-name {
+  flex: 1;
+  height: 12px;
+  max-width: 40%;
+}
+.lb-skel-score {
+  width: 36px;
+  height: 12px;
+}
+@keyframes lb-skel-pulse {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
 .lb-tournament {
   flex: none;
   margin: 0 0 10px;
@@ -1728,6 +1759,45 @@ button:focus:not(:focus-visible) {
 /* Keep the primary button on the right on every card, including the last, where Skip is absent. */
 .tour-actions .tour-primary {
   margin-inline-start: auto;
+}
+/* Ticket: the global "socket is down" modal's animated dots after "Reconnecting". CSS-driven
+   (not a JS timer) so it keeps animating without a re-render, and held static under
+   prefers-reduced-motion below. */
+.conn-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-inline-start: 4px;
+  vertical-align: middle;
+}
+.conn-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.2;
+  animation: gr-conn-dot 1.4s ease-in-out infinite;
+}
+.conn-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.conn-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes gr-conn-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.2;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .conn-dot {
+    animation: none;
+    opacity: 0.8;
+  }
 }
 .pin-input {
   display: block;
@@ -2467,14 +2537,6 @@ button:focus:not(:focus-visible) {
   .app-kiosk .display-inner {
     border-radius: 26px;
   }
-  .app-kiosk .btn-home {
-    top: 16px;
-    inset-inline-start: 18px;
-    height: 46px;
-    padding: 0 18px;
-    border-radius: 23px;
-    font-size: 17px;
-  }
   .app-kiosk .feed-corner {
     top: 16px;
     inset-inline-end: 18px;
@@ -2483,10 +2545,6 @@ button:focus:not(:focus-visible) {
     height: 42px;
     padding: 0 16px;
     border-radius: 21px;
-    font-size: 15px;
-  }
-  .app-kiosk .feed-refused {
-    max-width: 320px;
     font-size: 15px;
   }
   .app-kiosk .pane-idle {
@@ -2857,10 +2915,6 @@ button:focus:not(:focus-visible) {
     height: 38px;
     padding: 0 14px;
     border-radius: 19px;
-    font-size: 14px;
-  }
-  .app:not(.app-kiosk) .feed-refused {
-    max-width: 280px;
     font-size: 14px;
   }
   .app:not(.app-kiosk) .pane-idle {

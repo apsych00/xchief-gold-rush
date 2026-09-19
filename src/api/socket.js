@@ -24,6 +24,7 @@ const MAX_BACKOFF_MS = 10000;
 const QUIET_AFTER_MS = 3000; // no price/hello frame this long -> the feed is quiet
 const QUIET_POLL_MS = 250;
 const REQUEST_TIMEOUT_MS = 8000;
+const HEALTH_PROBE_TIMEOUT_MS = 3000;
 
 // 'auto' (also the default when the variable is unset) means same origin: behind Caddy the
 // socket lives at /ws next to the page, so a production build never bakes in a host. An
@@ -35,6 +36,25 @@ function resolveWsUrl() {
   return `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
 }
 const WS_URL = resolveWsUrl();
+
+/** Maps the socket's own URL to that same origin's /health (ws:// -> http://, wss:// -> https://,
+ * whatever path the socket uses -> /health, per server/index.js and the Caddyfile). Used by the
+ * failed-open probe below so it asks the exact origin the socket is failing to reach, not the
+ * page's own origin. Returns null rather than throwing on a malformed WS_URL (dev misconfig or
+ * the unresolved '' from a window-less environment). Exported for the unit test only. */
+export function deriveHealthUrl(wsUrl) {
+  if (!wsUrl) return null;
+  try {
+    const u = new URL(wsUrl);
+    u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
+    u.pathname = '/health';
+    u.search = '';
+    u.hash = '';
+    return u.href;
+  } catch {
+    return null;
+  }
+}
 
 /** True when this tab is the self-provisioning open kiosk route (ticket K1). */
 export function isKioskPath() {
@@ -206,12 +226,42 @@ let needsReprovision = false;
 // Ticket OD1: the WS upgrade path's own 429 (S2's per-IP connection window) refuses the TCP
 // handshake before any WebSocket frame exists (server/index.js's `upgrade` handler writes the
 // raw HTTP response itself), which is exactly the one failure mode the WebSocket spec hides
-// from JS - onclose fires with no readable status, same as any other failed handshake. The only
-// client-visible signature is a string of closes that never reached onopen; two in a row (this
-// is never the very first connect a page makes, since that always either opens or the app has
-// nothing else running yet to have tripped a per-IP window) is treated as that signature.
+// from JS - onclose fires with no readable status, same as any other failed handshake. But a
+// string of closes that never reached onopen is not on its own evidence of that: an
+// unreachable origin (dead port, wss:// against a plain-HTTP box) fails every attempt the same
+// way, including the first two. So failure alone only counts as "the failed-open signature";
+// deciding it actually means a refused upgrade takes a positive check - see
+// probeConnectionRefused below, which asks the same origin's /health over plain HTTP once the
+// signature shows up. Reachable and OK -> something is there and specifically declining the
+// upgrade, so this is a genuine refusal. Unreachable, TLS failure, timeout or non-OK -> nothing
+// is there at all, and this stays false so the modal reads "Connection lost" instead of naming
+// a rate limit that was never hit.
 let consecutiveFailedOpens = 0;
 let connectionRefused = false;
+
+/** Runs once per transition into the failed-open signature (see the comment above
+ * connectionRefused) - not on every retry after that, so it never adds load to the backoff
+ * loop or a black-holed origin's retry cadence. AbortController bounds it to
+ * HEALTH_PROBE_TIMEOUT_MS so a box that swallows the request silently still resolves to
+ * "Connection lost" promptly rather than leaving the modal title stale. Never throws into the
+ * caller - onclose has already scheduled the next reconnect by the time this settles. */
+async function probeConnectionRefused() {
+  const healthUrl = deriveHealthUrl(WS_URL);
+  if (!healthUrl) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), HEALTH_PROBE_TIMEOUT_MS);
+  let reachable = false;
+  try {
+    const res = await fetch(healthUrl, { signal: controller.signal });
+    reachable = res.ok;
+  } catch {
+    reachable = false;
+  } finally {
+    clearTimeout(timer);
+  }
+  connectionRefused = reachable;
+  notifyStatus();
+}
 
 const pending = []; // { kinds: Set<string>, resolve, reject, timer }
 
@@ -480,7 +530,7 @@ function open() {
     quiet = false;
     if (!openedThisAttempt) {
       consecutiveFailedOpens += 1;
-      if (consecutiveFailedOpens >= 2) connectionRefused = true;
+      if (consecutiveFailedOpens === 2) probeConnectionRefused();
     }
     notifyStatus();
     rejectAllPending('disconnected');

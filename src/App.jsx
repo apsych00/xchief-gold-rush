@@ -225,6 +225,47 @@ function TourPlaceholder({ onDone }) {
   );
 }
 
+// Ticket OD-modal: the global, blocking "socket is down" modal. Keyed on state.feed (see
+// initialGame.feed in src/useGame.js and startPriceFeed in src/priceFeed.js) - mode ===
+// 'connecting' means the socket is not currently connected and authed. Shown only after a
+// grace period so it never flashes on a cold start while the first socket opens normally, and
+// it clears itself the instant the socket connects. Reuses the .modal-backdrop/.modal
+// vocabulary (see TourPlaceholder above); no close button, no Esc, no backdrop click - the
+// point is that nothing underneath is usable until the socket is back.
+const CONNECTION_MODAL_DELAY_MS = 4000;
+
+function ConnectionModal({ feed }) {
+  const { t } = useLang();
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (feed.mode !== 'connecting') {
+      setVisible(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setVisible(true), CONNECTION_MODAL_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [feed.mode]);
+
+  if (!visible) return null;
+  const title = feed.connectionRefused ? t('conn.refusedTitle') : t('conn.lostTitle');
+  return (
+    <div className="modal-backdrop" role="alertdialog" aria-modal="true" aria-label={title}>
+      <div className="modal">
+        <div className="modal-title">{title}</div>
+        <div className="modal-sub">
+          {t('conn.reconnecting')}
+          <span className="conn-dots" aria-hidden="true">
+            <span className="conn-dot" />
+            <span className="conn-dot" />
+            <span className="conn-dot" />
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- home ---------- */
 
 function Home({ profile, actions }) {
@@ -389,12 +430,13 @@ function Display({ state, profile, actions }) {
       <div className="display-inner">
         <div className="display-rays" aria-hidden="true" />
         <div className="display-vignette" aria-hidden="true" />
-        <button type="button" className="btn-home" onClick={actions.goHome}>
-          {t('game.home')}
-        </button>
+        {!IS_KIOSK && (
+          <button type="button" className="btn-home" onClick={actions.goHome}>
+            {t('game.home')}
+          </button>
+        )}
         <div className="feed-corner">
           <FeedBadge feed={feed} />
-          {feed.connectionRefused && <div className="lead-error feed-refused">{t('feed.tooManyConnections')}</div>}
         </div>
 
         {isIdle && (
@@ -964,6 +1006,34 @@ function Leaderboard({
     );
   }
 
+  // `others` is null until the leaderboard's first fetch or push lands (src/useGame.js's
+  // initialGame) - distinct from `[]`, which means the fetch landed and there is genuinely
+  // nothing to show. Only the "no data yet" case gets the skeleton; an empty board falls
+  // through to the normal server-paged render below, which already handles zero rows (the
+  // guest CTA row, or just an empty list for a verified player on an empty board).
+  if (others == null) {
+    return (
+      <section className="lb">
+        <LeaderboardHeader
+          tournament={tournament}
+          tournaments={tournaments}
+          selectedId={selectedId}
+          onSelect={selectTournament}
+        />
+        <div className="lb-list">
+          <div className="lb-spacer" style={{ '--n': 7 }} />
+          {Array.from({ length: 7 }, (_, i) => (
+            <div key={i} className="lb-row lb-row-skeleton" style={{ '--i': i }}>
+              <span className="lb-skel lb-skel-rank" />
+              <span className="lb-skel lb-skel-name" />
+              <span className="lb-skel lb-skel-score" />
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   // Server-paged rows (ticket B2): each row already carries its own rank and badge tier from
   // public.leaderboard(). `me` is this player's own row from public.my_rank(), matched by
   // player id, never the masked display string (closes gap G3); null for a guest/unverified
@@ -1225,6 +1295,7 @@ export default function App() {
             />
           )}
           {!isKiosk && !tourSeen && <TourPlaceholder onDone={markTourSeen} />}
+          <ConnectionModal feed={state.feed} />
         </div>
       </div>
     </LangContext.Provider>

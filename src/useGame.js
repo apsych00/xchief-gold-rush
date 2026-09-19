@@ -57,7 +57,11 @@ const initialGame = {
   remaining: ROUND_SECONDS,
   history: [],
   drag: false,
-  others: OTHERS,
+  // OTHERS is the static demo list, only meaningful on the no-server preview path
+  // (apiEnabled === false). When apiEnabled, this stays null until the leaderboard's first
+  // fetch or push lands - null means "no data yet" (renders a skeleton), [] means "loaded and
+  // empty" (renders the real empty/guest state). See Leaderboard in src/App.jsx.
+  others: apiEnabled ? null : OTHERS,
   // Tournament header and switcher list (ticket B1): null/[] until the leaderboard screen's
   // first fetch or push. `tournament` is null while no tournament is running.
   tournament: null,
