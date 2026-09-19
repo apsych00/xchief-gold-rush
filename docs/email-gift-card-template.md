@@ -24,6 +24,29 @@ xChief logo PNG and three Space Grotesk woff2 files. Those already live in this 
 `public/` and ship with every deploy, so no separate upload is needed for them - they just need
 the site to be live at that domain by the time the template sends its first real email.
 
+## Where the images should live (recommended change)
+
+Right now the logo and the three font files are served from our own site
+(`https://goldrush.xchief.academy/email/...`) because they ship inside the app's `public/`
+directory. That works, but it couples a sent email to our deployments, and an email is a
+document that outlives them: this one advertises a 30-day redemption window, so a recipient may
+well open it weeks after we next reorganise the site. If that path ever moves, the logo silently
+breaks in an inbox we cannot reach.
+
+**The better arrangement: upload the logo into Elastic Mail's own file manager and point the
+template at the URL it returns.** The admin is already in the dashboard creating the template,
+so it costs nothing extra, and it makes the template self-contained - our deploys can no longer
+break it. The copies under `public/email/` then serve only as the fallback and the source of
+truth for the artwork.
+
+**On the fonts, the honest answer is that they barely matter.** Gmail, Outlook and Yahoo all
+ignore `@font-face` in email, so the large majority of recipients see the fallback stack
+regardless - which we rendered and checked, and it looks correct. Keep them as progressive
+enhancement for the clients that do honour them (Apple Mail), or drop them; either is fine.
+
+One thing not to do: never inline images as base64 data URIs. Gmail strips them, and the email
+arrives with holes where the artwork should be.
+
 ## What we need back
 
 Once the template is created, send us the **template id** Elastic Mail assigns it. That is the

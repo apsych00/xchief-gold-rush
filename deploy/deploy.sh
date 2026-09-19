@@ -74,9 +74,19 @@ fi
 [ -f "$tmp_dist/index.html" ] || { rm -rf "$tmp_dist"; fail "client build produced no index.html"; }
 rm -rf dist
 mv "$tmp_dist" dist
+# The temp dir arrives 0700; Caddy reads dist/ through a bind mount, so it must be traversable.
+chmod 755 dist
 
 echo "==> building and starting the box (docker compose)"
 docker compose --env-file .env.box up -d --build || fail "docker compose up failed"
+
+# Caddy bind-mounts ./dist at /srv/app, and the swap above REPLACES that directory - a Caddy
+# container that keeps running holds the old, now-deleted inode and serves an empty /srv/app.
+# The symptom is nasty: / returns 404 while /health and /status still answer 200 (they are
+# proxied, not files), so the health check below passes and the deploy reports success over a
+# dead site. Recreating caddy every time is cheap and removes the trap.
+echo "==> recreating caddy so it picks up the new dist/"
+docker compose --env-file .env.box up -d --force-recreate caddy || fail "caddy recreate failed"
 
 echo "==> waiting for $HEALTH_URL (up to ${HEALTH_TIMEOUT}s)"
 deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
@@ -86,6 +96,13 @@ until curl -fsS "$HEALTH_URL" > /dev/null 2>&1; do
   fi
   sleep 2
 done
+
+# /health and /status are PROXIED to the game server, so they answer 200 even when the static
+# site is not being served at all. Ask for the app itself too, otherwise a deploy that leaves
+# visitors staring at a 404 still reports success (it did, once - see the caddy recreate above).
+APP_URL="${APP_URL:-${HEALTH_URL%/health}/}"
+echo "==> checking the app itself answers ($APP_URL)"
+curl -fsS -o /dev/null "$APP_URL" || fail "$HEALTH_URL is healthy but $APP_URL does not serve the app - the static site is not being served (is caddy pointed at a stale dist/?)"
 
 echo "==> healthy. current status ($STATUS_URL):"
 curl -fsS "$STATUS_URL" || fail "server answered $HEALTH_URL but not $STATUS_URL"
