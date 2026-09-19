@@ -1385,6 +1385,45 @@ button:focus:not(:focus-visible) {
   color: #fff;
 }
 
+/* Leaderboard skeleton (no data yet - src/App.jsx's Leaderboard, others == null): same
+   .lb-row geometry and --i row indexing as a real row, so the layout does not jump once data
+   lands, with plain shimmering blocks standing in for rank/name/score. */
+.lb-row-skeleton {
+  background: rgba(255, 255, 255, 0.04);
+}
+.lb-skel {
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.06) 25%,
+    rgba(255, 255, 255, 0.14) 37%,
+    rgba(255, 255, 255, 0.06) 63%
+  );
+  background-size: 400% 100%;
+  animation: lb-skel-pulse 1.6s ease-in-out infinite;
+}
+.lb-skel-rank {
+  width: 18px;
+  height: 12px;
+}
+.lb-skel-name {
+  flex: 1;
+  height: 12px;
+  max-width: 40%;
+}
+.lb-skel-score {
+  width: 36px;
+  height: 12px;
+}
+@keyframes lb-skel-pulse {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
 .lb-tournament {
   flex: none;
   margin: 0 0 10px;
@@ -2466,14 +2505,6 @@ button:focus:not(:focus-visible) {
   }
   .app-kiosk .display-inner {
     border-radius: 26px;
-  }
-  .app-kiosk .btn-home {
-    top: 16px;
-    inset-inline-start: 18px;
-    height: 46px;
-    padding: 0 18px;
-    border-radius: 23px;
-    font-size: 17px;
   }
   .app-kiosk .feed-corner {
     top: 16px;

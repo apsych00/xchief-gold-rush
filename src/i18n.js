@@ -317,7 +317,9 @@ const dict = {
 };
 
 export function num(n) {
-  return Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '—';
+  return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
 export function money(v) {

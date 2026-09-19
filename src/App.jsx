@@ -389,9 +389,11 @@ function Display({ state, profile, actions }) {
       <div className="display-inner">
         <div className="display-rays" aria-hidden="true" />
         <div className="display-vignette" aria-hidden="true" />
-        <button type="button" className="btn-home" onClick={actions.goHome}>
-          {t('game.home')}
-        </button>
+        {!IS_KIOSK && (
+          <button type="button" className="btn-home" onClick={actions.goHome}>
+            {t('game.home')}
+          </button>
+        )}
         <div className="feed-corner">
           <FeedBadge feed={feed} />
           {feed.connectionRefused && <div className="lead-error feed-refused">{t('feed.tooManyConnections')}</div>}
@@ -959,6 +961,34 @@ function Leaderboard({
               </div>
             );
           })}
+        </div>
+      </section>
+    );
+  }
+
+  // `others` is null until the leaderboard's first fetch or push lands (src/useGame.js's
+  // initialGame) - distinct from `[]`, which means the fetch landed and there is genuinely
+  // nothing to show. Only the "no data yet" case gets the skeleton; an empty board falls
+  // through to the normal server-paged render below, which already handles zero rows (the
+  // guest CTA row, or just an empty list for a verified player on an empty board).
+  if (others == null) {
+    return (
+      <section className="lb">
+        <LeaderboardHeader
+          tournament={tournament}
+          tournaments={tournaments}
+          selectedId={selectedId}
+          onSelect={selectTournament}
+        />
+        <div className="lb-list">
+          <div className="lb-spacer" style={{ '--n': 7 }} />
+          {Array.from({ length: 7 }, (_, i) => (
+            <div key={i} className="lb-row lb-row-skeleton" style={{ '--i': i }}>
+              <span className="lb-skel lb-skel-rank" />
+              <span className="lb-skel lb-skel-name" />
+              <span className="lb-skel lb-skel-score" />
+            </div>
+          ))}
         </div>
       </section>
     );
