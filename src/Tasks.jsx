@@ -286,10 +286,10 @@ function openInstagram(appUrl, profileUrl) {
   window.open(url, '_blank', 'noopener');
 }
 
-// Fallback wait before a background re-check when the server rate-limits one (ticket K3). The
-// server usually hands back its own retry_ms; this only covers a response that omits it. Kept
-// under the server's own 20 s per-player window so a genuine follow is picked up promptly.
-const INSTAGRAM_RETRY_MS = 5000;
+// Cosmetic countdown shown on the tap that grants. The server takes about this long to release a
+// second-or-later check (INSTAGRAM_GRANT_DELAY_MS), so the button counts down to pace the wait
+// instead of looking stuck. Purely visual - the server alone decides check_attempts and the grant.
+const INSTAGRAM_GRANT_COUNTDOWN_S = 3;
 
 // Fallback handle for the brief window before the server's welcome has told us which account to
 // follow (and for the offline build, which never shows a live Instagram check). The server value
@@ -306,8 +306,14 @@ const INSTAGRAM_HANDLE_FALLBACK = 'xchief.global';
  *
  * The server decides every outcome; this modal only reports what it observed and shows the copy.
  * Checks are single-flight and latch on success: only one check is ever in flight, and once the
- * server confirms the follow nothing a later check returns (a rate-limit, a stale not_following)
- * can pull the modal back out of its done state.
+ * server confirms the follow nothing a later check returns (a stale not_following) can pull the
+ * modal back out of its done state.
+ *
+ * The server no longer distinguishes a background check (the tab regaining focus) from the
+ * player's explicit tap - it treats every check the same way and makes at most one BoxAPI read
+ * per player, ever. `auto` here is purely a client-side display choice: a background check stays
+ * silent on a refusal, an explicit tap shows the hint. Nothing on a timer calls check() any more -
+ * only the focus listener and the button do.
  */
 function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel, ourHandle }) {
   const { t } = useLang();
@@ -315,6 +321,7 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel, o
   const [handle, setHandle] = useState('');
   const [error, setError] = useState(null); // i18n key for a refusal shown to the player
   const [busy, setBusy] = useState(false);
+  const [countdown, setCountdown] = useState(null); // 3, 2, 1 while a granting tap is in flight
   // The account to follow, shown in every handle mention. Prefer the value the server returns on
   // start; fall back to the prop (from the welcome frame) and then the default - the client never
   // asserts a handle of its own, it only renders what the server provides.
@@ -327,8 +334,12 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel, o
   // set once the server confirms, so any check still settling afterwards is ignored.
   const checkingRef = useRef(false);
   const doneRef = useRef(false);
-  const retryTimerRef = useRef(null);
-  // Lets the retry timer and the focus listener call the latest check() without re-subscribing.
+  // Set once any check - auto or explicit - has come back not-ok. The server is the real source
+  // of truth for whether the next tap grants (check_attempts), so this flag never gates the
+  // grant itself; it only decides whether the next explicit tap shows the cosmetic countdown.
+  const failedRef = useRef(false);
+  const countdownTimerRef = useRef(null);
+  // Lets the focus listener call the latest check() without re-subscribing.
   const checkRef = useRef(() => {});
 
   useEffect(() => {
@@ -391,78 +402,79 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel, o
       });
   };
 
-  const clearRetry = useCallback(() => {
-    if (retryTimerRef.current) {
-      clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = null;
+  const clearCountdown = useCallback(() => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
     }
+    setCountdown(null);
   }, []);
 
-  const scheduleRetry = useCallback(
-    (retryMs) => {
-      clearRetry();
-      const wait = Math.min(Math.max(Number(retryMs) || INSTAGRAM_RETRY_MS, 1000), 30000);
-      retryTimerRef.current = setTimeout(() => {
-        retryTimerRef.current = null;
-        checkRef.current(true);
-      }, wait);
-    },
-    [clearRetry],
-  );
-
   // Ask the server to read BoxAPI and decide. `auto` marks a background check (the tab regaining
-  // focus, or a rate-limit retry) as opposed to the player's explicit "I followed, check" tap.
-  // Single-flight: a check already in flight, or a follow already confirmed, is a no-op.
+  // focus) as opposed to the player's explicit "I followed, check" tap - display-only, the server
+  // treats every check the same way. Single-flight: a check already in flight, or a follow
+  // already confirmed, is a no-op.
   const check = useCallback(
     (auto = false) => {
       if (doneRef.current || checkingRef.current) return;
       checkingRef.current = true;
-      clearRetry();
       setBusy(true);
-      setError(null);
-      onCheck(auto)
+      // Only the explicit tap clears the hint and starts the countdown; a background focus check
+      // stays silent so returning to the tab never wipes a hint the player already saw (that
+      // silent clear was the reported bug - the hint would flash away with nothing to show for it).
+      if (!auto) {
+        setError(null);
+        if (failedRef.current) {
+          let n = INSTAGRAM_GRANT_COUNTDOWN_S;
+          setCountdown(n);
+          countdownTimerRef.current = setInterval(() => {
+            n -= 1;
+            if (n <= 0) {
+              clearCountdown();
+            } else {
+              setCountdown(n);
+            }
+          }, 1000);
+        }
+      }
+      onCheck()
         .then((res) => {
           if (res?.ok) {
             // The server confirmed the follow and released the reward. Latch it: nothing a later
-            // in-flight or retried check returns can undo done.
+            // in-flight check returns can undo done.
             doneRef.current = true;
-            clearRetry();
+            clearCountdown();
             setBusy(false);
             onDone();
             return;
           }
+          failedRef.current = true;
+          clearCountdown();
           setBusy(false);
           // Not confirmed is not a hard failure - it just means "not yet": the very next explicit
           // tap grants the reward server-side regardless of the reason (owner policy, ticket K3).
-          // Only the explicit tap shows the hint; a background focus check stays silent so
-          // returning to the tab before following never flashes a refusal.
           if (!auto) setError(reasonKey(res?.reason));
         })
         .catch((err) => {
+          clearCountdown();
           setBusy(false);
           if (doneRef.current) return; // a success already settled; a later error never stomps it
-          if (err?.code === 'rate_limited') {
-            // "you just checked" - not a failure. Keep the follow UI clean and try again after
-            // the server's own window (or a short fallback) instead of showing an error.
-            setError(null);
-            scheduleRetry(err?.retryMs);
-            return;
-          }
-          setError(errorKeyFor(err?.code));
+          failedRef.current = true;
+          if (!auto) setError(errorKeyFor(err?.code));
         })
         .finally(() => {
           checkingRef.current = false;
         });
     },
-    [onCheck, onDone, clearRetry, scheduleRetry],
+    [onCheck, onDone, clearCountdown],
   );
 
   useEffect(() => {
     checkRef.current = check;
   }, [check]);
 
-  // Clear any pending retry when the modal closes.
-  useEffect(() => () => clearRetry(), [clearRetry]);
+  // Clear the countdown interval when the modal closes.
+  useEffect(() => () => clearCountdown(), [clearCountdown]);
 
   // The tab regaining focus during the follow step is one "I came back" signal, same idea as the
   // redirect-and-return tasks; the explicit Check button is the other. Both funnel through the
@@ -536,7 +548,11 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel, o
               {t('tasks.cancel')}
             </button>
             <button type="button" className="btn-primary" onClick={() => check(false)} disabled={busy}>
-              {busy ? t('tasks.instagramChecking') : t('tasks.instagramCheckCta')}
+              {busy
+                ? countdown != null
+                  ? t('tasks.instagramCheckingCount', { n: countdown })
+                  : t('tasks.instagramChecking')
+                : t('tasks.instagramCheckCta')}
             </button>
           </div>
         </div>

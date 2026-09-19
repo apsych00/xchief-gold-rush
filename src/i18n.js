@@ -215,6 +215,7 @@ const dict = {
       instagramOpenAgain: 'Open Instagram',
       instagramCheckCta: 'I followed, check',
       instagramChecking: 'Checking…',
+      instagramCheckingCount: 'Checking… {n}',
       instagramNotFollowing: 'We could not see the follow yet. Follow @{handle} and tap check again.',
       instagramNotConfirmed: 'Not confirmed yet. Tap check again.',
       instagramPrivate: 'Your account is private; make it public for a moment or ask the booth staff.',

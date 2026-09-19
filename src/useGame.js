@@ -587,10 +587,10 @@ export function useGame() {
   // proven follow the server has already released the reward; reflect the fresh coins and the
   // claimed row here, exactly like the other reward paths. The reason on a refusal is left to the
   // Tasks screen to phrase.
-  const instagramCheck = useCallback((auto) => {
+  const instagramCheck = useCallback(() => {
     if (!apiEnabled || IS_KIOSK)
       return Promise.reject(Object.assign(new Error('not_available'), { code: 'not_available' }));
-    return api.instagramCheck(auto).then((res) => {
+    return api.instagramCheck().then((res) => {
       if (res.ok) {
         if (res.me) applyMe(res.me);
         setState((s) => ({
