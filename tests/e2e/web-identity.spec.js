@@ -29,7 +29,10 @@ function peekOtp(email) {
 }
 
 async function goHome(page) {
-  await page.getByRole('button', { name: 'Home' }).click();
+  // Exact match: the logo's own aria-label ("xChief home") also contains the substring "Home",
+  // so a loose name match resolves to two buttons under Playwright's default fuzzy matching -
+  // this is the nav's own Home tab, never the logo.
+  await page.getByRole('button', { name: 'Home', exact: true }).click();
 }
 
 async function goLeaderboard(page) {
