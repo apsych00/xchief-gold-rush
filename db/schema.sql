@@ -1497,7 +1497,7 @@ end $$;
 
 -- Public leaderboard: one tournament's tournament_scores, email-confirmed players only, safe
 -- columns only (ticket B1: the campaign is a series of tournaments, not one long contest; B2:
--- paged, 20 rows per page, each row carrying its own badge tier). p_tournament defaults to
+-- paged, 25 rows per page, each row carrying its own badge tier). p_tournament defaults to
 -- whichever tournament public.current_tournament() reports; passing an explicit id (the
 -- `tournament` request frame, or the `tournament` field on a `leaderboard` request,
 -- server/index.js) is how a closed or upcoming tournament's own board is read back. Either
@@ -1523,11 +1523,11 @@ language sql security definer stable set search_path = public as $$
   select rank, display, record, public.tier_for_rank(rank) as tier
   from ranked
   order by rank
-  limit 20 offset (greatest(coalesce(p_page, 1), 1) - 1) * 20;
+  limit 25 offset (greatest(coalesce(p_page, 1), 1) - 1) * 25;
 $$;
 
 -- The total ranked player count behind public.leaderboard(), for the client's page count
--- (server/index.js computes `pages = ceil(total / 20)`) - a separate call rather than a window
+-- (server/index.js computes `pages = ceil(total / LEADERBOARD_PAGE_SIZE)`) - a separate call rather than a window
 -- column on leaderboard() itself, since a page past the end would otherwise return zero rows
 -- and take the total down with it.
 create function public.leaderboard_total(p_tournament text default null)

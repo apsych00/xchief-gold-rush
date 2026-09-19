@@ -263,7 +263,7 @@ async function probeConnectionRefused() {
   notifyStatus();
 }
 
-const pending = []; // { kinds: Set<string>, resolve, reject, timer }
+const pending = []; // { kinds: Set<string>, frame, resolve, reject, timer }
 
 function notifyStatus() {
   statusEmitter.emit(state());
@@ -302,10 +302,12 @@ function send(frame) {
   if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame));
 }
 
-/** Queue a request whose response is one of `kinds`, or an `error` frame. */
+/** Queue a request whose response is one of `kinds`, or an `error` frame. `frame` (the request
+ * actually sent) is kept on the entry so settlePending can tell a targeted reply apart from an
+ * unsolicited push that happens to share the same frame type - see its own comment. */
 function request(kinds, frame) {
   return new Promise((resolve, reject) => {
-    const entry = { kinds: new Set(kinds), resolve, reject };
+    const entry = { kinds: new Set(kinds), frame, resolve, reject };
     entry.timer = setTimeout(() => {
       const i = pending.indexOf(entry);
       if (i !== -1) pending.splice(i, 1);
@@ -328,10 +330,28 @@ function payloadOf(frame) {
  * necessarily answered in send order (server work is concurrent per-connection), so this
  * matches by kind rather than assuming the head of the queue is always next; see socket.js's
  * module doc.
+ *
+ * `leaderboard` gets an extra check: its unsolicited live push (docs/layers.md C4) shares the
+ * exact same frame type as the reply to this socket's own getLeaderboard() request, always
+ * carrying page 1 of the currently running tournament. Without this, a push landing while a
+ * page-2+ (infinite scroll) or a different-tournament request is still in flight would resolve
+ * that request with the push's page-1 rows instead of its actual reply - the caller then
+ * appends the wrong page, duplicating rows, and the real reply either resolves nothing (already
+ * spliced out of `pending`) or - worse - lands on a later, unrelated request. Matching the
+ * reply's `page`/`tournament` back against what was actually sent closes that race; a push
+ * whose page happens to be the same one currently requested is genuinely interchangeable with
+ * that request's own reply, so this only ever narrows, never breaks, the ordinary case.
  */
 function settlePending(frame) {
   const isError = frame.type === 'error';
-  const idx = pending.findIndex((entry) => isError || entry.kinds.has(frame.type));
+  const idx = pending.findIndex((entry) => {
+    if (isError) return true;
+    if (!entry.kinds.has(frame.type)) return false;
+    if (frame.type !== 'leaderboard') return true;
+    const sentTournament = entry.frame.tournament ?? null;
+    const replyTournament = frame.tournament?.id ?? null;
+    return frame.page === entry.frame.page && replyTournament === sentTournament;
+  });
   if (idx === -1) return false;
   const [entry] = pending.splice(idx, 1);
   clearTimeout(entry.timer);

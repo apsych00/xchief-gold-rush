@@ -1298,6 +1298,13 @@ button:focus:not(:focus-visible) {
 /* ---------- leaderboard ---------- */
 
 .lb {
+  /* --row/--gap live here, not on .lb-list: .lb-row-sticky (the pinned guest/own row) is a
+     sibling of .lb-list, not a descendant, so a custom property scoped to .lb-list alone never
+     reaches it and its height: var(--row) resolves to nothing - the row collapses to its text
+     height. Declaring both here, on the common ancestor of .lb-list and .lb-row-sticky, gives
+     every .lb-row the same height whether it renders inline or pinned. */
+  --row: clamp(42px, 5.6vh, 50px);
+  --gap: 8px;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1305,8 +1312,6 @@ button:focus:not(:focus-visible) {
   padding: 4px 18px 0;
 }
 .lb-list {
-  --row: clamp(42px, 5.6vh, 50px);
-  --gap: 8px;
   position: relative;
   flex: 1;
   min-height: 0;
@@ -1315,6 +1320,12 @@ button:focus:not(:focus-visible) {
 }
 .lb-spacer {
   height: calc(var(--n) * (var(--row) + var(--gap)));
+}
+/* Infinite scroll's IntersectionObserver target: 1px tall, right after .lb-spacer in normal
+   flow (every .lb-row is position: absolute and does not affect .lb-list's own scroll height),
+   so it sits exactly at the bottom of the loaded content and fires the next page fetch. */
+.lb-sentinel {
+  height: 1px;
 }
 .lb-row {
   position: absolute;
@@ -1560,21 +1571,6 @@ button:focus:not(:focus-visible) {
   position: static;
   flex: none;
   margin-top: 8px;
-}
-
-.lb-pager {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 8px;
-}
-.lb-pager-info {
-  font: 600 11px var(--en);
-  color: rgba(255, 255, 255, 0.55);
-  text-align: center;
-  flex: 1;
 }
 
 .lb-legend {
@@ -3035,11 +3031,9 @@ button:focus:not(:focus-visible) {
 
   /* ---- leaderboard ---- */
   .app:not(.app-kiosk) .lb {
-    padding: 6px 30px 0;
-  }
-  .app:not(.app-kiosk) .lb-list {
     --row: clamp(58px, 7vh, 68px);
     --gap: 10px;
+    padding: 6px 30px 0;
   }
   .app:not(.app-kiosk) .lb-head {
     gap: 14px;
@@ -3087,12 +3081,6 @@ button:focus:not(:focus-visible) {
   .app:not(.app-kiosk) .lb-badge {
     width: 20px;
     height: 20px;
-  }
-  .app:not(.app-kiosk) .lb-pager {
-    margin-top: 12px;
-  }
-  .app:not(.app-kiosk) .lb-pager-info {
-    font-size: 14px;
   }
   .app:not(.app-kiosk) .lb-legend-icon {
     width: 18px;

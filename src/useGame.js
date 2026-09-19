@@ -66,15 +66,20 @@ const initialGame = {
   // first fetch or push. `tournament` is null while no tournament is running.
   tournament: null,
   tournaments: [],
-  // Paging and the player's own row (ticket B2): `me` is this player's own row from
-  // public.my_rank() - matched by player id, never a masked-email string (closes gap G3) - or
-  // null for a guest/unverified player. `legend` (ticket B3) is set once from whichever request
-  // reply carried it and kept across the unsolicited live push, which never carries one.
+  // Paging and the player's own row (ticket B2). Rows accumulate as the player scrolls
+  // (infinite scroll): `page` is the highest page merged into `others` so far, `pages` the
+  // board's total page count, `total` its total ranked-player count. `me` is this player's own
+  // row from public.my_rank() - matched by player id, never a masked-email string (closes gap
+  // G3) - or null for a guest/unverified player. `legend` (ticket B3) is set once from whichever
+  // request reply carried it and kept across the unsolicited live push, which never carries one.
   page: 1,
   pages: 1,
   total: 0,
   me: null,
   legend: [],
+  // True while a scroll-triggered next-page fetch is in flight (src/App.jsx's Leaderboard shows
+  // a couple of skeleton rows at the end of the list while this is true).
+  lbLoadingMore: false,
   feed: { mode: 'connecting', source: null, symbol: null, quiet: false, connectionRefused: false },
   // last settled round
   result: null, // { outcome:'win'|'lose'|'flat', stake, delta, mult, streak, badge, coupon? }
@@ -119,7 +124,7 @@ export function useGame() {
   // the profile from it the same way. `email`/`emailVerified`/`display` are ticket C3/C4's own
   // additions: display is this player's own masked email (docs/layers.md, "playing as
   // k****i@gmail.com"), shown in the identity bar - the leaderboard's own-row match no longer
-  // uses it (ticket B2 decision 1, closes gap G3): see applyLeaderboardPayload below.
+  // uses it (ticket B2 decision 1, closes gap G3): see applyLeaderboardReplace below.
   const applyMe = useCallback((row) => {
     const next = {
       ...profileRef.current,
@@ -140,13 +145,13 @@ export function useGame() {
     return next;
   }, []);
 
-  // Applies one `leaderboard`-shaped frame (ticket B2), whether it is a direct request's reply
-  // or the unsolicited live push (docs/layers.md C4) - both share this exact shape. `rows` are
-  // already ranked and tiered server-side; `me` is this player's own row from
-  // public.my_rank(), matched by player id, or null for a guest/unverified player - never a
-  // masked-email string comparison (closes gap G3). `legend` (ticket B3) only ever arrives on a
-  // direct request, so a push (which carries none) keeps whatever legend is already in state.
-  const applyLeaderboardPayload = useCallback((payload) => {
+  // Applies one `leaderboard`-shaped frame (ticket B2) as a fresh board: used for the first
+  // fetch when the screen mounts and whenever the player switches tournament (ticket B1) -
+  // both replace every accumulated row rather than appending to it. `rows` are already ranked
+  // and tiered server-side; `me` is this player's own row from public.my_rank(), matched by
+  // player id, or null for a guest/unverified player - never a masked-email string comparison
+  // (closes gap G3). `legend` (ticket B3) only ever arrives on a direct request.
+  const applyLeaderboardReplace = useCallback((payload) => {
     const { rows, tournament, tournaments, page, pages, total, me, legend } = payload;
     setState((s) => ({
       ...s,
@@ -159,6 +164,59 @@ export function useGame() {
       me: me ?? null,
       legend: legend ?? s.legend,
     }));
+  }, []);
+
+  // Applies one more page fetched by infinite scroll (src/App.jsx's Leaderboard sentinel):
+  // appends its rows to whatever is already accumulated instead of replacing them. Same frame
+  // shape as applyLeaderboardReplace above; `me`/`legend`/`tournament` are re-applied too since
+  // every reply carries them regardless of page, and they never disagree between pages of the
+  // same board.
+  const applyLeaderboardAppend = useCallback((payload) => {
+    const { rows, tournament, tournaments, page, pages, total, me, legend } = payload;
+    setState((s) => ({
+      ...s,
+      others: [...(s.others || []), ...rows],
+      tournament,
+      tournaments,
+      page: page ?? s.page,
+      pages: pages ?? s.pages,
+      total: total ?? s.total,
+      me: me ?? null,
+      legend: legend ?? s.legend,
+    }));
+  }, []);
+
+  // Merges the unsolicited live push (docs/layers.md C4) - which always carries page 1 of the
+  // currently running tournament - over the first LEADERBOARD_PAGE_SIZE accumulated rows,
+  // keeping whatever else infinite scroll has loaded rather than truncating it back to one
+  // page. Switching tournaments (the pushed board's id differs from what is on screen) still
+  // resets to that single fresh page, same as picking a different board from the switcher.
+  //
+  // src/api/socket.js emits every `leaderboard` frame here unconditionally - both a genuine
+  // push AND the direct reply to this socket's own getLeaderboard() request, which
+  // applyLeaderboardAppend/applyLeaderboardReplace already apply through that request's own
+  // settled promise. A push is always page 1; a page 2+ frame reaching here can only be a
+  // paged reply, and merging it as though it were a fresh page 1 would prepend that later page
+  // over the front of the board and drop whatever was already there. Skipping anything that
+  // is not page 1 leaves paged replies to their own, single application.
+  const applyLeaderboardPush = useCallback((payload) => {
+    if (payload.page !== 1) return;
+    const { rows, tournament, tournaments, pages, total, me, legend } = payload;
+    setState((s) => {
+      const tournamentChanged = (s.tournament?.id ?? null) !== (tournament?.id ?? null);
+      const others = tournamentChanged ? rows : [...rows, ...(s.others || []).slice(rows.length)];
+      return {
+        ...s,
+        others,
+        tournament,
+        tournaments,
+        page: tournamentChanged ? 1 : s.page,
+        pages: pages ?? s.pages,
+        total: total ?? s.total,
+        me: me ?? null,
+        legend: legend ?? s.legend,
+      };
+    });
   }, []);
 
   // Task definitions plus this player's own claimed state (docs/layers.md C5): fetched on
@@ -207,15 +265,12 @@ export function useGame() {
     };
   }, [applyMe, refreshTasks]);
 
-  // Live, masked leaderboard (docs/layers.md C4, ticket B2): every push and every request reply
-  // share this same frame shape, so one applier handles both - see applyLeaderboardPayload
-  // below. The live push always carries page 1 of the currently running tournament; if the
-  // player has paged or switched tournaments, this snaps the view back to that live board on
-  // the next settle. Deliberate: per-page/per-tournament live merging is C4b's animation work,
-  // not this ticket's.
+  // Live, masked leaderboard (docs/layers.md C4, ticket B2): every push shares the request
+  // reply's frame shape, but is merged rather than replacing everything infinite scroll has
+  // accumulated - see applyLeaderboardPush above.
   useEffect(() => {
     if (!apiEnabled || IS_KIOSK) return undefined;
-    return onLeaderboard(applyLeaderboardPayload);
+    return onLeaderboard(applyLeaderboardPush);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -626,13 +681,13 @@ export function useGame() {
     return true;
   }, [applyMe, toast]);
 
-  /** Refetches whichever page the pager buttons should land on next: same tournament (or
-   * whichever is current, if none is explicitly selected) and page. */
+  /** Fetches page 1 of a board and replaces whatever is accumulated - the leaderboard screen's
+   * initial load and every tournament switch land here. */
   const fetchLeaderboard = useCallback((tournament, page) => {
     if (!apiEnabled || IS_KIOSK) return;
     api
       .getLeaderboard({ tournament, page })
-      .then(applyLeaderboardPayload)
+      .then(applyLeaderboardReplace)
       .catch((err) => console.error('[api] leaderboard fetch failed', err));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -643,21 +698,34 @@ export function useGame() {
    * currently running. */
   const selectTournament = useCallback((id) => fetchLeaderboard(id, 1), [fetchLeaderboard]);
 
-  /** Prev/Next (ticket B2 decision 4): pages within whichever tournament is currently on
-   * screen (state.tournament?.id - `null` once no tournament is running or none was ever
-   * fetched, which already means "whichever is current" to the server). Clamped to
-   * [1, state.pages] and a no-op at either edge. */
-  const gotoLeaderboardPage = useCallback(
-    (delta) => {
-      const s = stateRef.current;
-      const target = Math.min(Math.max(1, (s.page || 1) + delta), Math.max(1, s.pages || 1));
-      if (target === s.page) return;
-      fetchLeaderboard(s.tournament ? s.tournament.id : null, target);
-    },
-    [fetchLeaderboard],
-  );
-  const prevLeaderboardPage = useCallback(() => gotoLeaderboardPage(-1), [gotoLeaderboardPage]);
-  const nextLeaderboardPage = useCallback(() => gotoLeaderboardPage(1), [gotoLeaderboardPage]);
+  // Never two loads in flight at once (checked synchronously, a ref rather than state so a
+  // second IntersectionObserver callback firing before the first setState lands still sees it).
+  const lbLoadingRef = useRef(false);
+
+  /** Infinite scroll (replaces the old Prev/Next pager, ticket B2 decision 4): fetches the next
+   * page of whichever tournament is currently on screen (state.tournament?.id - `null` once no
+   * tournament is running or none was ever fetched, which already means "whichever is current"
+   * to the server) and appends it. No-op when a load is already in flight or every page is
+   * already loaded (state.page >= state.pages). A failed fetch clears the in-flight flag so the
+   * next scroll (or the same one, if the sentinel is still visible) can retry - it never wedges
+   * the list. */
+  const loadMoreLeaderboard = useCallback(() => {
+    if (!apiEnabled || IS_KIOSK) return;
+    const s = stateRef.current;
+    if (lbLoadingRef.current) return;
+    if ((s.page || 1) >= (s.pages || 1)) return;
+    const nextPage = (s.page || 1) + 1;
+    lbLoadingRef.current = true;
+    setState((st) => ({ ...st, lbLoadingMore: true }));
+    api
+      .getLeaderboard({ tournament: s.tournament ? s.tournament.id : null, page: nextPage })
+      .then(applyLeaderboardAppend)
+      .catch((err) => console.error('[api] leaderboard load-more failed', err))
+      .finally(() => {
+        lbLoadingRef.current = false;
+        setState((st) => ({ ...st, lbLoadingMore: false }));
+      });
+  }, [applyLeaderboardAppend]);
 
   /** Requests an 8-digit code for `email` (docs/layers.md C3). */
   const requestOtp = useCallback((email) => sessionRequestOtp(email), []);
@@ -774,8 +842,7 @@ export function useGame() {
     verifyOtp,
     signOut,
     selectTournament,
-    prevLeaderboardPage,
-    nextLeaderboardPage,
+    loadMoreLeaderboard,
   };
 
   return { state, profile, actions, trackRef, isKiosk: IS_KIOSK, tourSeen, markTourSeen };

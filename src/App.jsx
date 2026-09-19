@@ -920,12 +920,17 @@ function BadgeIcon({ tier, legend }) {
   return <img className="lb-badge" src={entry.icon} alt={entry.title} title={entry.title} />;
 }
 
+// Rows the trailing loading affordance shows at the end of the list while the next page is in
+// flight (ticket: infinite scroll) - a couple of the existing skeleton rows, not a spinner, so
+// scrolling further never feels like the list went blank.
+const LOAD_MORE_SKELETON_ROWS = 2;
+
 function Leaderboard({
   others,
   apiEnabled,
   page,
   pages,
-  total,
+  loadingMore,
   me,
   legend,
   profile,
@@ -934,8 +939,7 @@ function Leaderboard({
   tournament,
   tournaments,
   onSelectTournament,
-  onPrevPage,
-  onNextPage,
+  onLoadMore,
 }) {
   const { t, lang } = useLang();
   const you = t('lb.you');
@@ -969,6 +973,28 @@ function Leaderboard({
     ro.observe(el);
     return () => ro.disconnect();
   }, [rows.length]);
+
+  // Infinite scroll (replaces the old Prev/Next pager): a sentinel sits right after the last
+  // row inside `.lb-list`, scoped as the IntersectionObserver's own root so it fires from that
+  // element's scroll position rather than the page's. `hasMore` stops it once every page is
+  // loaded; the fetch itself is guarded against overlapping calls in src/useGame.js's
+  // loadMoreLeaderboard, so a sentinel that is still on screen when a load finishes just fires
+  // again for the next page.
+  const hasMore = apiEnabled && (page || 1) < (pages || 1);
+  const sentinelRef = useRef(null);
+  useEffect(() => {
+    const root = listRef.current;
+    const target = sentinelRef.current;
+    if (!root || !target || !hasMore) return undefined;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) onLoadMore?.();
+      },
+      { root, rootMargin: '200px 0px' },
+    );
+    io.observe(target);
+    return () => io.disconnect();
+  }, [hasMore, onLoadMore]);
 
   // The no-server demo path (VITE_GAME_WS unset - a preview build or local UI work with no
   // backend, src/api/client.js): `others` is the static dummy list, with no rank, tier or
@@ -1050,7 +1076,7 @@ function Leaderboard({
         onSelect={selectTournament}
       />
       <div className="lb-list" ref={listRef}>
-        <div className="lb-spacer" style={{ '--n': rows.length }} />
+        <div className="lb-spacer" style={{ '--n': rows.length + (loadingMore ? LOAD_MORE_SKELETON_ROWS : 0) }} />
         {rows.map((r, i) => {
           const mine = me != null && r.rank === me.rank;
           return (
@@ -1064,6 +1090,18 @@ function Leaderboard({
             </div>
           );
         })}
+        {/* The loading affordance for the next page (ticket: infinite scroll): a couple of the
+            same skeleton rows the initial load uses, appended after the real rows rather than a
+            spinner - kept honest by loadingMore, never shown once the fetch lands or fails. */}
+        {loadingMore &&
+          Array.from({ length: LOAD_MORE_SKELETON_ROWS }, (_, k) => (
+            <div key={`more-${k}`} className="lb-row lb-row-skeleton" style={{ '--i': rows.length + k }}>
+              <span className="lb-skel lb-skel-rank" />
+              <span className="lb-skel lb-skel-name" />
+              <span className="lb-skel lb-skel-score" />
+            </div>
+          ))}
+        {hasMore && <div ref={sentinelRef} className="lb-sentinel" aria-hidden="true" />}
         {/* Unverified web players never get a synthetic score row - the leaderboard is exactly
             where the ticket asks for the guest prompt instead (docs/layers.md C3, C4). It sits
             below the last listed row while the list fits (ticket U2). */}
@@ -1071,7 +1109,7 @@ function Leaderboard({
           <button
             type="button"
             className="lb-row lb-row-me lb-row-guest"
-            style={{ '--i': rows.length }}
+            style={{ '--i': rows.length + (loadingMore ? LOAD_MORE_SKELETON_ROWS : 0) }}
             onClick={onOpenIdentity}
           >
             <span className="lb-rank" aria-hidden="true" />
@@ -1100,17 +1138,6 @@ function Leaderboard({
             <BadgeIcon tier={me.tier} legend={legend} />
           </span>
           <span className="lb-score">{num(me.record, lang)}</span>
-        </div>
-      )}
-      {pages > 1 && (
-        <div className="lb-pager">
-          <button type="button" className="lang-btn" disabled={page <= 1} onClick={onPrevPage}>
-            {t('lb.prev')}
-          </button>
-          <span className="lb-pager-info">{t('lb.pageOf', { page, pages, total })}</span>
-          <button type="button" className="lang-btn" disabled={page >= pages} onClick={onNextPage}>
-            {t('lb.next')}
-          </button>
         </div>
       )}
       {legend?.length > 0 && (
@@ -1251,7 +1278,7 @@ export default function App() {
                   apiEnabled={apiEnabled}
                   page={state.page}
                   pages={state.pages}
-                  total={state.total}
+                  loadingMore={state.lbLoadingMore}
                   me={state.me}
                   legend={state.legend}
                   profile={profile}
@@ -1260,8 +1287,7 @@ export default function App() {
                   tournament={state.tournament}
                   tournaments={state.tournaments}
                   onSelectTournament={actions.selectTournament}
-                  onPrevPage={actions.prevLeaderboardPage}
-                  onNextPage={actions.nextLeaderboardPage}
+                  onLoadMore={actions.loadMoreLeaderboard}
                 />
               )}
               {screen === 'profile' && (

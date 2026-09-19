@@ -26,6 +26,11 @@ const PING_INTERVAL_MS = 25000;
 const MAX_MISSED_PONGS = 2;
 const BACKPRESSURE_BYTES = 256 * 1024;
 const STATUS_CACHE_MS = 5000; // /status does one DB round-trip; cache it so polling stays cheap
+// Rows per leaderboard page - must match db/schema.sql's public.leaderboard()'s own
+// `limit 25 offset ...` (that function has no way to take this as a parameter, so the two
+// sides are kept in sync by hand; this constant is the single place the server-side number
+// lives).
+const LEADERBOARD_PAGE_SIZE = 25;
 
 // Socket close codes for rate-limit refusals (ticket S2 decisions 1 and 7c): 4429 (mirroring
 // HTTP 429) for anything that floods a socket after it authenticated, 4401 for a kiosk auth
@@ -399,7 +404,14 @@ export function createApp({
           broker_bonus: tournamentRow.broker_bonus,
         }
       : null;
-    return { rows, tournament, tournaments, page, pages: Math.max(1, Math.ceil(total / 20)), total };
+    return {
+      rows,
+      tournament,
+      tournaments,
+      page,
+      pages: Math.max(1, Math.ceil(total / LEADERBOARD_PAGE_SIZE)),
+      total,
+    };
   }
 
   /**
