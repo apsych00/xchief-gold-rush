@@ -337,14 +337,14 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel, o
 
   const reasonKey = (reason) => {
     switch (reason) {
-      case 'not_following':
-        return 'tasks.instagramNotFollowing';
-      case 'private':
-        return 'tasks.instagramPrivate';
-      case 'not_found':
-        return 'tasks.instagramNotFound';
-      default:
+      case 'no_handle':
         return 'tasks.instagramFailed';
+      default:
+        // Owner policy (ticket K3): a first failed check is never a hard failure - the very next
+        // explicit tap grants the reward server-side no matter what BoxAPI said, so every check
+        // refusal past no_handle reads the same soft "not yet, tap check again" regardless of the
+        // specific reason (not_following, private, not_found, or an upstream hiccup).
+        return 'tasks.instagramNotConfirmed';
     }
   };
 
@@ -420,7 +420,7 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel, o
       clearRetry();
       setBusy(true);
       setError(null);
-      onCheck()
+      onCheck(auto)
         .then((res) => {
           if (res?.ok) {
             // The server confirmed the follow and released the reward. Latch it: nothing a later
@@ -432,14 +432,11 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel, o
             return;
           }
           setBusy(false);
-          // A follow we cannot see yet, or a handle not stored yet, is not a hard failure. On the
-          // explicit tap, show the soft "not yet" hint; a background focus check stays silent so
+          // Not confirmed is not a hard failure - it just means "not yet": the very next explicit
+          // tap grants the reward server-side regardless of the reason (owner policy, ticket K3).
+          // Only the explicit tap shows the hint; a background focus check stays silent so
           // returning to the tab before following never flashes a refusal.
-          if (res?.reason === 'not_following' || res?.reason === 'no_handle') {
-            if (!auto) setError(reasonKey(res.reason));
-            return;
-          }
-          setError(reasonKey(res?.reason));
+          if (!auto) setError(reasonKey(res?.reason));
         })
         .catch((err) => {
           setBusy(false);

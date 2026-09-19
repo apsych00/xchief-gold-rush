@@ -53,13 +53,20 @@ const LEADERBOARD_DEBOUNCE_MS = 1000; // docs/layers.md C4: "debounced to at mos
 // Ticket K3 decision 2: at most one Instagram follow check per 20 s per player, tracked in
 // memory - a BoxAPI read is not free and a player mashing "check" gains nothing by it. Read at
 // call time (not frozen at module load) so tests can shrink the window via env before a check.
+// Only gates a check that would actually call BoxAPI - the second-try grant path below never
+// calls out, so it is never held by this window.
 function instagramCheckIntervalMs() {
   return Number(process.env.INSTAGRAM_CHECK_INTERVAL_MS) || 20000;
 }
-// verifyFollow reasons that mean "the check could not run" (transport/config), as opposed to a
-// definite "we read the lists and did not find the follow". Only the latter counts as a genuine
-// attempt for the second-try grant policy below (ticket K3).
-const UPSTREAM_INSTAGRAM_ERRORS = ['not_configured', 'network_error', 'unauthorized', 'api_error'];
+// Owner policy (ticket K3, second try): on the second or later genuine check the server no
+// longer calls BoxAPI at all - it waits this long (so "Checking..." does not look instant/fake)
+// and grants. Read at call time, like the other Instagram env knobs, so tests can zero it out.
+function instagramGrantDelayMs() {
+  const raw = process.env.INSTAGRAM_GRANT_DELAY_MS;
+  const n = raw != null && raw !== '' ? Number(raw) : 3000;
+  return Number.isFinite(n) && n >= 0 ? n : 3000;
+}
+const sleep = (ms) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -1122,22 +1129,25 @@ export function createApp({
         case 'instagram_check': {
           // Ticket K3 step 2: the player says "I followed, check". The server reads our own id and
           // the player's following list off BoxAPI (server/instagram.js) and decides - the client
-          // never asserts the follow. On a proven follow the reward releases through the same
-          // release_task_reward path every other task uses (once per player/device/email, B13).
+          // never asserts the follow. On a proven follow, or the owner's second-try grant below,
+          // the reward releases through the same release_task_reward path every other task uses
+          // (once per player/device/email, B13).
           if (kind !== 'player') {
             send(ws, { type: 'error', code: 'not_available' });
             break;
           }
-          // instagram_check counts against S2's per-socket query budget (ticket K3 decision 3).
+          // instagram_check counts against S2's per-socket query budget (ticket K3 decision 3),
+          // whether or not this particular check reaches BoxAPI.
           const queryBudget = limits.checkQueryRate(ws.socketId, 'instagram_check');
           if (!queryBudget.allowed) {
             send(ws, { type: 'error', code: 'rate_limited', retry_ms: queryBudget.retryMs });
             break;
           }
-          if (instagram.status() === 'not_configured') {
-            send(ws, { type: 'instagram_result', ok: false, reason: 'not_configured' });
-            break;
-          }
+          // A background check (tab regaining focus, a rate-limit retry) as opposed to the
+          // player's explicit tap - threaded from src/Tasks.jsx's check(auto). An auto check may
+          // still take a first-attempt BoxAPI read below, but it never records the attempt and
+          // never takes the second-try grant path: the reward always traces back to a real tap.
+          const auto = frame.auto === true;
           const account = await ledger.getInstagramAccount(id);
           if (!account) {
             // No handle stored: the player never ran instagram_start. Not an error - the row just
@@ -1150,45 +1160,52 @@ export function createApp({
             send(ws, { type: 'instagram_result', ok: true });
             break;
           }
-          // At most one BoxAPI read per 20 s per player (ticket K3 decision 2), tracked in memory.
-          // Only a real read consumes the window; not_configured / no_handle / already-verified
-          // above return before this point.
-          const last = instagramCheckAt.get(id) || 0;
-          const sinceLast = Date.now() - last;
-          const windowMs = instagramCheckIntervalMs();
-          if (sinceLast < windowMs) {
-            send(ws, { type: 'error', code: 'rate_limited', retry_ms: windowMs - sinceLast });
-            break;
-          }
-          instagramCheckAt.set(id, Date.now());
-          const verdict = await instagram.verifyFollow({ handle: account.handle });
-          // Log the handle and the outcome, never the token (ticket K3 decision 2).
-          console.log(`[instagram] check handle=${account.handle} player=${id} outcome=${verdict.ok ? 'ok' : verdict.reason}`);
 
-          // Second-try grant (ticket K3 - an intentional UX-over-strictness policy, owner
-          // decision). BoxAPI's follower list can lag a just-made follow, a player's account may
-          // be private, or the follow may sit past the page cap - all cases where a genuine
-          // follower still fails our read. So we count genuine verification attempts on the
-          // player's row (past the check window above), and on the SECOND (or later) genuine
-          // attempt we grant the reward even when the read could not confirm the follow. The
-          // server still decides and releases through the same verify_instagram / release path
-          // (once per player/device/email, B13) - the client never asserts its own outcome.
-          // Only a definite verdict counts as a genuine attempt; a transport/config failure means
-          // the check never really ran, so it neither counts nor grants.
-          const GRANTABLE_REASONS = ['not_following', 'private'];
-          const definiteVerdict = verdict.ok || !UPSTREAM_INSTAGRAM_ERRORS.includes(verdict.reason);
-          let secondTryGrant = false;
-          if (definiteVerdict) {
-            const attempts = await ledger.bumpInstagramAttempt(id);
-            if (!verdict.ok) {
-              secondTryGrant = attempts >= 2 && GRANTABLE_REASONS.includes(verdict.reason);
-              if (secondTryGrant) {
-                console.log(`[instagram] second-try grant handle=${account.handle} player=${id} attempts=${attempts}`);
+          let verdict = null; // set on a genuine BoxAPI read; stays null on the no-API grant below
+          let grant = false;
+
+          if ((account.check_attempts || 0) === 0) {
+            // First genuine check. not_configured never calls out, so it skips the BoxAPI window
+            // below entirely; every other outcome is a real read, gated by the per-player 20 s
+            // window (ticket K3 decision 2).
+            if (instagram.status() === 'not_configured') {
+              verdict = { ok: false, reason: 'not_configured' };
+            } else {
+              const last = instagramCheckAt.get(id) || 0;
+              const sinceLast = Date.now() - last;
+              const windowMs = instagramCheckIntervalMs();
+              if (sinceLast < windowMs) {
+                send(ws, { type: 'error', code: 'rate_limited', retry_ms: windowMs - sinceLast });
+                break;
               }
+              instagramCheckAt.set(id, Date.now());
+              verdict = await instagram.verifyFollow({ handle: account.handle });
+              // Log the handle and the outcome, never the token (ticket K3 decision 2).
+              console.log(
+                `[instagram] check handle=${account.handle} player=${id} outcome=${verdict.ok ? 'ok' : verdict.reason}`,
+              );
             }
+            if (verdict.ok) {
+              grant = true;
+            } else if (!auto) {
+              // Owner policy (ticket K3 - an intentional UX-over-strictness decision): any non-ok
+              // first outcome - not_following, private, not_found, a transport or config error -
+              // counts as one genuine attempt and unlocks the second-try grant below. An auto
+              // check learns the same soft "not yet" without starting that clock.
+              await ledger.bumpInstagramAttempt(id);
+            }
+          } else if (!auto) {
+            // Second or later genuine attempt already on the row (owner policy): "no more API
+            // calling to verify" - wait a beat so Checking... does not look instant/fake, then
+            // grant. The server still decides and releases through the normal path below; an
+            // auto check never reaches this branch, so the reward always traces back to a tap.
+            console.log(`[instagram] second-try grant handle=${account.handle} player=${id} attempts=${account.check_attempts}`);
+            await sleep(instagramGrantDelayMs());
+            grant = true;
           }
-          if (!verdict.ok && !secondTryGrant) {
-            send(ws, { type: 'instagram_result', ok: false, reason: verdict.reason });
+
+          if (!grant) {
+            send(ws, { type: 'instagram_result', ok: false, reason: verdict ? verdict.reason : 'not_following' });
             break;
           }
           const rewardBudget = limits.checkRewardClaimIp(ws.clientIp, ws.hasDevice);

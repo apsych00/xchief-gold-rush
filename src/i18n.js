@@ -216,6 +216,7 @@ const dict = {
       instagramCheckCta: 'I followed, check',
       instagramChecking: 'Checking…',
       instagramNotFollowing: 'We could not see the follow yet. Follow @{handle} and tap check again.',
+      instagramNotConfirmed: 'Not confirmed yet. Tap check again.',
       instagramPrivate: 'Your account is private; make it public for a moment or ask the booth staff.',
       instagramNotFound: 'We could not find that handle. Check the spelling and try again.',
       instagramHandleTaken: 'That handle is already linked to another player.',
