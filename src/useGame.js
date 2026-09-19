@@ -727,7 +727,8 @@ export function useGame() {
       });
   }, [applyLeaderboardAppend]);
 
-  /** Requests an 8-digit code for `email` (docs/layers.md C3). */
+  /** Requests a login code for `email` (docs/layers.md C3; length is src/config.js's
+   * OTP_CODE_LENGTH). */
   const requestOtp = useCallback((email) => sessionRequestOtp(email), []);
 
   /** Verifies the code and applies whatever `me` came back - the same player with its score

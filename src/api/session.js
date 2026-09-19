@@ -47,7 +47,8 @@ export function ensureSession() {
   return inflight;
 }
 
-/** Stores an 8-digit code against this player's email, sent through Elastic (dev: dev_otps). */
+/** Stores a login code (length: src/config.js's OTP_CODE_LENGTH) against this player's email,
+ * sent through Elastic (dev: dev_otps). */
 export function requestOtp(email) {
   if (!enabled) throw Object.assign(new Error('api_disabled'), { code: 'api_disabled' });
   return socketRequestOtp(email);

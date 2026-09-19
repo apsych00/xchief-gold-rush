@@ -1591,8 +1591,11 @@ join public.players p on p.id = tc.player_id;
 
 -- -------------------------------------------------------------------------- otp codes --
 
--- Generates an 8-digit code, stores only its hash, returns the plain code once so the caller
--- (server/otp.js) can mail it or, in dev, capture it in dev_otps.
+-- Generates a 4-digit code, stores only its hash, returns the plain code once so the caller
+-- (server/otp.js) can mail it or, in dev, capture it in dev_otps. SQL cannot import
+-- src/config.js's OTP_CODE_LENGTH, so this literal is the other half of that contract by hand -
+-- keep both in sync, and test/integration-box/otp.test.mjs binds them by asserting the server's
+-- real output matches the client constant.
 create function public.request_otp_code(p_player uuid, p_email text)
 returns text language plpgsql security definer set search_path = public, extensions as $$
 declare
@@ -1603,7 +1606,8 @@ begin
   -- an older still-live code stops being a way to keep the 5-attempt budget going forever.
   update public.otp_codes set used_at = now() where email = p_email and used_at is null;
 
-  v_code := to_char(floor(random() * 100000000)::int, 'FM00000000');
+  -- 4 digits zero-padded (0000-9999 is a legal code, "0042" stays 4 characters).
+  v_code := to_char(floor(random() * 10000)::int, 'FM0000');
   insert into public.otp_codes (player_id, email, code_hash, expires_at)
   values (p_player, p_email, encode(extensions.digest(v_code, 'sha256'), 'hex'), now() + interval '10 minutes');
   return v_code;

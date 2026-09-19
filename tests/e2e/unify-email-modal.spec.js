@@ -136,16 +136,16 @@ test.describe('the unified email/OTP prompt (unify-email-modal)', () => {
     await expectErrorRegionCollapsed(page);
 
     // ---- a short code is rejected client-side before any server round trip --------------------
-    await codeInput.fill('123');
+    await codeInput.fill('12');
     await page.locator('.modal').getByRole('button', { name: /verify/i }).click();
-    await expect(error).toHaveText('Enter the 8-digit code');
+    await expect(error).toHaveText('Enter the 4-digit code');
     const codeHeightWithError = await modalHeight(page);
     expect(codeHeightWithError).toBeGreaterThan(codeHeightBefore);
 
     // ---- a full-length but wrong code is rejected by the server, mapped through the same error
     // region, and clears the field for a retry. This is where the reserved sizing earns its keep:
     // a longer message replaces a shorter one and the action row must NOT move ------------------
-    await codeInput.fill('00000000');
+    await codeInput.fill('0000');
     await page.locator('.modal').getByRole('button', { name: /verify/i }).click();
     await expect(error).toHaveText('That code is not right. Try again');
     await expect(codeInput).toHaveValue('');
