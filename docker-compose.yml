@@ -30,8 +30,9 @@ services:
     # Everything the game server reads (DATABASE_URL, FINNHUB_TOKEN,
     # PLAYER_TOKEN_SECRET, ELASTIC_API_KEY, OTP_SENDER, PORT) comes from .env.
     env_file: .env.box
-    # On start the image applies db/schema.sql + db/seed.sql (idempotent) and
-    # then runs server/index.js (ticket 3), which listens on PORT (8787).
+    # On start the image applies db/schema.sql + db/seed.sql, then db/migrations/
+    # (all idempotent, server/migrate.mjs), and then runs server/index.js
+    # (ticket 3), which listens on PORT (8787).
     depends_on:
       db:
         condition: service_healthy

@@ -3,10 +3,16 @@
 -- This is the entire database that migrations 0000..0011 used to add up to,
 -- written as if designed in one pass: each table once with its final columns,
 -- each function once with its final body and signature, each grant and revoke
--- stated once, at the end. There are no users of this database yet, so there is
--- no migration history to preserve: apply this file once to a fresh
--- PostgreSQL 16, then db/seed.sql. server/migrate.mjs and db/run-tests.sh do
--- exactly that.
+-- stated once, at the end. Apply this file once to a fresh PostgreSQL 16, then
+-- db/seed.sql. server/migrate.mjs and db/run-tests.sh do exactly that.
+--
+-- This file is ONLY what a brand-new database gets. Production and every dev
+-- database already exist, and server/migrate.mjs never re-runs this file
+-- against them (recorded once in public.schema_migrations, then skipped
+-- forever) - so editing it alone changes nothing anywhere but a database that
+-- has not been created yet. A change here needs a matching file added under
+-- db/migrations/ that carries an already-running database to the same state.
+-- See db/migrations/README.md before you change anything below.
 --
 -- The server owns every outcome and every coin. Clients never write these
 -- tables directly (see the RLS section); every mutation goes through one of the
