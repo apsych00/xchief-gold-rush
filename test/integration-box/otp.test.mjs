@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { WebSocket } from 'ws';
 import pg from 'pg';
+import { OTP_CODE_LENGTH } from '../../src/config.js';
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -133,7 +134,11 @@ test('request_otp then verify_otp with the dev-captured code sets email and rele
 
   const code = await latestDevOtp(email);
   assert.ok(code, 'the dev-captured code is readable from dev_otps');
-  assert.match(code, /^[0-9]{8}$/);
+  // The drift-binding check: the server's real, dev-captured code must be exactly the length
+  // the client expects (src/config.js's OTP_CODE_LENGTH, which db/schema.sql's request_otp_code
+  // cannot import and must match by hand). This is what fails if the two halves ever disagree.
+  assert.match(code, /^[0-9]+$/);
+  assert.equal(code.length, OTP_CODE_LENGTH, 'the server-generated code length matches the client constant');
 
   send(ws, { type: 'verify_otp', email, code });
   const me = await nextFrame(ws, (f) => f.type === 'me' || f.type === 'error');
@@ -169,11 +174,11 @@ test('five wrong codes in a row locks the code out with too_many_attempts', asyn
   await nextFrame(ws, (f) => f.type === 'otp_sent');
 
   for (let i = 0; i < 4; i++) {
-    send(ws, { type: 'verify_otp', email, code: '00000000' });
+    send(ws, { type: 'verify_otp', email, code: '0000' });
     const err = await nextFrame(ws, (f) => f.type === 'error');
     assert.equal(err.code, 'invalid_code', `guess ${i + 1} of 5`);
   }
-  send(ws, { type: 'verify_otp', email, code: '00000000' });
+  send(ws, { type: 'verify_otp', email, code: '0000' });
   const locked = await nextFrame(ws, (f) => f.type === 'error');
   assert.equal(locked.code, 'too_many_attempts');
   ws.close();
@@ -235,7 +240,7 @@ test('a wrong code never sets email_verified and never releases the email/signup
   send(ws, { type: 'request_otp', email });
   await nextFrame(ws, (f) => f.type === 'otp_sent');
 
-  send(ws, { type: 'verify_otp', email, code: '00000000' });
+  send(ws, { type: 'verify_otp', email, code: '0000' });
   const err = await nextFrame(ws, (f) => f.type === 'error');
   assert.equal(err.code, 'invalid_code');
 
@@ -293,7 +298,7 @@ test('a kiosk connection gets not_available for request_otp and verify_otp', asy
   const err1 = await nextFrame(ws, (f) => f.type === 'error');
   assert.equal(err1.code, 'not_available');
 
-  send(ws, { type: 'verify_otp', email: 'kiosk@example.com', code: '00000000' });
+  send(ws, { type: 'verify_otp', email: 'kiosk@example.com', code: '0000' });
   const err2 = await nextFrame(ws, (f) => f.type === 'error');
   assert.equal(err2.code, 'not_available');
   ws.close();

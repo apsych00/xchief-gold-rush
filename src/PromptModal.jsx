@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useLang } from './i18n.js';
 import { isValidCode, isValidEmail } from './promptValidation.js';
+import { OTP_CODE_LENGTH } from './config.js';
 
 // The one shared email/OTP-code prompt shell (unify-email-modal ticket): every place the app
-// asks a player for an email address or the 8-digit code that follows renders this same modal -
+// asks a player for an email address or the code that follows renders this same modal -
 // same spacing, same reserved error region, same button treatment. Identity.jsx's OtpModal walks
 // a player through two of these in a row (email, then code) without ever unmounting the
 // backdrop; LeadCapture.jsx and SignupForm.jsx each render exactly one, for their own single
@@ -17,7 +18,7 @@ export default function PromptModal({
   title,
   subtitle,
   fieldType = 'email', // 'email' | 'code'
-  codeLength = 8,
+  codeLength = OTP_CODE_LENGTH,
   initialValue = '',
   placeholder,
   ariaLabel,

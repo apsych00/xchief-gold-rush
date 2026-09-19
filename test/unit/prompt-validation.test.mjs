@@ -42,7 +42,7 @@ test('isValidCode rejects non-digit characters even at the right length', () => 
   assert.equal(isValidCode('12 34 567', 8), false);
 });
 
-test('isValidCode defaults to an 8-digit code, matching every OTP the server issues', () => {
-  assert.equal(isValidCode('12345678'), true);
-  assert.equal(isValidCode('1234'), false);
+test('isValidCode defaults to a 4-digit code, matching every OTP the server issues', () => {
+  assert.equal(isValidCode('1234'), true);
+  assert.equal(isValidCode('12345678'), false);
 });

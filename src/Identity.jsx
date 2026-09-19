@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { num, useLang } from './i18n.js';
 import PromptModal from './PromptModal.jsx';
+import { OTP_CODE_LENGTH } from './config.js';
 
 const RESEND_COOLDOWN_MS = 30000;
 
@@ -36,7 +37,7 @@ export function IdentityBar({ profile, onSignOut }) {
 }
 
 /**
- * The OTP entry screen (docs/layers.md C3): email -> 8-digit code -> done. Both steps render
+ * The OTP entry screen (docs/layers.md C3): email -> code -> done. Both steps render
  * through the one shared PromptModal (unify-email-modal ticket) - same backdrop, same spacing,
  * same reserved error region - so moving from the email field to the code field never looks like
  * two different dialogs. The done screen has no input, so it keeps its own small result card
@@ -106,7 +107,7 @@ export default function OtpModal({ onRequestOtp, onVerifyOtp, onClose }) {
       <PromptModal
         resetKey="email"
         title={t('otp.title')}
-        subtitle={t('otp.emailSub')}
+        subtitle={t('otp.emailSub', { n: OTP_CODE_LENGTH })}
         fieldType="email"
         placeholder={t('otp.emailPlaceholder')}
         submitLabel={t('otp.send')}
@@ -123,9 +124,9 @@ export default function OtpModal({ onRequestOtp, onVerifyOtp, onClose }) {
     <PromptModal
       resetKey={`code-${resendAt}`}
       title={t('otp.codeTitle')}
-      subtitle={t('otp.codeSub', { email })}
+      subtitle={t('otp.codeSub', { email, n: OTP_CODE_LENGTH })}
       fieldType="code"
-      codeLength={8}
+      codeLength={OTP_CODE_LENGTH}
       ariaLabel={t('otp.codeTitle')}
       submitLabel={t('otp.verify')}
       cancelLabel={t('otp.cancel')}

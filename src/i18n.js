@@ -109,11 +109,11 @@ const dict = {
     },
     otp: {
       title: 'Verify your email',
-      emailSub: "We'll send you an 8-digit code",
+      emailSub: "We'll send you a {n}-digit code",
       emailPlaceholder: 'you@email.com',
       send: 'Send code',
       codeTitle: 'Enter the code',
-      codeSub: 'We sent an 8-digit code to {email}',
+      codeSub: 'We sent a {n}-digit code to {email}',
       verify: 'Verify',
       resend: 'Resend code',
       resendWait: 'Resend in {s}s',
