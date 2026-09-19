@@ -54,7 +54,11 @@ const dict = {
       waiting: 'Waiting for market price…',
       note: 'Live gold price ({symbol})',
       noteQuiet: 'Market is flat; micro-moves simulated on the last price',
-      tooManyConnections: 'Too many connections from this network, try again in a minute',
+    },
+    conn: {
+      lostTitle: 'Connection lost',
+      refusedTitle: 'Too many players on this network',
+      reconnecting: 'Reconnecting',
     },
     result: {
       winTitle: 'You called it!',

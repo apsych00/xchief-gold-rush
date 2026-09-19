@@ -225,6 +225,47 @@ function TourPlaceholder({ onDone }) {
   );
 }
 
+// Ticket OD-modal: the global, blocking "socket is down" modal. Keyed on state.feed (see
+// initialGame.feed in src/useGame.js and startPriceFeed in src/priceFeed.js) - mode ===
+// 'connecting' means the socket is not currently connected and authed. Shown only after a
+// grace period so it never flashes on a cold start while the first socket opens normally, and
+// it clears itself the instant the socket connects. Reuses the .modal-backdrop/.modal
+// vocabulary (see TourPlaceholder above); no close button, no Esc, no backdrop click - the
+// point is that nothing underneath is usable until the socket is back.
+const CONNECTION_MODAL_DELAY_MS = 4000;
+
+function ConnectionModal({ feed }) {
+  const { t } = useLang();
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (feed.mode !== 'connecting') {
+      setVisible(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setVisible(true), CONNECTION_MODAL_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [feed.mode]);
+
+  if (!visible) return null;
+  const title = feed.connectionRefused ? t('conn.refusedTitle') : t('conn.lostTitle');
+  return (
+    <div className="modal-backdrop" role="alertdialog" aria-modal="true" aria-label={title}>
+      <div className="modal">
+        <div className="modal-title">{title}</div>
+        <div className="modal-sub">
+          {t('conn.reconnecting')}
+          <span className="conn-dots" aria-hidden="true">
+            <span className="conn-dot" />
+            <span className="conn-dot" />
+            <span className="conn-dot" />
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- home ---------- */
 
 function Home({ profile, actions }) {
@@ -396,7 +437,6 @@ function Display({ state, profile, actions }) {
         )}
         <div className="feed-corner">
           <FeedBadge feed={feed} />
-          {feed.connectionRefused && <div className="lead-error feed-refused">{t('feed.tooManyConnections')}</div>}
         </div>
 
         {isIdle && (
@@ -1255,6 +1295,7 @@ export default function App() {
             />
           )}
           {!isKiosk && !tourSeen && <TourPlaceholder onDone={markTourSeen} />}
+          <ConnectionModal feed={state.feed} />
         </div>
       </div>
     </LangContext.Provider>
