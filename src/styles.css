@@ -1851,13 +1851,19 @@ button:focus:not(:focus-visible) {
   border-color: var(--red);
   box-shadow: 0 0 0 3px rgba(255, 92, 92, 0.2);
 }
-/* Reserved space (never reflows the dialog when an error appears or clears): sized for two lines
-   of the smallest copy this ever shows, at the narrowest supported width (320px). */
+/* Sized for two lines of the smallest copy this ever shows, at the narrowest supported width
+   (320px), so a wrapping error still does not push the actions around once it is on screen. */
 .prompt-error {
   margin-top: 10px;
   min-height: 34px;
   font: 600 12px/1.4 var(--fa);
   color: var(--red);
+}
+/* ...but an empty region claims no space at all: with no error the field sits directly above the
+   action row, instead of leaving a gap that reads as a layout bug. */
+.prompt-error:empty {
+  margin-top: 0;
+  min-height: 0;
 }
 .prompt-footnote {
   margin-top: 2px;

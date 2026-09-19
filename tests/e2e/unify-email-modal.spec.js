@@ -39,9 +39,11 @@ async function goTasks(page) {
   await expect(page.locator('.tasks')).toBeVisible();
 }
 
-/** The dialog's own height, used to prove an error appearing/clearing never reflows the modal
- * (the ticket's "reserved error region" requirement) - bounding box height must stay the same
- * before and after, not just "the error is visible". */
+/** The dialog's own height. The error region claims no space at all while it is empty, so the
+ * dialog is expected to grow when an error appears and to return to exactly its original height
+ * once the error clears. What must NEVER move is the action row while an error is already on
+ * screen: the region is sized for the longest copy it shows, so swapping one error for another
+ * (or wrapping to a second line) leaves the buttons where they are. */
 async function modalHeight(page) {
   const box = await page.locator('.modal-backdrop .modal').boundingBox();
   expect(box, 'the modal must be on screen to measure it').not.toBeNull();
@@ -52,6 +54,13 @@ async function modalHeight(page) {
  * un-reserved error line would actually cause. */
 function expectSameHeight(a, b) {
   expect(Math.abs(a - b), `modal height changed from ${a} to ${b} - the error region reflowed the dialog`).toBeLessThanOrEqual(2);
+}
+
+/** An empty error region must occupy zero height: with nothing to say it leaves no gap between
+ * the field and the buttons (the gap read as a layout bug on review). */
+async function expectErrorRegionCollapsed(page) {
+  const box = await page.locator('.modal .prompt-error').boundingBox();
+  expect(box === null ? 0 : box.height, 'the empty error region must take no vertical space').toBeLessThanOrEqual(1);
 }
 
 test.describe('the unified email/OTP prompt (unify-email-modal)', () => {
@@ -85,20 +94,28 @@ test.describe('the unified email/OTP prompt (unify-email-modal)', () => {
     // pixels of the modal's inner edges (the modal's own padding accounts for the rest).
     expect(inputBox.width).toBeGreaterThan(modalBox.width * 0.8);
 
-    // ---- an invalid email shows the reserved error region, with no reflow ---------------------
+    // ---- with nothing to report, the error region leaves no gap at all ------------------------
     const heightBefore = await modalHeight(page);
+    await expectErrorRegionCollapsed(page);
+
+    // ---- an invalid email shows the error, and the dialog grows by exactly that region --------
     await emailInput.fill('not-an-email');
     await page.locator('.modal').getByRole('button', { name: /send code/i }).click();
     const error = page.locator('.modal .prompt-error');
     await expect(error).toHaveText('Enter a valid email');
     await expect(emailInput).toHaveAttribute('aria-invalid', 'true');
     const heightWithError = await modalHeight(page);
-    expectSameHeight(heightWithError, heightBefore);
+    expect(
+      heightWithError,
+      'the dialog should grow to make room for the error it is now showing',
+    ).toBeGreaterThan(heightBefore);
 
-    // ---- correcting the address clears the error without needing another submit ---------------
+    // ---- correcting the address clears the error and returns the dialog to its exact original
+    // height, so the collapse is symmetric and leaves no residue ---------------------------------
     const email = `unify-modal-${Date.now()}@example.com`;
     await emailInput.fill(email);
     await expect(error).toHaveText('');
+    await expectErrorRegionCollapsed(page);
     const heightAfterClear = await modalHeight(page);
     expectSameHeight(heightAfterClear, heightBefore);
 
@@ -114,20 +131,25 @@ test.describe('the unified email/OTP prompt (unify-email-modal)', () => {
     const codeModalBox = await modal.boundingBox();
     expect(codeInputBox.width).toBeGreaterThan(codeModalBox.width * 0.8);
 
-    // ---- a short code is rejected client-side before any server round trip --------------------
+    // ---- the code step starts with the same collapsed error region ----------------------------
     const codeHeightBefore = await modalHeight(page);
+    await expectErrorRegionCollapsed(page);
+
+    // ---- a short code is rejected client-side before any server round trip --------------------
     await codeInput.fill('123');
     await page.locator('.modal').getByRole('button', { name: /verify/i }).click();
     await expect(error).toHaveText('Enter the 8-digit code');
-    expectSameHeight(await modalHeight(page), codeHeightBefore);
+    const codeHeightWithError = await modalHeight(page);
+    expect(codeHeightWithError).toBeGreaterThan(codeHeightBefore);
 
-    // ---- a full-length but wrong code is rejected by the server, mapped through the same
-    // error region, and clears the field for a retry -------------------------------------------
+    // ---- a full-length but wrong code is rejected by the server, mapped through the same error
+    // region, and clears the field for a retry. This is where the reserved sizing earns its keep:
+    // a longer message replaces a shorter one and the action row must NOT move ------------------
     await codeInput.fill('00000000');
     await page.locator('.modal').getByRole('button', { name: /verify/i }).click();
     await expect(error).toHaveText('That code is not right. Try again');
     await expect(codeInput).toHaveValue('');
-    expectSameHeight(await modalHeight(page), codeHeightBefore);
+    expectSameHeight(await modalHeight(page), codeHeightWithError);
 
     // ---- the real, dev-captured code verifies; the done screen and the header follow ----------
     const code = peekOtp(email);
