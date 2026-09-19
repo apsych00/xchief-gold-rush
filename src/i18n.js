@@ -93,10 +93,7 @@ const dict = {
       title: 'Leaderboard',
       you: 'You',
       byRecord: 'by record',
-      guestNote: 'Play as guest - add your email to be ranked',
-      prev: 'Prev',
-      next: 'Next',
-      pageOf: 'Page {page} of {pages} · {total} players',
+      guestNote: "You're playing as guest - add your email to be ranked",
     },
     tournament: {
       none: 'No tournament running',

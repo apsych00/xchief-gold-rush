@@ -339,7 +339,8 @@ export async function returnTaskVisit(playerId, taskId, ip) {
   );
 }
 
-/** One 20-row page of one tournament's board (ticket B2), no identity involved. `tournamentId`
+/** One page (server/index.js's LEADERBOARD_PAGE_SIZE rows) of one tournament's board (ticket
+ * B2), no identity involved. `tournamentId`
  * null means whichever tournament public.current_tournament() reports; an explicit id reads
  * back a past or upcoming tournament's own board. `page` is 1-based. No tournament resolved, or
  * a page past the end, means empty rows, never an error - see public.leaderboard()'s own

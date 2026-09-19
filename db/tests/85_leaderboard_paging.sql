@@ -1,4 +1,4 @@
--- Invariant: public.leaderboard(p_tournament, p_page) pages 20 rows at a time, ordered by
+-- Invariant: public.leaderboard(p_tournament, p_page) pages 25 rows at a time, ordered by
 -- record desc then updated_at asc (earlier record wins ties); public.leaderboard_total()
 -- reports the same board's full count for the client's page count; public.my_rank() resolves
 -- the caller's own row by player id (ticket B2 decision 1, closes gap G3), never a masked-email
@@ -9,31 +9,31 @@ begin;
 
 select plan(24);
 
--- ---- paging boundaries at 20/21 ------------------------------------------------------------
+-- ---- paging boundaries at 25/26 ------------------------------------------------------------
 insert into public.tournaments (id, title, starts_at, ends_at, prize_title, prize_image)
-values ('pg-t1', 'Paging 25 test', '2030-01-01+00', '2030-01-02+00', 'Prize', '/prizes/t.png');
+values ('pg-t1', 'Paging 26 test', '2030-01-01+00', '2030-01-02+00', 'Prize', '/prizes/t.png');
 
 select tests.create_confirmed_player('pg1-1@example.com') as pg1_top \gset
 insert into public.tournament_scores (tournament_id, player_id, record) values ('pg-t1', :'pg1_top', 2999);
 insert into public.tournament_scores (tournament_id, player_id, record)
 select 'pg-t1', tests.create_confirmed_player('pg1-' || n || '@example.com'), 3000 - n
-from generate_series(2, 25) as n;
+from generate_series(2, 26) as n;
 
 select is(
-  (select count(*) from public.leaderboard('pg-t1', 1))::int, 20,
-  'page 1 of a 25-row board is exactly 20 rows'
+  (select count(*) from public.leaderboard('pg-t1', 1))::int, 25,
+  'page 1 of a 26-row board is exactly 25 rows'
 );
 select is(
-  (select min(record) from public.leaderboard('pg-t1', 1)), 2980,
-  'page 1''s lowest record is rank 20''s (2980) - nothing from rank 21 leaks onto it'
+  (select min(record) from public.leaderboard('pg-t1', 1)), 2975,
+  'page 1''s lowest record is rank 25''s (2975) - nothing from rank 26 leaks onto it'
 );
 select is(
-  (select count(*) from public.leaderboard('pg-t1', 2))::int, 5,
-  'page 2 of a 25-row board is exactly the remaining 5 rows'
+  (select count(*) from public.leaderboard('pg-t1', 2))::int, 1,
+  'page 2 of a 26-row board is exactly the remaining 1 row'
 );
 select ok(
-  exists(select 1 from public.leaderboard('pg-t1', 2) where rank = 21 and record = 2979),
-  'rank 21 (the first row past the boundary) lands on page 2, not page 1'
+  exists(select 1 from public.leaderboard('pg-t1', 2) where rank = 26 and record = 2974),
+  'rank 26 (the first row past the boundary) lands on page 2, not page 1'
 );
 
 -- ---- tie order: equal record, earlier updated_at wins ---------------------------------------
@@ -67,7 +67,7 @@ select is(public.tier_for_rank(101), 'player', 'rank 101 is tiered player (one p
 select set_config('app.player_id', :'pg1_top', true);
 select is((select rank from public.my_rank('pg-t1')), 1::bigint, 'my_rank resolves the caller''s own rank (1) by player id');
 select is((select tier from public.my_rank('pg-t1')), 'gold', 'my_rank carries the caller''s own tier');
-select is((select total from public.my_rank('pg-t1')), 25::bigint, 'my_rank carries the tournament''s total ranked-player count');
+select is((select total from public.my_rank('pg-t1')), 26::bigint, 'my_rank carries the tournament''s total ranked-player count');
 select set_config('app.player_id', '', true);
 
 -- ---- my_rank: nothing to resolve is nothing back, never an error ----------------------------
@@ -102,20 +102,20 @@ select is(
 
 -- ---- leaderboard_total() -----------------------------------------------------------------
 select is(
-  (select public.leaderboard_total('pg-t1'))::int, 25,
+  (select public.leaderboard_total('pg-t1'))::int, 26,
   'leaderboard_total counts every ranked, confirmed-email row for that tournament (the unconfirmed row above never counts)'
 );
 
--- ---- paging boundary at an exact multiple of 20 -----------------------------------------------
+-- ---- paging boundary at an exact multiple of 25 -----------------------------------------------
 insert into public.tournaments (id, title, starts_at, ends_at, prize_title, prize_image)
-values ('pg-t4', 'Paging 40 test', '2030-01-05+00', '2030-01-06+00', 'Prize', '/prizes/t.png');
+values ('pg-t4', 'Paging 50 test', '2030-01-05+00', '2030-01-06+00', 'Prize', '/prizes/t.png');
 insert into public.tournament_scores (tournament_id, player_id, record)
 select 'pg-t4', tests.create_confirmed_player('pg4-' || n || '@example.com'), 5000 - n
-from generate_series(1, 40) as n;
+from generate_series(1, 50) as n;
 
-select is((select count(*) from public.leaderboard('pg-t4', 1))::int, 20, 'page 1 of an exactly-40-row board is 20 rows');
-select is((select count(*) from public.leaderboard('pg-t4', 2))::int, 20, 'page 2 of an exactly-40-row board is the other 20 rows');
-select is((select count(*) from public.leaderboard('pg-t4', 3))::int, 0, 'page 3 of an exactly-40-row board is empty, not an error');
+select is((select count(*) from public.leaderboard('pg-t4', 1))::int, 25, 'page 1 of an exactly-50-row board is 25 rows');
+select is((select count(*) from public.leaderboard('pg-t4', 2))::int, 25, 'page 2 of an exactly-50-row board is the other 25 rows');
+select is((select count(*) from public.leaderboard('pg-t4', 3))::int, 0, 'page 3 of an exactly-50-row board is empty, not an error');
 
 select * from finish();
 rollback;
