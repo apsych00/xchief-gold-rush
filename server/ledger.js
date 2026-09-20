@@ -566,7 +566,7 @@ export async function getClaimStatus(token) {
 }
 
 /** The 60 s kiosk sweep's own claim-link housekeeping (ticket C9): releases every claim link
- * whose 24 h window ran out unclaimed, coupon back to 'available'. Returns the count released. */
+ * whose 30-day window ran out unclaimed, coupon back to 'available'. Returns the count released. */
 export async function releaseExpiredClaims() {
   return call('release_expired_claims');
 }

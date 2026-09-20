@@ -326,7 +326,7 @@ create table public.coupons (
 -- decision 2). A coupon is reserved, not claimed, the moment a visitor's Nth win earns it;
 -- claim_prize() is what actually claims it, once, when the visitor enters an email on the
 -- /claim/<token> page the QR points at. expired_at is set by the 60 s sweep (server/kiosk.js)
--- once a reserved coupon's link goes 24 h unclaimed, which releases the coupon back to
+-- once a reserved coupon's link goes 30 days unclaimed, which releases the coupon back to
 -- 'available' - the link row itself stays, kept for the audit rather than deleted.
 create table public.claim_links (
   token text primary key,
@@ -1027,7 +1027,7 @@ begin
         -- to exactly 32 base64 characters with no padding, so translate() alone (+/ -> -_) is
         -- enough - there is never a trailing '=' to strip.
         v_token := translate(encode(extensions.gen_random_bytes(24), 'base64'), '+/', '-_');
-        v_claim_expires_at := now() + interval '24 hours';
+        v_claim_expires_at := now() + interval '30 days';
         -- coupon_id is unique on this table (one row is this coupon's whole claim history, ticket
         -- C9 decision 2): a coupon the sweep already released once carries an old, expired row
         -- here already, so a later win on the very same coupon reopens that same row for its new
@@ -1099,7 +1099,7 @@ begin
 end $$;
 
 -- The 60 s kiosk sweep (server/kiosk.js) calls this every tick alongside its idle-session reset:
--- any claim link whose 24 h window ran out with nobody claiming it releases its coupon back to
+-- any claim link whose 30-day window ran out with nobody claiming it releases its coupon back to
 -- 'available'. The link row itself is kept, expired_at marking it for the audit (ticket C9).
 create function public.release_expired_claims()
 returns int language plpgsql security definer set search_path = public as $$

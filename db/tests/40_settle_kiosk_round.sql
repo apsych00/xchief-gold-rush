@@ -6,7 +6,7 @@
 -- coupons_exhausted, and leaves the session 'playing'.
 begin;
 
-select plan(24);
+select plan(25);
 
 -- Leave exactly one coupon available so the "no double reservation" case is unambiguous.
 insert into public.coupons (code) values ('TEST-0001') on conflict (code) do nothing;
@@ -50,6 +50,14 @@ select is(
 select is((:'settle_one'::json->>'state'), 'won', 'a reserved coupon ends the session as won');
 select ok((:'settle_one'::json->>'claim_token') is not null, 'the win returns a claim token, never a code');
 select ok((:'settle_one'::json->>'claim_expires_at') is not null, 'the win returns the claim link''s expiry');
+-- The gift card is a 30-day card: server/otp.js stamps the emailed expiry 30 days out and the
+-- email copy says so. The link that turns a reserved coupon into that card used to lapse after
+-- 24 hours, which meant a visitor who did not enter their email the same day lost the prize
+-- outright. The two windows must agree, so this pins the one the database owns.
+select ok(
+  (:'settle_one'::json->>'claim_expires_at')::timestamptz between now() + interval '29 days' and now() + interval '31 days',
+  'the claim link is good for 30 days, matching the gift card''s own validity'
+);
 select is(
   (select status from public.coupons where code = 'TEST-0001'),
   'reserved',

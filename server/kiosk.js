@@ -108,7 +108,7 @@ export function createKioskIdleSweep({
         log(`kiosk idle sweep: reset of ${kioskId} failed: ${err.message}`);
       }
     }
-    // ticket C9: a claim link nobody scanned within its 24 h window releases its coupon back to
+    // ticket C9: a claim link nobody scanned within its 30-day window releases its coupon back to
     // 'available' - run before checkCoupons() below so a release that crosses the pool from
     // empty to non-empty is exactly the crossing that push observes.
     try {
