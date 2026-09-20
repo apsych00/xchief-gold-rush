@@ -47,11 +47,27 @@ enhancement for the clients that do honour them (Apple Mail), or drop them; eith
 One thing not to do: never inline images as base64 data URIs. Gmail strips them, and the email
 arrives with holes where the artwork should be.
 
-## What we need back
+## What came back (2026-09-20)
 
-Once the template is created, send us the **template id** Elastic Mail assigns it. That is the
-only thing the server needs; everything else (subject, merge fields, sender) is already wired on
-our side.
+The template is live in Elastic Mail as **`gold-rush-gift`**, with the three merge fields wired
+to the lines they fill:
+
+| Field          | Line | What it fills                           |
+| -------------- | ---- | --------------------------------------- |
+| `{code}`       | 85   | the gift-card code in the gold panel     |
+| `{expires_at}` | 90   | the expiry line under the code           |
+| `{claim_url}`  | 124  | the "Button not working?" fallback link  |
+
+That name is what the server sends as the template, so `ELASTIC_CLAIM_TEMPLATE_ID=gold-rush-gift`
+is the whole configuration change. `{unsubscribe}` on line 272 is Elastic's own field and needs
+nothing from us.
+
+One thing the template alone does not cover: `{claim_url}` is built as
+`<PUBLIC_URL>/claim/<token>`, so the environment also needs `PUBLIC_URL` set to the site's own
+origin (`https://goldrush.xchief.academy` on the box, no trailing slash). It was never in
+`.env.box.example` and is not set on the box today, so it has to be added there before the first
+real send - without it the fallback link arrives empty, and the kiosk's own WON-screen QR cannot
+be built either.
 
 ## Outbound links in this template
 
