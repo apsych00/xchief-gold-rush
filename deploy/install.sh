@@ -7,7 +7,7 @@ set -euo pipefail
 REPO_DIR="${REPO_DIR:-/opt/goldrush}"
 REPO_URL="${REPO_URL:-git@github.com:AIT-ERP/xChief-Gold-Rush.git}"
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
-DEPLOY_BRANCH="${DEPLOY_BRANCH:-dev}"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "install.sh must run as root" >&2

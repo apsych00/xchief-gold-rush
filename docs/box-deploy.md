@@ -27,7 +27,7 @@ Node is never installed on the box. The website is built **inside Docker** by `d
 - A VPS (a small virtual server) with **4 vCPU / 8 GB RAM**, **Ubuntu 24.04**, and root access (SSH key, not password). Any provider works (Hetzner, DigitalOcean, OVH). Roughly 20-30 EUR/month.
 - A domain, with a free [Cloudflare](https://cloudflare.com) account managing its DNS (e.g. `goldrush.xchief.com`).
 - The campaign's API keys: Finnhub token, Elastic Mail API key, and the sender email address.
-- A copy of this repository on your own computer, checked out on the campaign branch (ask the developer which branch that is - `deploy/install.sh` defaults to `dev`).
+- A copy of this repository on your own computer, checked out on the campaign branch (ask the developer which branch that is - `deploy/install.sh` defaults to `main`).
 - A read-only **deploy key** for the box. Ask the developer for it; `deploy/install.sh` tells you exactly where it goes and will not proceed without it. This is deliberate - the box only ever gets read access to the code, never write access.
 
 ## 1. Create the VPS

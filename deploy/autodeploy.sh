@@ -5,7 +5,7 @@
 set -euo pipefail
 
 REPO_DIR="${REPO_DIR:-/opt/goldrush}"
-DEPLOY_BRANCH="${DEPLOY_BRANCH:-dev}"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 LOG_FILE="${LOG_FILE:-/var/log/goldrush-deploy.log}"
 LOCK_FILE="${LOCK_FILE:-/tmp/goldrush-autodeploy.lock}"
 

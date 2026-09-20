@@ -8,7 +8,9 @@
 set -euo pipefail
 
 REPO_DIR="${REPO_DIR:-/opt/goldrush}"
-DEPLOY_BRANCH="${DEPLOY_BRANCH:-dev}"
+# main is the deploy branch as of 2026-09-20 (owner's call). dev is where the work lands and
+# gets signed off; main is what the box builds. Override with DEPLOY_BRANCH=... for a one-off.
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1/health}"
 STATUS_URL="${STATUS_URL:-http://127.0.0.1/status}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-60}"
