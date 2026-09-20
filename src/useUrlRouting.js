@@ -28,7 +28,7 @@ const ENTER_ACTION = {
 // Other entry points and server routes that happen to share the browser's history/location
 // (AGENTS.md; the ticket's own reserved list) - this hook must never push, rewrite, or read a
 // screen out of any of these. Prefix-matched so `/logs` and `/logs/anything` are both left alone.
-const RESERVED_PREFIXES = ['/kiosk', '/claim/', '/af/', '/api/', '/ws', '/health', '/status', '/logs', '/ops', '/ads'];
+const RESERVED_PREFIXES = ['/kiosk', '/claim/', '/api/', '/ws', '/health', '/status', '/logs', '/ops', '/ads'];
 
 function isReserved(pathname) {
   return RESERVED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix));
@@ -45,10 +45,10 @@ function isReserved(pathname) {
  * behind).
  *
  * `currentPathRef` is the single source of "what the URL already says" - both directions
- * (pushPath, and the popstate handler) compare against it before acting. That comparison is also
- * what keeps a self-inflicted popstate (Part 2's modal-close cleanup, src/useBackToClose.js) from
- * being mistaken for a real back navigation: that cleanup never changes the path, so the
- * comparison is a no-op there every time.
+ * (pushPath, and the popstate handler) compare against it before acting. That comparison also
+ * means a popstate that does not change the path - a state-only history entry, which is what a
+ * "back closes the open modal" scheme would use - is simply ignored rather than mistaken for a
+ * real back navigation.
  *
  * Entirely inert for the kiosk (`isKiosk`): a booth device must never accumulate history or let a
  * visitor navigate backwards out of the game.
