@@ -7,6 +7,7 @@ import * as api from './api/game.js';
 import { ensureSession, requestOtp as sessionRequestOtp, signOut as sessionSignOut, verifyOtp as sessionVerifyOtp } from './api/session.js';
 import { IS_KIOSK, playKioskRound } from './api/kiosk.js';
 import { connect as connectSocket, getInstagramHandle, onIdentityChange, onLeaderboard, onSettled } from './api/socket.js';
+import { SCREEN_PATHS, useUrlRouting } from './useUrlRouting.js';
 
 export const ROUND_SECONDS = 5;
 export const LEVERS = ECON.levers;
@@ -108,6 +109,20 @@ export function useGame() {
   const profileRef = useRef(profile);
   const trackRef = useRef(null);
   const toastTimer = useRef(null);
+  // Set once the `actions` object below exists (synchronously, during this same render, same
+  // pattern as stateRef/profileRef above) - the routing hook's boot/popstate effect reads it
+  // through this ref rather than depending on `actions` directly, since actions is a fresh object
+  // literal every render.
+  const actionsRef = useRef(null);
+  const { pushPath } = useUrlRouting(actionsRef, IS_KIOSK);
+  // React StrictMode's dev-only double-invoke runs the hydrate effect below twice on mount;
+  // ensureSession() is already single-flight for that (src/api/session.js), but the getMe/
+  // refreshTasks chain after it is not - this keeps that one-time bootstrap to a single run so it
+  // cannot send the same query type twice within the server's 1/s per-socket budget (a real,
+  // reproducible flakiness: a stray rate_limited error frame for either call, thanks to
+  // socket.js's settlePending matching any error to the oldest pending request, can reject a
+  // totally unrelated in-flight request - e.g. a deep-link boot's own leaderboard/tasks fetch).
+  const hydratedRef = useRef(false);
 
   const levRef = useRef(state.lev);
   const stateRef = useRef(state);
@@ -258,19 +273,20 @@ export function useGame() {
     const guardedApplyMe = (row) => {
       if (!cancelled) applyMe(row);
     };
-    ensureSession()
-      .then(() => {
-        // Ticket K3: the welcome that ensureSession waited on carries the handle to follow.
-        if (!cancelled) setState((s) => ({ ...s, ourInstagramHandle: getInstagramHandle() }));
-        return api.getMe();
-      })
-      .then(guardedApplyMe)
-      .then(() => {
-        if (!cancelled) refreshTasks();
-      })
-      .catch((err) => {
-        console.error('[api] session bootstrap failed', err);
-      });
+    if (!hydratedRef.current) {
+      hydratedRef.current = true;
+      ensureSession()
+        .then(() => {
+          // Ticket K3: the welcome that ensureSession waited on carries the handle to follow.
+          setState((s) => ({ ...s, ourInstagramHandle: getInstagramHandle() }));
+          return api.getMe();
+        })
+        .then(applyMe)
+        .then(() => refreshTasks())
+        .catch((err) => {
+          console.error('[api] session bootstrap failed', err);
+        });
+    }
     const offIdentityChange = onIdentityChange(guardedApplyMe);
     return () => {
       cancelled = true;
@@ -790,18 +806,24 @@ export function useGame() {
     freeRefill,
     refreshTasks,
     markPrompt,
-    startGame: () => patch({ screen: 'game' }),
+    startGame: () => {
+      patch({ screen: 'game' });
+      pushPath(SCREEN_PATHS.game);
+    },
     goHome: () => {
       stopTimer();
       patch({ screen: 'home', ...reset });
+      pushPath(SCREEN_PATHS.home);
     },
     goLeaderboard: () => {
       refreshLeaderboard();
       patch({ screen: 'lb' });
+      pushPath(SCREEN_PATHS.lb);
     },
     goProfile: () => {
       stopTimer();
       patch({ screen: 'profile', ...reset });
+      pushPath(SCREEN_PATHS.profile);
     },
     resetProfile: () => {
       stopTimer();
@@ -819,6 +841,7 @@ export function useGame() {
       stopTimer();
       refreshTasks();
       patch({ screen: 'tasks', ...reset });
+      pushPath(SCREEN_PATHS.tasks);
     },
     playAgain: () => patch(reset),
     pickUp: () => startRound('up'),
@@ -855,6 +878,7 @@ export function useGame() {
     selectTournament,
     loadMoreLeaderboard,
   };
+  actionsRef.current = actions;
 
   return { state, profile, actions, trackRef, isKiosk: IS_KIOSK, tourSeen, markTourSeen };
 }
