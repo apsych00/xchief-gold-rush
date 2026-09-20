@@ -17,7 +17,10 @@ send through Elastic's merge-field substitution:
 - `{expires_at}` - a human-readable date, e.g. "October 19, 2026"
 - `{claim_url}` - the claim page link (fallback in case the main button does not work in some
   client)
-- `{unsubscribe}` - Elastic Mail's own built-in unsubscribe field, not one we fill in
+
+There is deliberately **no `{unsubscribe}`** in the footer. This is a transactional send - one
+gift card to the one person who just asked for it - and the server sends it with
+`isTransactional=true`, so Elastic neither requires nor injects an opt-out link.
 
 The email also loads four assets over `https://` from `goldrush.xchief.academy/email/`: the
 xChief logo PNG and three Space Grotesk woff2 files. Those already live in this repo under
@@ -59,8 +62,22 @@ to the lines they fill:
 | `{claim_url}`  | 124  | the "Button not working?" fallback link  |
 
 That name is what the server sends as the template, so `ELASTIC_CLAIM_TEMPLATE_ID=gold-rush-gift`
-is the whole configuration change. `{unsubscribe}` on line 272 is Elastic's own field and needs
-nothing from us.
+is the whole configuration change.
+
+## Two things still to clear with the admin
+
+The first test send came back with two pieces of chrome nobody asked for.
+
+**An unsubscribe link in the footer.** That one was ours: the template file still carried an
+`{unsubscribe}` merge field on its last footer line, so Elastic filled it in. It has been
+removed from the file here, and the admin needs to remove that same line from the template they
+already created (or re-import the file).
+
+**A washed-out xChief logo on a white strip below the email.** That one is not in this file at
+all - it sits outside the dark 600px wrapper, which is the giveaway. Elastic appends it at the
+account level, so it goes on every send from the account regardless of template. The admin turns
+it off in the Elastic dashboard's account/branding settings; there is nothing we can do about it
+from the HTML.
 
 One thing the template alone does not cover: `{claim_url}` is built as
 `<PUBLIC_URL>/claim/<token>`, so the environment also needs `PUBLIC_URL` set to the site's own
