@@ -31,7 +31,6 @@ refill coins by completing marketing tasks (follow, review, open a demo account)
 | `src/styles.css`               | All styling, fixed non-scrolling app shell                                                                    |
 | `api/lead.js`                  | Vercel serverless endpoint that receives leads                                                                |
 | `relay/`                       | Standalone price relay (Node + `ws`), with Fly.io / Render / Docker configs                                   |
-| `af/`, `src/af/`, `public/af/` | Separate Afghanistan welcome-bonus landing served at `/af/`                                                   |
 | `test/`                        | Economy rule tests (`npm test`)                                                                               |
 
 ## Run
@@ -58,25 +57,6 @@ pull request. See `CONTRIBUTING.md` for conventions.
   redeploy.
 - **Leads:** set `LEAD_WEBHOOK_URL` on Vercel to forward every email lead as
   JSON to a sheet/CRM; otherwise leads are only in the function logs.
-
-## Afghanistan landing (`/af/`)
-
-`af/index.html` is a second Vite entry (see `vite.config.js`) that renders the
-welcome-bonus landing page for Afghan traders, implemented from the Figma Make
-design "Redesign with Real Images" in both its mobile and desktop layouts:
-
-- `src/af/Landing.jsx` — sections (nav, hero, steps, features, FAQ, final CTA) and
-  the fixed registration bars (full-width mobile bar / 80 px desktop bar). Copy
-  lives in the `STEPS`, `FEATURES` and `FAQS` arrays at the top of the file.
-- `src/af/landing.css` — plain CSS translated from the design's Tailwind theme
-  (background `#0f1115`, card `#181b21`, primary emerald `#10b981`, Vazirmatn).
-- `public/af/` — hero images (desktop 1672×941, mobile 941×1672, re-encoded from
-  the design's PNGs as JPEG) and `presenter.jpg`, a 4:3 crop of the presenter
-  photo used in the features section.
-
-Every CTA points to `VITE_AF_REGISTER_URL` (defaults to the campaign link from the
-design). After `npm run build` the page is at `dist/af/index.html`, so on Vercel it
-is served at `https://<domain>/af/`.
 
 ## Branding
 

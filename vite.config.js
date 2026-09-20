@@ -136,13 +136,4 @@ export default defineConfig({
   define: {
     __BUILD_ID__: JSON.stringify(BUILD_ID),
   },
-  build: {
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'index.html'),
-        // Afghanistan welcome-bonus landing, served at /af/
-        af: resolve(__dirname, 'af/index.html'),
-      },
-    },
-  },
 });
