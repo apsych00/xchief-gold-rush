@@ -89,10 +89,23 @@ export function useUrlRouting(actionsRef, isKiosk) {
       const boot = window.location.pathname;
       if (!isReserved(boot)) {
         const screen = PATH_SCREENS[boot];
-        if (screen) {
-          ensureSession().then(() => actionsRef.current[ENTER_ACTION[screen]]());
-        } else {
+        if (!screen) {
           enterUnknown();
+        } else if (screen !== 'home') {
+          // Home needs no dispatch at all: it is already the initial screen, and goHome's own
+          // stopTimer/reset have nothing to undo this early. Skipping it also keeps the wait
+          // below off the common path.
+          //
+          // The wait matters because ensureSession takes as long as the network does. On a local
+          // stack it resolves in a few milliseconds, always before a human could tap anything;
+          // over the real domain it is hundreds, and a visitor who taps Missions in the meantime
+          // would otherwise be yanked back to the screen the URL named when the page opened -
+          // pushing a bogus history entry on the way, which then made back skip a screen. So
+          // only dispatch if the URL still says what it said at boot.
+          ensureSession().then(() => {
+            if (currentPathRef.current !== boot || window.location.pathname !== boot) return;
+            actionsRef.current[ENTER_ACTION[screen]]();
+          });
         }
       }
     }
