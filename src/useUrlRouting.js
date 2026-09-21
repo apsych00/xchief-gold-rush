@@ -38,8 +38,8 @@ function isReserved(pathname) {
  * Makes the URL the source of truth for which of the five flat screens is showing. No router
  * library: `pushPath` (returned below) is called by useGame.js's own goHome/startGame/goTasks/
  * goLeaderboard/goProfile after each does its normal work, so every route into a screen - a nav
- * tap, the in-game home button, a result pane's "board" button, the share-mission hand-off to
- * Profile - leaves a back-able history entry, not just the bottom nav bar. Back/forward and the
+ * tap, the in-game home button, a result pane's "board" button - leaves a back-able history entry,
+ * not just the bottom nav bar. Back/forward and the
  * initial load both route back through those same named actions rather than a bare `screen`
  * assignment (the ticket's own callout: skipping this leaves a stale board or a running timer
  * behind).

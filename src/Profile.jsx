@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { COMBO_MAX, comboMult, LEVELS, levelFor, nextLevel } from './config.js';
 import { num, useLang } from './i18n.js';
 import { mayAskEmail, readLead, readSignup } from './leads.js';
@@ -60,7 +60,7 @@ function ProgressRing({ pct, size = 84, stroke = 7, children }) {
   );
 }
 
-export default function Profile({ profile, identityKnown, actions, onToast, shareMission }) {
+export default function Profile({ profile, identityKnown, actions, onToast }) {
   const { t, lang } = useLang();
   const signup = readSignup();
   const lead = readLead();
@@ -73,21 +73,8 @@ export default function Profile({ profile, identityKnown, actions, onToast, shar
   const winRate = profile.rounds ? Math.round((profile.wins / profile.rounds) * 100) : 0;
   const name = signup?.name || t('profile.guest');
 
-  // The "share your record" mission (Tasks.jsx's 'story' row -> App.jsx) lands here with
-  // shareMission.pending true and opens this same share modal automatically instead of granting
-  // on the tap that got us here. Snapshot it once at mount: App clears its own pending flag right
-  // after (so a later, unrelated visit to this screen never re-triggers it), but the modal needs
-  // a stable reward/onClaim pair for as long as it stays open on this visit.
-  const [missionSnapshot] = useState(() =>
-    shareMission?.pending ? { reward: shareMission.reward, onClaim: shareMission.onClaim } : null,
-  );
-  const [shareOpen, setShareOpen] = useState(!!missionSnapshot);
+  const [shareOpen, setShareOpen] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
-  useEffect(() => {
-    if (missionSnapshot) shareMission.onConsumed?.();
-    // Runs once on mount only - shareMission is read from the closure captured above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   return (
     <section className="pf">
@@ -225,14 +212,16 @@ export default function Profile({ profile, identityKnown, actions, onToast, shar
           </button>
         )}
       </div>
-      <div className="pf-foot">{t('profile.foot')}</div>
+      <div className="pf-foot">
+        {/* A guest's progress is bound to this device; a signed-in player's is tied to their
+            verified email and survives sign-out on another device. Same wording as the sign-out
+            confirmation's own "stay saved to {email}" line so this screen never contradicts it. */}
+        {profile.emailVerified && profile.display
+          ? t('profile.footEmail', { email: profile.display })
+          : t('profile.foot')}
+      </div>
       {shareOpen && (
-        <ShareModal
-          profile={profile}
-          onClose={() => setShareOpen(false)}
-          onToast={(txt) => onToast?.(txt)}
-          mission={missionSnapshot}
-        />
+        <ShareModal profile={profile} onClose={() => setShareOpen(false)} onToast={(txt) => onToast?.(txt)} />
       )}
       {signOutOpen && (
         <ConfirmSignOut

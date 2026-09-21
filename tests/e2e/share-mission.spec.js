@@ -1,8 +1,8 @@
 // E2E for the "Share your record" mission (db/seed.sql's 'story' row, kind='manual'). The bug this
-// replaces: tapping the mission's own row granted the reward on the tap itself. The fixed flow
-// (src/Tasks.jsx -> src/Profile.jsx -> src/ShareModal.jsx's `mission` mode) instead navigates to
-// Profile, opens the same share-my-record modal a player already knows, and only claims once a
-// fake 3 s countdown after the Share/Download press finishes - never on the tap that got here.
+// once fixed: tapping the mission's own row granted the reward on the tap itself. The current flow
+// (src/Tasks.jsx renders src/ShareModal.jsx directly, in place, in its `mission` mode) only claims
+// once a fake 3 s countdown after the Share/Download press finishes - never on the tap that opens
+// the modal, and never by navigating anywhere else to reach it.
 import { expect, test } from '@playwright/test';
 
 import { dismissFirstVisit } from './first-visit.js';
@@ -39,7 +39,7 @@ async function stubFileShare(page) {
 test.describe('share your record mission', () => {
   test.setTimeout(120000);
 
-  test('tapping the mission row only navigates - nothing is granted until the countdown after Share finishes', async ({
+  test('tapping the mission row opens the share modal in place - nothing is granted until the countdown after Share finishes', async ({
     page,
   }) => {
     await stubFileShare(page);
@@ -56,9 +56,10 @@ test.describe('share your record mission', () => {
     await expect(row).toBeVisible();
     await row.locator('.task-btn').click();
 
-    // The tap itself only navigates: Profile is shown, its share modal is already open (no
-    // separate press of the profile's own "Share my record" button), and nothing was credited.
-    await expect(page.locator('.pf')).toBeVisible({ timeout: 5000 });
+    // The tap opens the modal right here: Tasks stays the screen behind it, no navigation to
+    // Profile happens, and nothing was credited yet.
+    await expect(page.locator('.tasks')).toBeVisible();
+    await expect(page.locator('.pf')).toHaveCount(0);
     await expect(page.locator('.share-modal')).toBeVisible({ timeout: 5000 });
     await expect(page.locator('.share-badge-img')).toBeVisible({ timeout: 10000 });
     expect(await screenCoins(page)).toBe(beforeCoins);
@@ -70,12 +71,13 @@ test.describe('share your record mission', () => {
     await expect(page.locator('.share-primary')).toContainText(/\d/);
     expect(await screenCoins(page)).toBe(beforeCoins);
 
-    // Only once the countdown reaches zero does the reward land and the modal close itself.
+    // Only once the countdown reaches zero does the reward land and the modal close itself, still
+    // without ever leaving Tasks.
     await expect(page.locator('.share-modal')).toHaveCount(0, { timeout: 6000 });
+    await expect(page.locator('.tasks')).toBeVisible();
     await expect.poll(() => screenCoins(page), { timeout: 10000 }).toBe(beforeCoins + 300);
 
-    // Back on Tasks, the mission reads claimed and the balance carried over.
-    await goToTasks(page);
+    // The row now reads claimed.
     await expect(row.locator('.task-state')).toBeVisible({ timeout: 5000 });
     await expect(row.locator('.task-btn')).toHaveCount(0);
     expect(await screenCoins(page)).toBe(beforeCoins + 300);
@@ -102,7 +104,8 @@ test.describe('share your record mission', () => {
     await expect(page.locator('.share-modal')).toHaveCount(0);
     expect(await screenCoins(page)).toBe(beforeCoins);
 
-    await goToTasks(page);
+    // Still on Tasks the whole time - the row is claimable again with no navigation needed.
+    await expect(page.locator('.tasks')).toBeVisible();
     await expect(row.locator('.task-btn')).toBeVisible({ timeout: 5000 });
     await expect(row.locator('.task-state')).toHaveCount(0);
     expect(await screenCoins(page)).toBe(beforeCoins);
@@ -137,7 +140,7 @@ test.describe('share your record mission', () => {
     await page.waitForTimeout(4000);
     expect(await screenCoins(page)).toBe(beforeCoins);
 
-    await goToTasks(page);
+    await expect(page.locator('.tasks')).toBeVisible();
     await expect(row.locator('.task-btn')).toBeVisible({ timeout: 5000 });
     await expect(row.locator('.task-state')).toHaveCount(0);
     expect(await screenCoins(page)).toBe(beforeCoins);
@@ -155,8 +158,11 @@ test.describe('share your record mission', () => {
 
     const beforeCoins = await screenCoins(page);
 
-    // Straight to Profile via the avatar, never through the Tasks row.
-    await page.getByRole('button', { name: /your profile|profile/i }).click();
+    // Straight to Profile via its own URL, never through the Tasks row. A guest has no in-app
+    // route to Profile any more (the header's avatar slot offers Sign in instead), so this reaches
+    // it the same way a real deep link would (src/useUrlRouting.js), not a UI element that no
+    // longer exists for a signed-out player.
+    await page.goto('/profile');
     await expect(page.locator('.pf')).toBeVisible();
     await expect(page.locator('.share-modal')).toHaveCount(0);
     await page.getByRole('button', { name: /share my record/i }).click();

@@ -61,16 +61,29 @@
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
 }
 
-/* ---------- profile screen: fits 360×640 without scrolling ---------- */
+/* ---------- profile screen: scrolls its own content, shell stays fixed ---------- */
 
+/* .app is `position: fixed; overflow: clip` by design (styles.css) - the page itself never
+   scrolls. This is the profile screen's own scroll region: every child keeps its natural size
+   (no more clamp()-shrunk gaps squeezing the action buttons below their real height) and the
+   region scrolls instead of compressing when content overflows the space between the top bar
+   and the bottom nav. It wears the app's own thin scrollbar (styles.css's `*` rule) rather than
+   a new one of its own. */
 .pf {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: clamp(6px, 1.2vh, 12px);
+  gap: 14px;
   padding: 4px 18px 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* Belt-and-suspenders against the same compression bug this replaces: every direct child keeps
+   its natural size and never shrinks to fit, even if a browser's flex-min-size quirk would
+   otherwise let one. */
+.pf > * {
+  flex-shrink: 0;
 }
 .pf-head {
   display: flex;
@@ -307,7 +320,13 @@
   gap: 8px;
 }
 .pf-btn {
-  flex: 1;
+  /* `flex: 1` (flex-basis 0%) was left over from when the two buttons sat side by side and grew
+     to share a row's width equally; now that .pf-actions stacks them in a column (below), that
+     same flex-basis:0 collapses each button to its min-content height inside a hug-height
+     container, discarding the 44px this declares - the actual cause of the squashed-buttons bug.
+     `flex: none` keeps the declared height as the item's real size; align-items: stretch
+     (.pf-actions' own default) still gives it the full column width. */
+  flex: none;
   height: 44px;
   padding: 0 10px;
   font-size: 14px;

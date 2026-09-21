@@ -170,6 +170,7 @@ const dict = {
       share: 'Share my record',
       shareText: 'My record in the xChief Gold Rush: {record} coins ({level}). Can you beat it? {url}',
       foot: 'Progress is saved on this device.',
+      footEmail: 'Your progress stays saved to {email}. Sign in again any time to pick it back up.',
       signOut: 'Sign out',
       signOutTitle: 'Sign out?',
       // Says what actually happens, in the order the player will feel it. The middle line is the

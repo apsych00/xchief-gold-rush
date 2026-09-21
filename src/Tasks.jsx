@@ -5,6 +5,7 @@ import { num, useLang } from './i18n.js';
 import { clearSignupTimer, readSignupTimer, writeSignupTimer } from './signupTimer.js';
 import { clearYoutubeCooldown, readYoutubeCooldown, writeYoutubeCooldown } from './youtubeMissionTimer.js';
 import Logo from './Logo.jsx';
+import ShareModal from './ShareModal.jsx';
 import { TASK_ICONS } from './TaskIcons.jsx';
 
 // The three seeded YouTube reward units (db/seed.sql), walked in id order and shown as one
@@ -575,6 +576,7 @@ function InstagramModal({ onStart, onCheck, onNotConfigured, onDone, onCancel, o
  *   - 'manual' (kept for future use; none seeded): the old instant-claim / PIN-gated path.
  */
 export default function Tasks({
+  profile,
   tasksRows = [],
   onClaim,
   onRefreshTasks,
@@ -585,7 +587,6 @@ export default function Tasks({
   onInstagramCheck,
   ourInstagramHandle,
   onOpenIdentity,
-  onShareMission,
   onToast,
 }) {
   const { t, lang } = useLang();
@@ -599,6 +600,12 @@ export default function Tasks({
   // soon" state). The done state is read straight off the task row's `claimed`, not tracked here.
   const [igModalOpen, setIgModalOpen] = useState(false);
   const [igNotConfigured, setIgNotConfigured] = useState(false);
+  // "Share your record" (the 'story' row, kind='manual'): opens the same share modal Profile's
+  // own "Share my record" button uses, right here in place - no screen navigation. Holding the
+  // tapped row gives ShareModal's `mission` mode its reward/onClaim pair; the reward is granted
+  // only after the real Share/Download press and its countdown (src/ShareModal.jsx), never on
+  // this tap.
+  const [shareMissionRow, setShareMissionRow] = useState(null);
   const pendingReturns = useRef(new Set());
   const returnTimers = useRef(new Map());
   const ytClaimedBaseline = useRef(null);
@@ -752,13 +759,12 @@ export default function Tasks({
       setIgModalOpen(true);
       return;
     }
-    // 'story' (share your record, kind='manual'): this row grants nothing on tap. It hands off to
-    // Profile, which opens the same share modal a player already knows from its own "Share my
-    // record" button and only claims once a fake countdown after the share/download press
+    // 'story' (share your record, kind='manual'): this row grants nothing on tap. It opens the
+    // share modal right here and only claims once a fake countdown after the share/download press
     // completes (src/ShareModal.jsx's `mission` mode) - see docs/tickets for the "share mission
     // grants on tap" bug this replaces.
     if (row.id === 'story') {
-      onShareMission?.(row);
+      setShareMissionRow(row);
       return;
     }
     // 'manual' (no other rows seeded, kept for future use): the same instant-claim / PIN-gated
@@ -948,6 +954,14 @@ export default function Tasks({
             onRefreshTasks?.();
           }}
           onCancel={() => setIgModalOpen(false)}
+        />
+      )}
+      {shareMissionRow && (
+        <ShareModal
+          profile={profile}
+          onClose={() => setShareMissionRow(null)}
+          onToast={onToast}
+          mission={{ reward: shareMissionRow.reward, onClaim: () => onClaim(shareMissionRow.id) }}
         />
       )}
     </section>

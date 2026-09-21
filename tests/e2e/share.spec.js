@@ -7,7 +7,11 @@ import { expect, test } from '@playwright/test';
 import { dismissFirstVisit } from './first-visit.js';
 
 async function openShareModal(page) {
-  await page.getByRole('button', { name: /your profile|profile/i }).click();
+  // A guest has no in-app route to Profile any more (the header's avatar slot offers Sign in
+  // instead - see src/App.jsx's TopBar), so reach it the same way a real deep link would: the
+  // app's own /profile URL (src/useUrlRouting.js), not a UI element that no longer exists for a
+  // signed-out player.
+  await page.goto('/profile');
   await expect(page.locator('.pf')).toBeVisible();
   await page.getByRole('button', { name: /share my record/i }).click();
   await expect(page.locator('.share-modal')).toBeVisible();
