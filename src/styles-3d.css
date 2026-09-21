@@ -138,7 +138,6 @@
 
 .btn-lb,
 .btn-ghost,
-.btn-home,
 .lang-btn {
   position: relative;
   background: linear-gradient(180deg, var(--ink-hi), var(--ink-1) 55%, var(--ink-2));
@@ -161,7 +160,6 @@
 }
 .btn-lb:active,
 .btn-ghost:active,
-.btn-home:active,
 .lang-btn:active {
   transform: translateY(3px);
   background: linear-gradient(180deg, var(--ink-1), var(--ink-2));

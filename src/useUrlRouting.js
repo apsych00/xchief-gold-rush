@@ -52,8 +52,14 @@ function isReserved(pathname) {
  *
  * Entirely inert for the kiosk (`isKiosk`): a booth device must never accumulate history or let a
  * visitor navigate backwards out of the game.
+ *
+ * `requestNavRef` (ticket: nav-on-play) is useGame.js's own guard against leaving a live round -
+ * back/forward can walk off the play screen exactly as a nav tap can, so a popstate that would
+ * change screen is routed through the same requestNav rather than dispatching straight into
+ * actionsRef. See its `onQueued` callback below for how the address bar is put back once the
+ * browser has already moved it.
  */
-export function useUrlRouting(actionsRef, isKiosk) {
+export function useUrlRouting(actionsRef, isKiosk, requestNavRef) {
   const currentPathRef = useRef(typeof window === 'undefined' ? '/' : window.location.pathname);
   // React StrictMode's dev-only double-invoke runs this effect's setup twice (mount, cleanup,
   // mount again) - refs survive that, unlike a plain local variable, so this guard keeps the boot
@@ -116,12 +122,28 @@ export function useUrlRouting(actionsRef, isKiosk) {
       // history entry looks exactly like this) - nothing to route.
       if (pathname === currentPathRef.current || isReserved(pathname)) return;
       const screen = PATH_SCREENS[pathname];
-      if (screen) {
-        currentPathRef.current = pathname;
-        actionsRef.current[ENTER_ACTION[screen]]();
-      } else {
-        enterUnknown();
-      }
+      // A live round guards this exactly like a nav tap does (useGame.js's requestNav), but the
+      // browser has already moved the address bar to `pathname` by the time popstate fires -
+      // onQueued below pushes it straight back to where the app still is, so the confirmation
+      // modal opens over the play screen's own URL rather than one that no longer matches what is
+      // on screen. `wasQueued` tracks whether that happened: unguarded, the browser is already at
+      // `pathname` when `run` executes, so it only needs to sync currentPathRef to match: calling
+      // the action's own pushPath would be a no-op anyway. Queued-then-confirmed, the address bar
+      // was moved back in the meantime, so currentPathRef must stay put and the action's own
+      // pushPath does the real forward push, exactly like a delayed nav-tap confirm does.
+      let wasQueued = false;
+      const run = () => {
+        if (screen) {
+          if (!wasQueued) currentPathRef.current = pathname;
+          actionsRef.current[ENTER_ACTION[screen]]();
+        } else {
+          enterUnknown();
+        }
+      };
+      requestNavRef.current(run, () => {
+        wasQueued = true;
+        history.pushState(null, '', currentPathRef.current);
+      });
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);

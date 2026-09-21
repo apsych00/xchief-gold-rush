@@ -127,16 +127,24 @@ function CoinDot() {
 
 /* ---------- chrome ---------- */
 
-export function TopBar({ profile, actions, active }) {
+export function TopBar({ profile, actions, active, onNavigate }) {
   const { t, lang } = useLang();
   const level = levelFor(profile.record);
+  // The kiosk reuses this component with no `onNavigate` at all - `navigate(undefined)` is then a
+  // no-op, same as the plain `actions?.goHome` this replaced. Where `onNavigate` is supplied
+  // (web), leaving the play screen mid-round is guarded exactly like a Nav tap.
+  const navigate = (fn) => () => {
+    if (!fn) return;
+    if (onNavigate) onNavigate(fn);
+    else fn();
+  };
   return (
     <header className="topbar">
       <div className="topbar-start">
         <button
           type="button"
           className="logo logo-home"
-          onClick={actions?.goHome}
+          onClick={navigate(actions?.goHome)}
           aria-label="xChief home"
           dir="ltr"
         >
@@ -156,7 +164,7 @@ export function TopBar({ profile, actions, active }) {
           <button
             type="button"
             className={`avatar-btn ${active ? 'avatar-btn-on' : ''} avatar-${level.id}`}
-            onClick={actions.goProfile}
+            onClick={navigate(actions.goProfile)}
             aria-label={t('profile.open')}
             aria-current={active ? 'page' : undefined}
           >
@@ -450,11 +458,6 @@ function Display({ state, profile, actions }) {
       <div className="display-inner">
         <div className="display-rays" aria-hidden="true" />
         <div className="display-vignette" aria-hidden="true" />
-        {!IS_KIOSK && (
-          <button type="button" className="btn-home" onClick={actions.goHome}>
-            {t('game.home')}
-          </button>
-        )}
         <div className="feed-corner">
           <FeedBadge feed={feed} />
         </div>
@@ -1211,17 +1214,20 @@ function Leaderboard({
 
 /* ---------- nav ---------- */
 
-function Nav({ screen, actions }) {
+function Nav({ screen, actions, onNavigate }) {
   const { t } = useLang();
+  // 'game' never guards: tapping Play while already on the play screen is not a navigation away
+  // (startGame's own patch is a no-op there), so it skips the confirmation a live round would
+  // otherwise trigger for every other tab (ticket: nav-on-play).
   const items = [
-    { id: 'home', label: t('nav.home'), Icon: HomeIcon, go: actions.goHome },
-    { id: 'game', label: t('nav.play'), Icon: GamepadIcon, go: actions.startGame },
-    { id: 'tasks', label: t('nav.tasks'), Icon: GiftIcon, go: actions.goTasks },
-    { id: 'lb', label: t('nav.lb'), Icon: TrophyIcon, go: actions.goLeaderboard },
+    { id: 'home', label: t('nav.home'), Icon: HomeIcon, go: actions.goHome, guarded: true },
+    { id: 'game', label: t('nav.play'), Icon: GamepadIcon, go: actions.startGame, guarded: false },
+    { id: 'tasks', label: t('nav.tasks'), Icon: GiftIcon, go: actions.goTasks, guarded: true },
+    { id: 'lb', label: t('nav.lb'), Icon: TrophyIcon, go: actions.goLeaderboard, guarded: true },
   ];
   return (
     <nav className="nav">
-      {items.map(({ id, label, Icon, go }) => {
+      {items.map(({ id, label, Icon, go, guarded }) => {
         const active = screen === id;
         return (
           <button
@@ -1230,7 +1236,7 @@ function Nav({ screen, actions }) {
             className="nav-btn"
             aria-current={active ? 'page' : undefined}
             style={{ color: active ? '#fff' : DIM }}
-            onClick={go}
+            onClick={() => (guarded ? onNavigate(go) : go())}
           >
             <Icon stroke={active ? GREEN : DIM} />
             {label}
@@ -1241,10 +1247,48 @@ function Nav({ screen, actions }) {
   );
 }
 
+/**
+ * Ticket nav-on-play: the nav bar is reachable on the play screen now, so an accidental tap mid-
+ * round could otherwise cost a player their stake. Same modal chrome as Profile.jsx's
+ * ConfirmSignOut - title, a line saying what actually happens, cancel as the filled ghost, the
+ * disruptive choice outlined - and the same "say what they lose" tone, not "Are you sure?".
+ */
+function ConfirmLeaveRound({ stake, onCancel, onConfirm }) {
+  const { t, lang } = useLang();
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t('leaveRound.title')}>
+      <div className="modal">
+        <div className="modal-title">{t('leaveRound.title')}</div>
+        <div className="modal-sub">{t('leaveRound.body', { n: num(stake, lang) })}</div>
+        <div className="modal-actions">
+          <button type="button" className="btn-ghost" onClick={onCancel}>
+            {t('leaveRound.cancel')}
+          </button>
+          <button type="button" className="btn-signout" onClick={onConfirm}>
+            {t('leaveRound.confirm')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- app ---------- */
 
 export default function App() {
-  const { state, profile, actions, trackRef, isKiosk, tourSeen, markTourSeen } = useGame();
+  const {
+    state,
+    profile,
+    actions,
+    trackRef,
+    isKiosk,
+    tourSeen,
+    markTourSeen,
+    requestNav,
+    pendingNav,
+    confirmNav,
+    cancelNav,
+  } = useGame();
   const boot = useBootReady();
   const { screen } = state;
   const [lang, setLangState] = useState(readStoredLang);
@@ -1320,7 +1364,12 @@ export default function App() {
             <KioskApp state={state} profile={profile} actions={actions} trackRef={trackRef} />
           ) : (
             <>
-              <TopBar profile={profile} actions={actions} active={screen === 'profile'} />
+              <TopBar
+                profile={profile}
+                actions={actions}
+                active={screen === 'profile'}
+                onNavigate={requestNav}
+              />
               {screen === 'home' && <Home profile={profile} actions={actions} />}
               {screen === 'game' && (
                 <Console
@@ -1375,7 +1424,7 @@ export default function App() {
                   onToast={(txt) => actions.toast?.(txt)}
                 />
               )}
-              {screen !== 'game' && <Nav screen={screen} actions={actions} />}
+              <Nav screen={screen} actions={actions} onNavigate={requestNav} />
             </>
           )}
           <Toast toast={state.toast} />
@@ -1389,6 +1438,9 @@ export default function App() {
           )}
           {!isKiosk && !tourSeen && <TourPlaceholder cards={tourCards} onDone={markTourSeen} />}
           <ConnectionModal feed={state.feed} />
+          {!isKiosk && pendingNav && (
+            <ConfirmLeaveRound stake={stakeFor(state.lev)} onCancel={cancelNav} onConfirm={confirmNav} />
+          )}
         </div>
         {/* Last child of .app so it covers the phone frame and everything in it, including the
             first-visit tour - the tour is the first thing a new player should see, but only once
