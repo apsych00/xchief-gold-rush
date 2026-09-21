@@ -268,37 +268,29 @@ test('quiet synthesis is gated on !idle so the idle re-anchor is never fought', 
 
 // --- re-anchor ----------------------------------------------------------------
 
-test('re-anchor only when idle and finnhub active, bounded by 0.05 per tick', () => {
+test('idle re-anchor slides whichever source is active back to raw, bounded by 0.05 per tick (not just Finnhub)', () => {
   const h = harness();
   h.inject('finnhub', 4357, 0); // first tick: published 4357, offset 0
   h.inject('okx', 4349, 10600); // finnhub stale -> okx active, offset 8
   assert.equal(h.ticks.at(-1).price, 4357);
 
   h.feed.setIdle(true);
-  h.inject('okx', 4349, 500); // idle but okx is active: no offset moves
-  assert.equal(h.ticks.at(-1).price, 4357);
-
-  h.inject('finnhub', 4356, 500); // finnhub fresh -> switch back, offset 1; no decay on the switch tick
-  assert.equal(h.ticks.at(-1).price, 4357);
-
-  h.inject('finnhub', 4356, 500); // idle + finnhub active: offset 1 -> 0.95
-  assert.equal(h.ticks.at(-1).price, 4356.95);
+  h.inject('okx', 4349, 500); // idle, okx active, not a switch tick: offset decays 8 -> 7.95
+  assert.equal(h.ticks.at(-1).price, 4356.95, 'okx decays too now, not just Finnhub');
 
   h.feed.setIdle(false);
-  h.inject('finnhub', 4356, 500); // not idle: the offset is frozen
+  h.inject('okx', 4349, 500); // not idle: the offset is frozen
   assert.equal(h.ticks.at(-1).price, 4356.95);
 
-  h.inject('okx', 4349, 10001); // finnhub silent > 10 s -> okx takes over, re-anchored exactly
-  assert.equal(h.ticks.at(-1).price, 4356.95);
   h.feed.setIdle(true);
-  h.inject('okx', 4349, 500); // idle with okx active: nothing decays
+  h.inject('finnhub', 4356, 500); // finnhub fresh -> switch back, offset 0.95; no decay on the switch tick
   assert.equal(h.ticks.at(-1).price, 4356.95);
 
-  h.inject('finnhub', 4356, 500); // finnhub returns: switch back, no decay on that tick
-  assert.equal(h.ticks.at(-1).price, 4356.95);
+  h.inject('finnhub', 4356, 500); // idle + finnhub active: offset 0.95 -> 0.9
+  assert.equal(h.ticks.at(-1).price, 4356.9);
 
-  let prev = 4356.95; // offset is positive, so the level slides DOWN to raw
-  for (let i = 0; i < 40; i++) {
+  let prev = 4356.9; // offset is positive, so the level slides DOWN to raw
+  for (let i = 0; i < 20; i++) {
     h.inject('finnhub', 4356, 500);
     const p = h.ticks.at(-1).price;
     assert.ok(p <= prev + 1e-9, 'slides monotonically toward the true level');
@@ -469,6 +461,58 @@ test('invalid mt5 prices are dropped and never update source state or freshness'
   h.inject('mt5', 4360, 1000); // still usable afterwards
   assert.equal(h.ticks.length, 1);
   assert.equal(h.ticks[0].price, 4360);
+});
+
+// --- mt5 is the source of truth: it never carries an offset (the ticket bug) ---
+// server/feed.js published raw + offset[active]; on a switch the incoming source was anchored
+// to the last published value so the level never jumps. The decay that was supposed to correct
+// that anchor back to 0 only ever fired for Finnhub, so mt5 - the broker's own feed, the one
+// source that must always be truth - could stay anchored to a stand-in's wrong level forever.
+// That is exactly what happened: gold closed for the weekend, a crypto price carried the app,
+// and when the broker reconnected Monday it stayed anchored ~$7 below its own raw price with no
+// path back to correct. These tests drive that scenario and assert it self-heals.
+
+test('mt5 becoming active while idle publishes its raw price immediately - no offset inherited, not even for one tick', () => {
+  const h = mt5Harness();
+  h.inject('okx', 4345.0, 0); // a stand-in carries the price (mt5, finnhub both down)
+  h.feed.setIdle(true); // nobody is mid-round
+  h.inject('mt5', 4352.396, 500); // the broker feed returns
+  assert.equal(h.ticks.at(-1).price, 4352.396, 'published equals raw immediately, not anchored to the stand-in level');
+  assert.equal(h.feed.latest().source, 'mt5');
+});
+
+test('mt5 returning mid-round still anchors like a stand-in (no jump), then snaps to raw the moment it is safe', () => {
+  const h = mt5Harness();
+  h.inject('okx', 4345.225, 0); // a stand-in carries a wrong level
+  h.inject('mt5', 4352.164, 500); // broker returns mid-round (not idle): anchored, no jump
+  assert.equal(h.ticks.at(-1).price, 4345.225, 'no jump - a round in flight is not distorted');
+  assert.equal(h.feed.latest().source, 'mt5');
+
+  h.inject('mt5', 4352.396, 100); // still not idle: the inherited offset carries through unchanged
+  assert.equal(h.ticks.at(-1).price, 4345.457, 'round3(4352.396 + (-6.939))');
+
+  h.feed.setIdle(true); // the round ends and nothing else starts within 2 s
+  h.inject('mt5', 4352.5, 500); // correction fires now, in one step, not gradually
+  assert.equal(h.ticks.at(-1).price, 4352.5, 'the stuck offset is gone in one tick, matching raw exactly');
+});
+
+test('regression: the Monday-open bug - broker returns after a weekend stand-in, the offset does not stick', () => {
+  const h = mt5Harness();
+  // Weekend: mt5 and Finnhub are both down, a crypto price several dollars off carries the app.
+  h.inject('binance', 4338.0, 0);
+  h.feed.setIdle(true);
+  for (let i = 0; i < 5; i++) h.inject('binance', 4338.0, 1000); // idle all weekend, no round anywhere
+
+  // Market reopens: the broker feed reconnects while the game is still idle.
+  h.inject('mt5', 4352.164, 1000);
+  assert.equal(h.ticks.at(-1).price, 4352.164, 'published raw immediately, not anchored to the stale crypto level');
+
+  h.inject('mt5', 4352.2, 1000); // keeps ticking: must not drift back off raw
+  assert.equal(h.ticks.at(-1).price, 4352.2);
+
+  h.feed.setIdle(false); // a player starts a round
+  h.inject('mt5', 4352.5, 1000);
+  assert.equal(h.ticks.at(-1).price, 4352.5, 'still exactly raw - there was never an offset left to correct');
 });
 
 // --- status(), lifecycle guards, test hooks ---------------------------------

@@ -31,10 +31,20 @@
  * ticked within STALE_MS; a source is demoted only after 10 s of silence.
  * Each source carries an offset and published = raw + offset[active]. On a
  * switch from A to B, offset[B] is anchored to the last published value so
- * the level never jumps mid-round. While the game is idle (setIdle(true): no
- * round open anywhere for 2 s) and Finnhub is active, offset[finnhub] decays
- * toward 0 by at most REANCHOR_STEP per tick, sliding the level back to true
- * XAU/USD. Offsets are never adjusted while not idle.
+ * the level never jumps mid-round. Offsets are never adjusted while not idle
+ * (setIdle(true): no round open anywhere for 2 s), so a round in flight is
+ * never distorted by a correction - except mt5 itself, which is exempt from
+ * being anchored in the first place (see below).
+ *
+ * mt5 is the broker's own feed and the source of truth: whenever it is safe
+ * to correct (idle), any offset it carries is dropped to exactly 0, not
+ * decayed - a live broker feed must never stay wrong. That correction fires
+ * on the very switch tick if mt5 becomes active while already idle, or on
+ * the first idle tick after a mid-round switch otherwise, so a round never
+ * sees the jump. Every other (stand-in) source instead decays its offset
+ * toward 0 by at most REANCHOR_STEP per tick while idle and active, sliding
+ * back to its own raw reading - this applies to whichever source is active,
+ * not just Finnhub, since any stand-in can be left anchored after a switch.
  *
  * Client rule: the onTick payload ({price, t, quiet}) is all any client ever
  * sees; it carries no source name. status() is for the operator's health
@@ -231,17 +241,32 @@ export function createFeed({
     if (!next) return;
     const switched = next.def.id !== activeId;
     if (switched) {
-      // Anchor the incoming source to the current level; the very first tick
-      // of the feed keeps offset 0.
-      if (activeId !== null && published) next.offset = round3(published.price - next.raw);
+      // Anchor the incoming source to the current level so the switch itself never jumps;
+      // the very first tick of the feed keeps offset 0. Exception: the broker feed (mt5) is
+      // the source of truth, so if nobody is mid-round (idle) there is nothing to protect -
+      // snap straight to its raw price instead of inheriting whatever a stand-in was showing.
+      if (next.def.id === 'mt5' && idle) {
+        next.offset = 0;
+      } else if (activeId !== null && published) {
+        next.offset = round3(published.price - next.raw);
+      }
       activeId = next.def.id;
     }
     if (src.def.id !== activeId) return; // non-active source: raw updated only, never published
 
-    if (idle && !switched && activeId === 'finnhub') {
-      // Re-anchor: slide back toward true XAU/USD by at most REANCHOR_STEP per tick.
-      const off = next.offset;
-      next.offset = off > 0 ? Math.max(0, round3(off - REANCHOR_STEP)) : Math.min(0, round3(off + REANCHOR_STEP));
+    if (idle && !switched) {
+      if (activeId === 'mt5') {
+        // The broker feed cannot be left wrong indefinitely (that was the bug): once it is
+        // safe to correct - no round open anywhere - drop any inherited offset in full rather
+        // than trickle it out. A round in flight is protected because this only runs while idle.
+        next.offset = 0;
+      } else {
+        // Stand-in sources: slide back toward their own raw reading by at most REANCHOR_STEP
+        // per tick. Applies to whichever source is active, not just Finnhub - any stand-in can
+        // be left anchored after a switch and would otherwise stay stuck the same way.
+        const off = next.offset;
+        next.offset = off > 0 ? Math.max(0, round3(off - REANCHOR_STEP)) : Math.min(0, round3(off + REANCHOR_STEP));
+      }
     }
 
     // The value the real series would publish this tick (raw + the source offset). A source
