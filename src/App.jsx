@@ -127,14 +127,9 @@ function CoinDot() {
 
 /* ---------- chrome ---------- */
 
-export function TopBar({ profile, actions, active, identityKnown, onSignIn }) {
+export function TopBar({ profile, actions, active }) {
   const { t, lang } = useLang();
   const level = levelFor(profile.record);
-  // A guest has no profile worth opening from here, so the slot offers the thing they need
-  // instead. Gated on mayAskEmail rather than on the flag alone: until the server has said who
-  // this player is, a verified player is indistinguishable from a new one, and flashing "Sign in"
-  // at someone already signed in is exactly the mistake that rule exists to prevent.
-  const showSignIn = !!onSignIn && mayAskEmail(identityKnown, profile);
   return (
     <header className="topbar">
       <div className="topbar-start">
@@ -153,13 +148,11 @@ export function TopBar({ profile, actions, active, identityKnown, onSignIn }) {
           <CoinDot />
           <span className="balance-text">{num(profile.coins, lang)}</span>
         </div>
-        {/* The kiosk passes no actions: no profile, no avatar (docs/layers.md C2). */}
-        {showSignIn && (
-          <button type="button" className="signin-chip" onClick={onSignIn}>
-            {t('identity.signIn')}
-          </button>
-        )}
-        {!showSignIn && actions?.goProfile && (
+        {/* The kiosk passes no actions: no profile, no avatar (docs/layers.md C2). The header
+            keeps exactly one control in every state - guest or signed in - so nothing shifts
+            under the player's finger when they sign in. A guest's way in is now the sign-in
+            call to action at the top of the profile screen itself, not a header swap. */}
+        {actions?.goProfile && (
           <button
             type="button"
             className={`avatar-btn ${active ? 'avatar-btn-on' : ''} avatar-${level.id}`}
@@ -1327,13 +1320,7 @@ export default function App() {
             <KioskApp state={state} profile={profile} actions={actions} trackRef={trackRef} />
           ) : (
             <>
-              <TopBar
-                profile={profile}
-                actions={actions}
-                active={screen === 'profile'}
-                identityKnown={state.identityKnown}
-                onSignIn={() => setOtpOpen(true)}
-              />
+              <TopBar profile={profile} actions={actions} active={screen === 'profile'} />
               {screen === 'home' && <Home profile={profile} actions={actions} />}
               {screen === 'game' && (
                 <Console
@@ -1369,6 +1356,7 @@ export default function App() {
                   identityKnown={state.identityKnown}
                   actions={actions}
                   onToast={(txt) => actions.toast?.(txt)}
+                  onOpenIdentity={() => setOtpOpen(true)}
                 />
               )}
               {screen === 'tasks' && (

@@ -158,11 +158,9 @@ test.describe('share your record mission', () => {
 
     const beforeCoins = await screenCoins(page);
 
-    // Straight to Profile via its own URL, never through the Tasks row. A guest has no in-app
-    // route to Profile any more (the header's avatar slot offers Sign in instead), so this reaches
-    // it the same way a real deep link would (src/useUrlRouting.js), not a UI element that no
-    // longer exists for a signed-out player.
-    await page.goto('/profile');
+    // Straight to Profile via its own header avatar, never through the Tasks row - the header
+    // keeps its one avatar control for a guest too.
+    await page.locator('.avatar-btn').click();
     await expect(page.locator('.pf')).toBeVisible();
     await expect(page.locator('.share-modal')).toHaveCount(0);
     await page.getByRole('button', { name: /share my record/i }).click();
