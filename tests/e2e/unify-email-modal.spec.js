@@ -165,7 +165,8 @@ test.describe('the unified email/OTP prompt (unify-email-modal)', () => {
     await expect(page.locator('.pf')).toBeVisible({ timeout: 5000 });
     await page.locator('.pf').getByRole('button', { name: /sign out/i }).click();
     await page.locator('.modal-backdrop').getByRole('button', { name: /^sign out$/i }).click();
-    await expect(page.locator('.pf').getByRole('button', { name: /sign out/i })).toHaveCount(0, { timeout: 15000 });
+    // Back to a guest: the header offers Sign in again where the avatar was.
+    await expect(page.locator('.topbar .signin-chip')).toBeVisible({ timeout: 15000 });
   });
 
   test('Tasks screen "Save your email": the same shared modal, dismiss and reopen resets it', async ({ page }) => {

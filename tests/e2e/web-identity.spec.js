@@ -90,8 +90,20 @@ test.describe('web identity and the live, masked leaderboard (C3, C4)', () => {
     // ---- 5. the profile now shows the masked email, never the raw address ---------------------
     // This used to be a header strip on every screen; it is the profile screen's own account row
     // now, which is the only place that states who you are.
-    await page.locator('.avatar-btn').click();
+    // The header slot has swapped: the guest's Sign in offer is gone, the avatar is in its place.
+    await expect(page.locator('.topbar .signin-chip')).toHaveCount(0);
+    const avatar = page.locator('.avatar-btn');
+    await expect(avatar).toHaveAttribute('aria-label', 'Your profile');
+    expect(await avatar.locator('svg').getAttribute('width')).toBe('24');
+    await expect(avatar).toHaveCSS('color', 'rgb(233, 182, 42)');
+
+    await avatar.click();
     await expect(page.locator('.pf')).toBeVisible({ timeout: 5000 });
+    // Moved here from tests/e2e/smoke.spec.js, which can no longer reach this screen: a guest has
+    // no route to it since the header slot became the sign-in offer.
+    expect(await page.locator('.pf-avatar svg').getAttribute('width')).toBe('48');
+    await expect(page.locator('.pf-danger')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /start over|wipe my progress/i })).toHaveCount(0);
     const profileText = await page.locator('.pf').innerText();
     expect(profileText, 'the profile must show a masked email, not the raw address').not.toContain(email);
     expect(profileText).toMatch(/\*{3,}/);
@@ -126,13 +138,11 @@ test.describe('web identity and the live, masked leaderboard (C3, C4)', () => {
     await expect(page.locator('.modal-backdrop')).toHaveCount(0);
     await expect(page.locator('.pf').getByRole('button', { name: /sign out/i })).toBeVisible();
 
-    // Confirming reloads as a fresh anonymous player: no sign-out button, because there is no
-    // longer an identity to leave.
+    // Confirming reloads as a fresh anonymous player. The header is the proof: the avatar is
+    // gone and the guest's Sign in offer is back in its place, which is the same slot.
     await page.locator('.pf').getByRole('button', { name: /sign out/i }).click();
     await page.locator('.modal-backdrop').getByRole('button', { name: /^sign out$/i }).click();
-    await expect(page.locator('.lb-row-guest, .home')).toBeVisible({ timeout: 15000 });
-    await page.locator('.avatar-btn').click();
-    await expect(page.locator('.pf')).toBeVisible({ timeout: 5000 });
-    await expect(page.locator('.pf').getByRole('button', { name: /sign out/i })).toHaveCount(0);
+    await expect(page.locator('.topbar .signin-chip')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('.avatar-btn')).toHaveCount(0);
   });
 });

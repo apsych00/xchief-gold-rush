@@ -105,6 +105,7 @@ const dict = {
       playingAs: 'Playing as {email}',
       savedNote: 'Your score and rank are saved to this email',
       signOut: 'Sign out',
+      signIn: 'Sign in',
       welcomeBack: 'Welcome back',
     },
     otp: {

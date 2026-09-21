@@ -127,9 +127,14 @@ function CoinDot() {
 
 /* ---------- chrome ---------- */
 
-export function TopBar({ profile, actions, active }) {
+export function TopBar({ profile, actions, active, identityKnown, onSignIn }) {
   const { t, lang } = useLang();
   const level = levelFor(profile.record);
+  // A guest has no profile worth opening from here, so the slot offers the thing they need
+  // instead. Gated on mayAskEmail rather than on the flag alone: until the server has said who
+  // this player is, a verified player is indistinguishable from a new one, and flashing "Sign in"
+  // at someone already signed in is exactly the mistake that rule exists to prevent.
+  const showSignIn = !!onSignIn && mayAskEmail(identityKnown, profile);
   return (
     <header className="topbar">
       <div className="topbar-start">
@@ -149,7 +154,12 @@ export function TopBar({ profile, actions, active }) {
           <span className="balance-text">{num(profile.coins, lang)}</span>
         </div>
         {/* The kiosk passes no actions: no profile, no avatar (docs/layers.md C2). */}
-        {actions?.goProfile && (
+        {showSignIn && (
+          <button type="button" className="signin-chip" onClick={onSignIn}>
+            {t('identity.signIn')}
+          </button>
+        )}
+        {!showSignIn && actions?.goProfile && (
           <button
             type="button"
             className={`avatar-btn ${active ? 'avatar-btn-on' : ''} avatar-${level.id}`}
@@ -1323,7 +1333,13 @@ export default function App() {
             <KioskApp state={state} profile={profile} actions={actions} trackRef={trackRef} />
           ) : (
             <>
-              <TopBar profile={profile} actions={actions} active={screen === 'profile'} />
+              <TopBar
+                profile={profile}
+                actions={actions}
+                active={screen === 'profile'}
+                identityKnown={state.identityKnown}
+                onSignIn={() => setOtpOpen(true)}
+              />
               {screen === 'home' && <Home profile={profile} actions={actions} />}
               {screen === 'game' && (
                 <Console

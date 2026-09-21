@@ -569,3 +569,30 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* The header's guest slot: where the avatar sits once signed in (src/App.jsx's TopBar). Sized to
+   the avatar it replaces - same 36px height, same 1.5px border, same vertical rhythm as the
+   balance chip beside it - so the header never changes height between a guest and a player. Green
+   because it is an invitation, not a warning, and it is the one thing a guest is being asked to
+   do. */
+.signin-chip {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1.5px solid rgba(53, 227, 111, 0.45);
+  background: rgba(53, 227, 111, 0.1);
+  color: var(--green);
+  font: 700 13px var(--fa);
+  white-space: nowrap;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 0 12px rgba(53, 227, 111, 0.16);
+}
+.signin-chip:hover {
+  background: rgba(53, 227, 111, 0.16);
+  border-color: var(--green);
+}
+.signin-chip:active {
+  transform: translateY(1px);
+}

@@ -59,28 +59,35 @@ test('after a round the page has exactly one app WebSocket, the game socket', as
 
 // Ticket U1, decisions 1 and 2: the profile's wipe button is gone, and both avatars render the
 // user icon (the top bar's aria-label is unchanged).
-test('the profile has no wipe button and both avatars render the user icon', async ({ page }) => {
+test('a guest is offered Sign in where a player gets their avatar', async ({ page }) => {
   await page.goto('/');
   await dismissFirstVisit(page);
 
-  const avatar = page.locator('.avatar-btn');
-  await expect(avatar).toHaveCount(1);
-  await expect(avatar).toHaveAttribute('aria-label', 'Your profile');
-  await expect(avatar.locator('svg')).toHaveCount(1);
-  expect(await avatar.locator('svg').getAttribute('width')).toBe('24');
-  // The stroke is currentColor, and the button's colour is the existing --gold token.
-  await expect(avatar).toHaveCSS('color', 'rgb(233, 182, 42)');
-  await page.screenshot({ path: 'docs/reports/u1/01-topbar-avatar.png' });
+  // The header's right-hand slot holds one control, not two: a guest is offered Sign in where a
+  // signed-in player gets their avatar. Both are the same height, so the header never jumps.
+  const signIn = page.locator('.topbar .signin-chip');
+  await expect(signIn).toHaveCount(1);
+  await expect(page.locator('.avatar-btn')).toHaveCount(0);
+  // It stands in for the avatar, so it carries the avatar's own 36px footprint rather than the
+  // balance chip's - the header must not change height when a guest signs in. What it shares with
+  // the balance chip is the line they sit on.
+  const chipBox = await page.locator('.topbar .balance-chip').boundingBox();
+  const signInBox = await signIn.boundingBox();
+  expect(signInBox.height, 'the guest control stands in for the 36px avatar').toBe(36);
+  const centreOf = (b) => b.y + b.height / 2;
+  expect(
+    Math.abs(centreOf(signInBox) - centreOf(chipBox)),
+    'the guest control must sit on the same line as the balance chip',
+  ).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: 'docs/reports/u1/01-topbar-guest.png' });
 
-  await avatar.click();
-  await expect(page.locator('.pf')).toBeVisible();
+  // Tapping it opens the one shared email prompt rather than navigating anywhere.
+  await signIn.click();
+  await expect(page.locator('.modal input[type="email"]')).toBeVisible();
+  await page.keyboard.press('Escape');
 
-  await expect(page.locator('.pf-avatar svg')).toHaveCount(1);
-  expect(await page.locator('.pf-avatar svg').getAttribute('width')).toBe('48');
-  await page.screenshot({ path: 'docs/reports/u1/02-profile.png' });
-
-  // The only action left is Share: no reset/confirm buttons, no danger styling.
-  await expect(page.locator('.pf-actions button')).toHaveCount(1);
-  await expect(page.locator('.pf-danger')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /start over|wipe my progress|شروع دوباره|پاک بشه/i })).toHaveCount(0);
+  // Consequence of that slot being the sign-in offer: a guest has no route to the profile screen
+  // at all. Its own assertions (the avatar glyph, the absence of any wipe/reset action) live in
+  // tests/e2e/web-identity.spec.js now, which has a signed-in player to open it with.
+  await expect(page.locator('.pf')).toHaveCount(0);
 });
