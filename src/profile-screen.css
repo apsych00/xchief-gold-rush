@@ -317,7 +317,10 @@
 
 .pf-actions {
   display: flex;
-  gap: 8px;
+  /* Stacked full-width buttons need more room between them than the 8px that suited them side
+     by side: Share carries a glow that bleeds into the gap, so at 8px the two read as one fused
+     control. */
+  gap: 14px;
 }
 .pf-btn {
   /* `flex: 1` (flex-basis 0%) was left over from when the two buttons sat side by side and grew
@@ -548,7 +551,7 @@
     font-size: 15px;
   }
   .app:not(.app-kiosk) .pf-actions {
-    gap: 12px;
+    gap: 18px;
   }
   .app:not(.app-kiosk) .pf-btn {
     height: 56px;
