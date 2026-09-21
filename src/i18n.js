@@ -29,7 +29,6 @@ const dict = {
       maxLevel: 'Top level',
     },
     game: {
-      home: '← Home',
       after: 'Up or down in 5s?',
       help: 'Choose a multiplier, then tap Up or Down',
       stake: 'Stake',
@@ -144,6 +143,12 @@ const dict = {
       },
     },
     nav: { home: 'Home', play: 'Play', tasks: 'Missions', lb: 'Board' },
+    leaveRound: {
+      title: 'Leave this round?',
+      body: 'You have {n} coins staked on this call. Leave now and you lose it.',
+      cancel: 'Keep playing',
+      confirm: 'Leave anyway',
+    },
     profile: {
       open: 'Your profile',
       guest: 'You',

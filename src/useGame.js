@@ -121,7 +121,42 @@ export function useGame() {
   // through this ref rather than depending on `actions` directly, since actions is a fresh object
   // literal every render.
   const actionsRef = useRef(null);
-  const { pushPath } = useUrlRouting(actionsRef, IS_KIOSK);
+  // Guards every navigation away from a live round (ticket: nav-on-play). `pendingNav` holds the
+  // navigation to run once the player confirms, or null when nothing is waiting - App.jsx renders
+  // the confirmation modal exactly while it is set. A ref mirrors it (same reasoning as
+  // profileRef/phaseRef above) so confirmNav/cancelNav read the queued function directly instead
+  // of through a state updater, which StrictMode's double-invoke would otherwise run twice.
+  const [pendingNav, setPendingNav] = useState(null);
+  const pendingNavRef = useRef(null);
+  // `onQueued` fires synchronously, before the confirmation shows, only when this call is the one
+  // that queues rather than runs immediately - useUrlRouting's popstate handler uses it to put the
+  // address bar back where the app still is, since the browser has already moved it by the time
+  // popstate fires.
+  const requestNav = useCallback((fn, onQueued) => {
+    if (phaseRef.current === 'running') {
+      onQueued?.();
+      pendingNavRef.current = fn;
+      // The functional form: setPendingNav(fn) would have React treat fn itself as the state
+      // updater, calling it with the previous state and running the navigation immediately -
+      // exactly what this guard exists to stop.
+      setPendingNav(() => fn);
+    } else {
+      fn();
+    }
+  }, []);
+  const confirmNav = useCallback(() => {
+    const fn = pendingNavRef.current;
+    pendingNavRef.current = null;
+    setPendingNav(null);
+    fn?.();
+  }, []);
+  const cancelNav = useCallback(() => {
+    pendingNavRef.current = null;
+    setPendingNav(null);
+  }, []);
+  const requestNavRef = useRef(requestNav);
+  requestNavRef.current = requestNav;
+  const { pushPath } = useUrlRouting(actionsRef, IS_KIOSK, requestNavRef);
   // React StrictMode's dev-only double-invoke runs the hydrate effect below twice on mount;
   // ensureSession() is already single-flight for that (src/api/session.js), but the getMe/
   // refreshTasks chain after it is not - this keeps that one-time bootstrap to a single run so it
@@ -892,5 +927,17 @@ export function useGame() {
   };
   actionsRef.current = actions;
 
-  return { state, profile, actions, trackRef, isKiosk: IS_KIOSK, tourSeen, markTourSeen };
+  return {
+    state,
+    profile,
+    actions,
+    trackRef,
+    isKiosk: IS_KIOSK,
+    tourSeen,
+    markTourSeen,
+    requestNav,
+    pendingNav,
+    confirmNav,
+    cancelNav,
+  };
 }

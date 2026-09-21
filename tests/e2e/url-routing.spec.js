@@ -42,8 +42,8 @@ test.describe('URL routing for the five flat screens', () => {
     await expect(page.locator('.lb')).toBeVisible();
     expect(pathnameOf(page)).toBe('/board');
 
-    // Tapping into the game screen drops the bottom nav entirely (src/App.jsx: `screen !==
-    // 'game'`) - back must still retrace through it via the same URL.
+    // The game screen keeps the bottom nav now (ticket nav-on-play) - back must still retrace
+    // through it via the same URL, same as every other screen.
     await page.getByRole('button', { name: 'Play', exact: true }).click();
     await expect(page.locator('.console')).toBeVisible();
     expect(pathnameOf(page)).toBe('/play');

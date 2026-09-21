@@ -274,9 +274,8 @@ test.describe('player-visible promises', () => {
       await client.end();
     }
 
-    // Land on Home, not Game: the nav bar (and so the tasks tab) is hidden while a round is on
-    // screen (App.jsx renders Nav only outside the 'game' screen) - see startGame() above for
-    // the flow the other tests use instead.
+    // This test only needs the tasks tab, so it lands on Home rather than going through
+    // startGame() the way the round-playing tests below do.
     await page.goto('/');
     await dismissFirstVisit(page);
     await expect
