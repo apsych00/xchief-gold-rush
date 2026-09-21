@@ -42,7 +42,10 @@ on conflict (id) do update set
 -- SQL one-liner (docs/box-deploy.md "Daily habits"), never a code change.
 insert into public.tournaments (id, title, starts_at, ends_at, prize_title, prize_image, broker_bonus) values
   ('t1', 'Gold Rush Week 1', '2026-09-16 00:00:00+04', '2026-09-21 00:00:00+04', '$3,000 broker bonus', '/prizes/week1.png', 'Credited to your xChief broker account'),
-  ('t2', 'Gold Rush Week 2', '2026-09-21 00:00:00+04', '2026-09-24 00:00:00+04', '$3,000 broker bonus', '/prizes/week2.png', 'Credited to your xChief broker account')
+  ('t2', 'Gold Rush Week 2', '2026-09-21 00:00:00+04', '2026-09-24 00:00:00+04', '$3,000 broker bonus', '/prizes/week2.png', 'Credited to your xChief broker account'),
+  -- 30 days from where Week 2 ends: scores only count while a tournament is open, so a gap here
+  -- would mean play continuing with nothing recorded and an empty board.
+  ('t3', 'Gold Rush Season', '2026-09-24 00:00:00+04', '2026-10-24 00:00:00+04', '$3,000 broker bonus', '/prizes/week3.png', 'Credited to your xChief broker account')
 on conflict (id) do update set
   title = excluded.title, starts_at = excluded.starts_at, ends_at = excluded.ends_at,
   prize_title = excluded.prize_title, prize_image = excluded.prize_image, broker_bonus = excluded.broker_bonus;

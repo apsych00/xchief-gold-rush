@@ -571,6 +571,12 @@ export async function releaseExpiredClaims() {
   return call('release_expired_claims');
 }
 
+/** Freezes the podium of any tournament that has closed without one recorded, and returns how
+ * many places were written. Idempotent - the sweep calls it every tick. */
+export async function settleTournaments() {
+  return call('settle_tournaments');
+}
+
 /** Mirrors an env-driven tunable into public.settings at boot (ticket C9 decision 1): a running
  * box can then change it with one SQL update, and a restart with no env var set never clobbers
  * that manual change - see server/index.js's start(). */

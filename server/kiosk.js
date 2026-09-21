@@ -117,6 +117,16 @@ export function createKioskIdleSweep({
     } catch (err) {
       log(`kiosk idle sweep: claim release failed: ${err.message}`);
     }
+    // A tournament handing off to the next one is an absence of an event, not an event: the
+    // current one is simply whichever window contains now(). So the podium is captured by asking
+    // every tick whether a closed tournament still has no result recorded, which also settles a
+    // backlog if the server was down across a boundary.
+    try {
+      const settled = await ledger.settleTournaments();
+      if (settled) log(`recorded ${settled} tournament podium place(s)`);
+    } catch (err) {
+      log(`kiosk idle sweep: tournament settle failed: ${err.message}`);
+    }
     await checkCoupons();
   }
 

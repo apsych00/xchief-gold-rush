@@ -191,6 +191,34 @@ create table public.tournament_scores (
 
 create index tournament_scores_board on public.tournament_scores (tournament_id, record desc, updated_at asc);
 
+-- Who actually won a tournament, frozen at the moment its window closed.
+--
+-- The board itself is not an answer to that question. It is a live view over tournament_scores,
+-- and those rows keep moving: a player's balance carries into the next tournament, so reading a
+-- closed tournament's standings later is reading whatever the table says now, with nothing
+-- marking the result as the one the prize was owed against. Week 1 ended with a $3,000 prize and
+-- no record at all of who took it.
+--
+-- One row per prize-winning place, written once by settle_tournaments() and never updated.
+-- record is copied rather than joined so the result stands on its own even if the score table
+-- moves underneath it. player_id rather than an email: who to pay is a lookup, and copying the
+-- address here would put a second raw copy of it outside the masking the leaderboard exists to
+-- enforce.
+--
+-- rank comes from the same ranking the board uses, so a tie for first is recorded as the board
+-- showed it: two rows at rank 1 and no rank 2. That means a tournament can have more than three
+-- rows, which is the honest answer rather than an arbitrary tiebreak invented at payout time.
+create table public.tournament_results (
+  tournament_id text not null references public.tournaments (id),
+  player_id uuid not null references public.players (id) on delete cascade,
+  rank int not null,
+  record int not null,
+  settled_at timestamptz not null default now(),
+  primary key (tournament_id, player_id)
+);
+
+create index tournament_results_rank on public.tournament_results (tournament_id, rank);
+
 -- Badge tiers (ticket B3, docs/tasks-marketing-lead.md A3): the rule that assigns a tier to a
 -- leaderboard rank, stored with the rank rather than the player - a player's tier changes as
 -- other players' scores move past them, so there is nothing to store on public.players. Ranges
@@ -435,6 +463,7 @@ alter table public.settings enable row level security;
 alter table public.devices enable row level security;
 alter table public.tournaments enable row level security;
 alter table public.tournament_scores enable row level security;
+alter table public.tournament_results enable row level security;
 alter table public.claim_links enable row level security;
 alter table public.badge_tiers enable row level security;
 alter table public.video_progress enable row level security;
@@ -1098,6 +1127,52 @@ begin
   return json_build_object('code', v_code);
 end $$;
 
+-- Freeze the podium of every tournament that has closed and has no result recorded yet, and
+-- return how many rows were written. Called by the 60 s sweep (server/kiosk.js), so the podium
+-- is captured within a minute of the handoff rather than whenever someone remembers to look.
+--
+-- Deliberately not driven by the handoff itself: there is no moment in the code where a
+-- tournament "ends" - the current one is simply whichever window contains now(), so the rollover
+-- is an absence of an event. A sweep that asks "is there a closed tournament nobody has settled"
+-- needs no such event, survives the server being down at the exact boundary, and settles a
+-- backlog of them if it was down for a week.
+--
+-- Idempotent by construction: the NOT EXISTS makes a tournament with any result row invisible to
+-- this, and the ON CONFLICT covers two sweeps racing on the same instant. Once written, a result
+-- is never revised - that is the whole point of recording it.
+--
+-- Only players with an email are ranked, matching public.leaderboard() exactly: the podium has
+-- to be the board the players themselves saw, not a different ranking computed later.
+create function public.settle_tournaments()
+returns int language plpgsql security definer set search_path = public as $$
+declare
+  v_written int := 0;
+  v_rows int;
+  t record;
+begin
+  for t in
+    select id from public.tournaments
+    where ends_at <= now()
+      and not exists (select 1 from public.tournament_results r where r.tournament_id = id)
+    order by ends_at
+  loop
+    insert into public.tournament_results (tournament_id, player_id, rank, record)
+    select t.id, ranked.player_id, ranked.rank, ranked.record
+    from (
+      select ts.player_id, ts.record,
+        rank() over (order by ts.record desc, ts.updated_at asc) as rank
+      from public.tournament_scores ts
+      join public.players p on p.id = ts.player_id
+      where ts.tournament_id = t.id and p.email is not null
+    ) ranked
+    where ranked.rank <= 3
+    on conflict (tournament_id, player_id) do nothing;
+    get diagnostics v_rows = row_count;
+    v_written := v_written + v_rows;
+  end loop;
+  return v_written;
+end $$;
+
 -- The 60 s kiosk sweep (server/kiosk.js) calls this every tick alongside its idle-session reset:
 -- any claim link whose 30-day window ran out with nobody claiming it releases its coupon back to
 -- 'available'. The link row itself is kept, expired_at marking it for the audit (ticket C9).
@@ -1734,6 +1809,7 @@ revoke insert, update, delete, truncate, references, trigger
 -- table read; a claim link's own state reaches the /claim/<token> page through GET /api/claim/<token>
 -- (server/index.js), never a direct table read either.
 revoke select on public.kiosks, public.coupons, public.tournaments, public.tournament_scores,
+  public.tournament_results,
   public.settings, public.claim_links, public.badge_tiers, public.video_progress, public.task_visits,
   public.instagram_accounts
   from anon, authenticated;
