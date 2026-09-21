@@ -11,9 +11,9 @@ import { expect, test } from '@playwright/test';
 import { dismissFirstVisit } from './first-visit.js';
 
 async function goProfile(page) {
-  // A guest has no in-app route to Profile (the header's avatar slot offers Sign in instead) -
-  // reach it the same way a real deep link would, src/useUrlRouting.js's own /profile route.
-  await page.goto('/profile');
+  // The header keeps its one avatar control for a guest too, so reach Profile the way a player
+  // actually does: tap it.
+  await page.locator('.avatar-btn').click();
   await expect(page.locator('.pf')).toBeVisible();
 }
 

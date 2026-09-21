@@ -105,7 +105,6 @@ const dict = {
       playingAs: 'Playing as {email}',
       savedNote: 'Your score and rank are saved to this email',
       signOut: 'Sign out',
-      signIn: 'Sign in',
       welcomeBack: 'Welcome back',
     },
     otp: {
@@ -161,9 +160,15 @@ const dict = {
         hot_streak: 'Win 4 in a row',
         comeback: 'Set a record right after going broke',
       },
+      // The one sign-in offer on the profile screen, at the top for a guest (unify with the
+      // header's own removed chip and the account section's old "Add email" row - ticket
+      // signin-on-profile). States the benefit, not the mechanism: what staying signed in gets
+      // you, same +200 reward every other email ask in the app offers (profile.email task, seeded
+      // at 200 in db/seed.sql).
+      signInSub: 'Save your score and rank so they survive this device',
+      signInCta: 'Sign in · +{n} coins',
       account: 'Account',
       email: 'Email',
-      addEmail: 'Add email · +200',
       xchief: 'xChief account',
       linked: 'Linked ✓',
       openAccount: 'Open account · +{n}',

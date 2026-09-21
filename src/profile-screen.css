@@ -426,6 +426,10 @@
   .pf-badge-hint {
     display: none;
   }
+  .pf-signin {
+    padding: 10px;
+    gap: 7px;
+  }
   .pf-row {
     height: 34px;
   }
@@ -482,6 +486,19 @@
   }
   .app:not(.app-kiosk) .pf-lv {
     height: 7px;
+  }
+  .app:not(.app-kiosk) .pf-signin {
+    padding: 20px;
+    gap: 14px;
+    border-radius: 20px;
+  }
+  .app:not(.app-kiosk) .pf-signin-sub {
+    font-size: 16px;
+  }
+  .app:not(.app-kiosk) .pf-signin-btn {
+    height: 56px;
+    border-radius: 28px;
+    font-size: 17px;
   }
   .app:not(.app-kiosk) .pf-tiles {
     gap: 12px;
@@ -589,29 +606,25 @@
   cursor: default;
 }
 
-/* The header's guest slot: where the avatar sits once signed in (src/App.jsx's TopBar). Sized to
-   the avatar it replaces - same 36px height, same 1.5px border, same vertical rhythm as the
-   balance chip beside it - so the header never changes height between a guest and a player. Green
-   because it is an invitation, not a warning, and it is the one thing a guest is being asked to
-   do. */
-.signin-chip {
-  height: 36px;
-  padding: 0 14px;
-  border-radius: 18px;
+/* The profile screen's own sign-in offer, directly under the identity block for a guest. Green
+   because it is an invitation, not a warning - same tone the header's old sign-in chip used, now
+   that this is the one place a guest is asked. */
+.pf-signin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
   border: 1.5px solid rgba(53, 227, 111, 0.45);
   background: rgba(53, 227, 111, 0.1);
-  color: var(--green);
-  font: 700 13px var(--fa);
-  white-space: nowrap;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
   box-shadow: 0 0 12px rgba(53, 227, 111, 0.16);
 }
-.signin-chip:hover {
-  background: rgba(53, 227, 111, 0.16);
-  border-color: var(--green);
+.pf-signin-sub {
+  font: 600 12.5px/1.4 var(--fa);
+  color: rgba(255, 255, 255, 0.8);
+  text-align: center;
 }
-.signin-chip:active {
-  transform: translateY(1px);
+.pf-signin-btn {
+  width: 100%;
 }

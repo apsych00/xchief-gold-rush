@@ -60,7 +60,7 @@ function ProgressRing({ pct, size = 84, stroke = 7, children }) {
   );
 }
 
-export default function Profile({ profile, identityKnown, actions, onToast }) {
+export default function Profile({ profile, identityKnown, actions, onToast, onOpenIdentity }) {
   const { t, lang } = useLang();
   const signup = readSignup();
   const lead = readLead();
@@ -101,6 +101,21 @@ export default function Profile({ profile, identityKnown, actions, onToast }) {
           </div>
         </div>
       </div>
+
+      {/* The one sign-in offer on this screen, directly under the identity block - the header no
+          longer carries it (it keeps a single avatar control in every state). Gated on the shared
+          mayAskEmail helper, not a negated flag read of its own (test/unit/email-ask-rule.test.mjs
+          enforces this): during the connect window a verified player is indistinguishable from a
+          new one, and this CTA must never flash at someone already signed in. A signed-in player
+          never sees it - they get their account details below instead. */}
+      {mayAskEmail(identityKnown, profile) && (
+        <div className="pf-signin">
+          <div className="pf-signin-sub">{t('profile.signInSub')}</div>
+          <button type="button" className="btn-primary pf-signin-btn" onClick={onOpenIdentity}>
+            {t('profile.signInCta', { n: num(200, lang) })}
+          </button>
+        </div>
+      )}
 
       <div className="pf-tiles">
         <div className="pf-tile pf-tile-gold">
@@ -163,29 +178,18 @@ export default function Profile({ profile, identityKnown, actions, onToast }) {
       <div className="pf-section">
         <div className="pf-section-title">{t('profile.account')}</div>
         <div className="pf-rows">
-          <div className="pf-row">
-            <span className="pf-row-k">{t('profile.email')}</span>
-            {/* The server's own verified address wins over any local marketing lead: a verified
-                player is never offered "Add email" again, masked exactly like the identity bar
-                (docs/layers.md C3). mayAskEmail then keeps the button itself silent until the
-                server has said this player has no verified email - during the connect window
-                the row shows neither an address nor an ask. */}
-            {profile.emailVerified && profile.display ? (
+          {/* The server's own verified address wins over any local marketing lead, masked
+              exactly like the identity bar (docs/layers.md C3). No ask lives here any more - the
+              one sign-in offer for a guest is the CTA at the top of this screen now, so this row
+              renders only once there is an address to show, never a second "Add email" prompt. */}
+          {(profile.emailVerified && profile.display) || lead ? (
+            <div className="pf-row">
+              <span className="pf-row-k">{t('profile.email')}</span>
               <span className="pf-row-v pf-ok" dir="ltr">
-                {profile.display}
+                {profile.emailVerified && profile.display ? profile.display : lead.email}
               </span>
-            ) : lead ? (
-              <span className="pf-row-v pf-ok" dir="ltr">
-                {lead.email}
-              </span>
-            ) : (
-              mayAskEmail(identityKnown, profile) && (
-                <button type="button" className="pf-link" onClick={actions.goTasks}>
-                  {t('profile.addEmail')}
-                </button>
-              )
-            )}
-          </div>
+            </div>
+          ) : null}
           <div className="pf-row">
             <span className="pf-row-k">{t('profile.xchief')}</span>
             {signup ? (

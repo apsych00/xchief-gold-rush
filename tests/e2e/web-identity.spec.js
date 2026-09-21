@@ -90,7 +90,7 @@ test.describe('web identity and the live, masked leaderboard (C3, C4)', () => {
     // ---- 5. the profile now shows the masked email, never the raw address ---------------------
     // This used to be a header strip on every screen; it is the profile screen's own account row
     // now, which is the only place that states who you are.
-    // The header slot has swapped: the guest's Sign in offer is gone, the avatar is in its place.
+    // The header itself never changes: one avatar control, guest or signed in, no sign-in chip.
     await expect(page.locator('.topbar .signin-chip')).toHaveCount(0);
     const avatar = page.locator('.avatar-btn');
     await expect(avatar).toHaveAttribute('aria-label', 'Your profile');
@@ -99,9 +99,9 @@ test.describe('web identity and the live, masked leaderboard (C3, C4)', () => {
 
     await avatar.click();
     await expect(page.locator('.pf')).toBeVisible({ timeout: 5000 });
-    // Moved here from tests/e2e/smoke.spec.js, which can no longer reach this screen: a guest has
-    // no route to it since the header slot became the sign-in offer.
     expect(await page.locator('.pf-avatar svg').getAttribute('width')).toBe('48');
+    // A verified player never sees the sign-in call to action - they get their account details.
+    await expect(page.locator('.pf-signin')).toHaveCount(0);
     await expect(page.locator('.pf-danger')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /start over|wipe my progress/i })).toHaveCount(0);
     const profileText = await page.locator('.pf').innerText();
@@ -138,11 +138,13 @@ test.describe('web identity and the live, masked leaderboard (C3, C4)', () => {
     await expect(page.locator('.modal-backdrop')).toHaveCount(0);
     await expect(page.locator('.pf').getByRole('button', { name: /sign out/i })).toBeVisible();
 
-    // Confirming reloads as a fresh anonymous player. The header is the proof: the avatar is
-    // gone and the guest's Sign in offer is back in its place, which is the same slot.
+    // Confirming reloads as a fresh anonymous player. The header does not change at all - same
+    // avatar, same slot - the sign-in offer is back on the profile screen instead.
     await page.locator('.pf').getByRole('button', { name: /sign out/i }).click();
     await page.locator('.modal-backdrop').getByRole('button', { name: /^sign out$/i }).click();
-    await expect(page.locator('.topbar .signin-chip')).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('.avatar-btn')).toHaveCount(0);
+    await expect(page.locator('.topbar .signin-chip')).toHaveCount(0);
+    await expect(page.locator('.avatar-btn')).toBeVisible({ timeout: 15000 });
+    await page.locator('.avatar-btn').click();
+    await expect(page.locator('.pf-signin')).toBeVisible({ timeout: 5000 });
   });
 });
