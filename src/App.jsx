@@ -3,7 +3,7 @@ import { COMBO_MAX, comboMult, ECON, levelFor, nextLevel, SIGNUP_PROMPT_LEVEL } 
 import { LANG_KEY, LangContext, makeT, money, num, readStoredLang, useLang } from './i18n.js';
 import UpdateBanner from './UpdateBanner.jsx';
 import LeadCapture from './LeadCapture.jsx';
-import { readLead, readSignup } from './leads.js';
+import { mayAskEmail, readLead, readSignup } from './leads.js';
 import SignupForm from './SignupForm.jsx';
 import Logo from './Logo.jsx';
 import Tasks from './Tasks.jsx';
@@ -188,18 +188,25 @@ function Toast({ toast }) {
 // owns the xchief.tour_seen flag that shows the tour once per device.
 const TOUR_CARDS = ['card1', 'card2', 'card3'];
 
-function TourPlaceholder({ onDone }) {
+// Card 3 is the tour's one email ask ("Verify your email to be ranked"), so it follows the same
+// rule as every other ask (src/leads.js's mayAskEmail): it renders only while the app KNOWS the
+// player has no verified email. A first visit starts unknown, so the tour opens on two cards and
+// grows the verify card the moment the server's `me` row says this player is unverified; a
+// verified player - or one still connecting - never sees it.
+const TOUR_CARDS_NO_VERIFY = TOUR_CARDS.filter((c) => c !== 'card3');
+
+function TourPlaceholder({ cards, onDone }) {
   const { t } = useLang();
   const [step, setStep] = useState(0);
-  const last = step === TOUR_CARDS.length - 1;
-  const card = TOUR_CARDS[step];
+  const last = step === cards.length - 1;
+  const card = cards[step];
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t(`tour.${card}.title`)}>
       <div className="modal">
         <div className="modal-title">{t(`tour.${card}.title`)}</div>
         <div className="modal-sub">{t(`tour.${card}.body`)}</div>
         <div className="tour-dots" aria-hidden="true">
-          {TOUR_CARDS.map((c, i) => (
+          {cards.map((c, i) => (
             <span key={c} className={i === step ? 'tour-dot tour-dot-on' : 'tour-dot'} />
           ))}
         </div>
@@ -398,7 +405,7 @@ function FeedBadge({ feed }) {
 
 function Display({ state, profile, actions }) {
   const { t, lang } = useLang();
-  const { phase, price, start, end, lev, dir, remaining, history, result, feed } = state;
+  const { phase, price, start, end, lev, dir, remaining, history, result, feed, identityKnown } = state;
   const isIdle = phase === 'idle';
   const isRunning = phase === 'running';
   const isResult = phase === 'result';
@@ -415,8 +422,16 @@ function Display({ state, profile, actions }) {
   // Ask for the email once, right after the first win: the player now has a
   // score worth saving. Never shown again after it has been answered/skipped.
   // Kiosk visitors are anonymous by design (docs/layers.md): no email prompt ever.
+  // mayAskEmail keeps this silent until the server has said this player is NOT verified - during
+  // the connect window a verified user must never see the prompt, and the once-only
+  // markPrompt('email_win') below must never be burned by a wrong-person flash of it.
   const emailPrompt =
-    !IS_KIOSK && isResult && !profile.emailVerified && !readLead() && !profile.prompts.email_win && profile.wins >= 1;
+    !IS_KIOSK &&
+    isResult &&
+    mayAskEmail(identityKnown, profile) &&
+    !readLead() &&
+    !profile.prompts.email_win &&
+    profile.wins >= 1;
   // Once shown it counts as asked, even if the player just moves on.
   const markPromptRef = useRef(actions.markPrompt);
   markPromptRef.current = actions.markPrompt;
@@ -602,7 +617,7 @@ function Display({ state, profile, actions }) {
 
 export function Console({ state, profile, actions, trackRef, onOpenIdentity }) {
   const { t, lang } = useLang();
-  const { phase, lev, dir, result, price } = state;
+  const { phase, lev, dir, result, price, identityKnown } = state;
   const isIdle = phase === 'idle';
   const isRunning = phase === 'running';
   const isResult = phase === 'result';
@@ -642,13 +657,18 @@ export function Console({ state, profile, actions, trackRef, onOpenIdentity }) {
   // (whose signup reward already landed there) still sees the broker SignupForm.
   useEffect(() => {
     if (!traderPrompt || signupFor) return;
+    // Unknown identity: wait for the server instead of acting. Opening the OTP screen on a
+    // verified player - and burning the once-only prompt on the way - is exactly the
+    // wrong-person ask mayAskEmail exists to prevent; this effect re-runs the moment
+    // identityKnown flips and picks the right branch then.
+    if (!identityKnown) return;
     if (profile.emailVerified) {
       setSignupFor('signup_trader');
     } else {
       actions.markPrompt('signup_trader');
       onOpenIdentity();
     }
-  }, [traderPrompt, signupFor, profile.emailVerified, actions, onOpenIdentity]);
+  }, [traderPrompt, signupFor, identityKnown, profile.emailVerified, actions, onOpenIdentity]);
 
   const closeSignup = () => {
     if (signupFor) actions.markPrompt(signupFor);
@@ -801,7 +821,7 @@ export function Console({ state, profile, actions, trackRef, onOpenIdentity }) {
                   {t('game.brokeCta')}
                 </button>
               )}
-              {!profile.emailVerified && (
+              {mayAskEmail(identityKnown, profile) && (
                 <button type="button" className="link-btn broke-alt" onClick={onOpenIdentity}>
                   {t('otp.title')}
                 </button>
@@ -934,6 +954,7 @@ function Leaderboard({
   me,
   legend,
   profile,
+  identityKnown,
   guestMode,
   onOpenIdentity,
   tournament,
@@ -1163,7 +1184,11 @@ function Leaderboard({
           ))}
         </div>
       )}
-      {me != null && me.rank <= 10 && !profile.emailVerified && !readLead() && (
+      {/* The board's own `me` reply can land before this session's get_me does (they are two
+          separate requests over one socket), so `me != null` is never proof of an unverified
+          player - mayAskEmail waits for the server's own identity answer before offering the
+          capture to a ranked player it KNOWS has no verified email. */}
+      {me != null && me.rank <= 10 && mayAskEmail(identityKnown, profile) && !readLead() && (
         <LeadCapture
           source="leaderboard"
           balance={profile.coins}
@@ -1225,8 +1250,13 @@ export default function App() {
   // the auto-open.
   const [shareMissionRow, setShareMissionRow] = useState(null);
   // A guest is a web player (never a kiosk, which never shows email or the leaderboard at all)
-  // who has not verified an email yet (docs/layers.md C3, C4).
-  const guestMode = apiEnabled && !isKiosk && !profile.emailVerified;
+  // who the SERVER has said has no verified email (docs/layers.md C3, C4). mayAskEmail keeps the
+  // guest row - and every other ask - silent during the connect window: /board is deep-linkable,
+  // so a verified user can be standing on this screen before the session's own `me` row lands.
+  const guestMode = apiEnabled && !isKiosk && mayAskEmail(state.identityKnown, profile);
+  // The tour's verify card is an ask like any other (see TOUR_CARDS_NO_VERIFY): it only exists
+  // while the server's answer says this player has no verified email.
+  const tourCards = mayAskEmail(state.identityKnown, profile) ? TOUR_CARDS : TOUR_CARDS_NO_VERIFY;
 
   const langCtx = useMemo(() => {
     const setLang = (next) => {
@@ -1312,6 +1342,7 @@ export default function App() {
                   me={state.me}
                   legend={state.legend}
                   profile={profile}
+                  identityKnown={state.identityKnown}
                   guestMode={guestMode}
                   onOpenIdentity={() => setOtpOpen(true)}
                   tournament={state.tournament}
@@ -1323,6 +1354,7 @@ export default function App() {
               {screen === 'profile' && (
                 <Profile
                   profile={profile}
+                  identityKnown={state.identityKnown}
                   actions={actions}
                   onToast={(txt) => actions.toast?.(txt)}
                   shareMission={
@@ -1366,7 +1398,7 @@ export default function App() {
               onClose={() => setOtpOpen(false)}
             />
           )}
-          {!isKiosk && !tourSeen && <TourPlaceholder onDone={markTourSeen} />}
+          {!isKiosk && !tourSeen && <TourPlaceholder cards={tourCards} onDone={markTourSeen} />}
           <ConnectionModal feed={state.feed} />
         </div>
       </div>

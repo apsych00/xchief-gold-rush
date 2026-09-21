@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { COMBO_MAX, comboMult, LEVELS, levelFor, nextLevel } from './config.js';
 import { num, useLang } from './i18n.js';
-import { readLead, readSignup } from './leads.js';
+import { mayAskEmail, readLead, readSignup } from './leads.js';
 import ShareModal from './ShareModal.jsx';
 
 const BADGES = ['high_roller', 'hot_streak', 'comeback'];
@@ -60,7 +60,7 @@ function ProgressRing({ pct, size = 84, stroke = 7, children }) {
   );
 }
 
-export default function Profile({ profile, actions, onToast, shareMission }) {
+export default function Profile({ profile, identityKnown, actions, onToast, shareMission }) {
   const { t, lang } = useLang();
   const signup = readSignup();
   const lead = readLead();
@@ -177,14 +177,25 @@ export default function Profile({ profile, actions, onToast, shareMission }) {
         <div className="pf-rows">
           <div className="pf-row">
             <span className="pf-row-k">{t('profile.email')}</span>
-            {lead ? (
+            {/* The server's own verified address wins over any local marketing lead: a verified
+                player is never offered "Add email" again, masked exactly like the identity bar
+                (docs/layers.md C3). mayAskEmail then keeps the button itself silent until the
+                server has said this player has no verified email - during the connect window
+                the row shows neither an address nor an ask. */}
+            {profile.emailVerified && profile.display ? (
+              <span className="pf-row-v pf-ok" dir="ltr">
+                {profile.display}
+              </span>
+            ) : lead ? (
               <span className="pf-row-v pf-ok" dir="ltr">
                 {lead.email}
               </span>
             ) : (
-              <button type="button" className="pf-link" onClick={actions.goTasks}>
-                {t('profile.addEmail')}
-              </button>
+              mayAskEmail(identityKnown, profile) && (
+                <button type="button" className="pf-link" onClick={actions.goTasks}>
+                  {t('profile.addEmail')}
+                </button>
+              )
             )}
           </div>
           <div className="pf-row">
