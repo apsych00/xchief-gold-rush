@@ -14,27 +14,11 @@ export function errorText(t, code) {
   return msg === key ? t('otp.errors.default') : msg;
 }
 
-/**
- * The header's web identity line (docs/layers.md C3): once verified, the masked email and a
- * Sign out. Reuses the topbar's own row layout and the lead-capture "skip" button - no new
- * classes, no new colours. Renders nothing for a guest; the entry point into OtpModal lives on
- * the leaderboard screen instead ("play as guest - add your email to be ranked" is specifically
- * where the leaderboard would show them, not the header).
- */
-export function IdentityBar({ profile, onSignOut }) {
-  const { t } = useLang();
-  if (!(profile.emailVerified && profile.display)) return null;
-  return (
-    <div className="topbar identity-bar">
-      <span className="screen-sub">
-        {t('identity.playingAs', { email: profile.display })} · {t('identity.savedNote')}
-      </span>
-      <button type="button" className="lead-skip" onClick={onSignOut}>
-        {t('identity.signOut')}
-      </button>
-    </div>
-  );
-}
+/* The header used to carry a web identity line here (docs/layers.md C3): the masked email plus a
+ * Sign out text link, on its own row above every screen. It is gone - a whole row of vertical
+ * space on every screen, spent on an action almost nobody takes and a fact the profile screen
+ * already states. Both moved to Profile, where the sign-out is now a real button behind a
+ * confirmation (src/Profile.jsx). */
 
 /**
  * The OTP entry screen (docs/layers.md C3): email -> code -> done. Both steps render

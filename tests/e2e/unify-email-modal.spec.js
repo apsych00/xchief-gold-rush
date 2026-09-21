@@ -158,11 +158,14 @@ test.describe('the unified email/OTP prompt (unify-email-modal)', () => {
     await expect(page.locator('.modal .signup-done-title')).toBeVisible({ timeout: 10000 });
     await page.locator('.modal').getByRole('button', { name: /done/i }).click();
     await expect(page.locator('.modal-backdrop')).toHaveCount(0);
-    await expect(page.locator('.identity-bar')).toBeVisible({ timeout: 5000 });
 
-    // Sign out again so later tests in this file start from a clean guest state.
-    await page.locator('.identity-bar').getByRole('button', { name: /sign out/i }).click();
-    await expect(page.locator('.identity-bar')).toHaveCount(0, { timeout: 10000 });
+    // Sign out again so later tests in this file start from a clean guest state. It lives on
+    // Profile behind a confirmation now, not in a header strip.
+    await page.locator('.avatar-btn').click();
+    await expect(page.locator('.pf')).toBeVisible({ timeout: 5000 });
+    await page.locator('.pf').getByRole('button', { name: /sign out/i }).click();
+    await page.locator('.modal-backdrop').getByRole('button', { name: /^sign out$/i }).click();
+    await expect(page.locator('.pf').getByRole('button', { name: /sign out/i })).toHaveCount(0, { timeout: 15000 });
   });
 
   test('Tasks screen "Save your email": the same shared modal, dismiss and reopen resets it', async ({ page }) => {

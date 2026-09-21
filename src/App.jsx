@@ -10,7 +10,7 @@ import Tasks from './Tasks.jsx';
 import { IS_KIOSK } from './api/kiosk.js';
 import KioskApp from './KioskApp.jsx';
 import { enabled as apiEnabled } from './api/client.js';
-import OtpModal, { IdentityBar } from './Identity.jsx';
+import OtpModal from './Identity.jsx';
 import Profile, { UserIcon } from './Profile.jsx';
 
 import { AdZone, warmBanners } from './ads.js';
@@ -1324,7 +1324,6 @@ export default function App() {
           ) : (
             <>
               <TopBar profile={profile} actions={actions} active={screen === 'profile'} />
-              <IdentityBar profile={profile} onSignOut={actions.signOut} />
               {screen === 'home' && <Home profile={profile} actions={actions} />}
               {screen === 'game' && (
                 <Console

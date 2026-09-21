@@ -982,6 +982,26 @@ export function createApp({
           send(ws, { type: 'me', ...(await ledger.getMe(id)) });
           break;
         }
+        case 'sign_out': {
+          // Signing out has to mean the token is dead, not merely forgotten by the browser that
+          // held it. revoke_player_sessions bumps players.token_version, and verifyToken above
+          // requires an exact match, so every outstanding token for this player stops validating
+          // at once - including any copy taken off the device. Without this the browser drops its
+          // token while the token itself stays good for the rest of its 30 days.
+          //
+          // Kiosks never sign out: a booth device holds a bearer secret, not a player token, and
+          // has no identity to detach from (docs/layers.md C5).
+          if (kind !== 'player') {
+            send(ws, { type: 'error', code: 'not_available' });
+            break;
+          }
+          await ledger.revokePlayerSessions(id);
+          // Answered before the socket is closed so the client knows the revoke committed and
+          // can clear its own token; a client that clears first and never hears back would leave
+          // the account signed in everywhere else.
+          send(ws, { type: 'signed_out' });
+          break;
+        }
         case 'claim_task': {
           // Kiosks have no email, no tasks and no gifts (docs/layers.md C5): denied the same
           // way request_otp/verify_otp already are, not the bare 'unauthenticated' a player

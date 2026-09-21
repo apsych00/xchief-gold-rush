@@ -87,12 +87,15 @@ test.describe('web identity and the live, masked leaderboard (C3, C4)', () => {
     await page.locator('.modal').getByRole('button', { name: /done/i }).click();
     await expect(page.locator('.modal-backdrop')).toHaveCount(0);
 
-    // ---- 5. the header now shows the masked email, never the raw address ----------------------
-    await expect(page.locator('.identity-bar')).toBeVisible({ timeout: 5000 });
-    const headerText = await page.locator('.identity-bar').innerText();
-    expect(headerText, 'the header must show a masked email, not the raw address').not.toContain(email);
-    expect(headerText).toMatch(/\*{3,}/);
-    await page.screenshot({ path: path.join(REPORT_DIR, '05-header-verified.png') });
+    // ---- 5. the profile now shows the masked email, never the raw address ---------------------
+    // This used to be a header strip on every screen; it is the profile screen's own account row
+    // now, which is the only place that states who you are.
+    await page.locator('.avatar-btn').click();
+    await expect(page.locator('.pf')).toBeVisible({ timeout: 5000 });
+    const profileText = await page.locator('.pf').innerText();
+    expect(profileText, 'the profile must show a masked email, not the raw address').not.toContain(email);
+    expect(profileText).toMatch(/\*{3,}/);
+    await page.screenshot({ path: path.join(REPORT_DIR, '05-profile-verified.png') });
 
     // ---- 6. the leaderboard's own row is now the real, masked row - highlighted, no synthetic
     // "you" row standing in for it -----------------------------------------------------------
@@ -112,8 +115,24 @@ test.describe('web identity and the live, masked leaderboard (C3, C4)', () => {
     expect(ownRowText).toMatch(/\*{3,}/);
     await page.screenshot({ path: path.join(REPORT_DIR, '06-leaderboard-own-row-highlighted.png') });
 
-    // Sign out clears the token; the header identity line disappears again.
-    await page.locator('.identity-bar').getByRole('button', { name: /sign out/i }).click();
-    await expect(page.locator('.identity-bar')).toHaveCount(0, { timeout: 10000 });
+    // Sign out lives on Profile now, behind a confirmation - it revokes the token server-side and
+    // this device comes back as a brand-new player, so it is not a thing to trip into.
+    await page.locator('.avatar-btn').click();
+    await expect(page.locator('.pf')).toBeVisible({ timeout: 5000 });
+    await page.locator('.pf').getByRole('button', { name: /sign out/i }).click();
+    await expect(page.locator('.modal-backdrop')).toBeVisible();
+    // Backing out leaves the session exactly as it was.
+    await page.getByRole('button', { name: /stay signed in/i }).click();
+    await expect(page.locator('.modal-backdrop')).toHaveCount(0);
+    await expect(page.locator('.pf').getByRole('button', { name: /sign out/i })).toBeVisible();
+
+    // Confirming reloads as a fresh anonymous player: no sign-out button, because there is no
+    // longer an identity to leave.
+    await page.locator('.pf').getByRole('button', { name: /sign out/i }).click();
+    await page.locator('.modal-backdrop').getByRole('button', { name: /^sign out$/i }).click();
+    await expect(page.locator('.lb-row-guest, .home')).toBeVisible({ timeout: 15000 });
+    await page.locator('.avatar-btn').click();
+    await expect(page.locator('.pf')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.pf').getByRole('button', { name: /sign out/i })).toHaveCount(0);
   });
 });

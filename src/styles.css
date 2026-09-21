@@ -2813,9 +2813,6 @@ button:focus:not(:focus-visible) {
   .app:not(.app-kiosk) .balance-text {
     font-size: 20px;
   }
-  .app:not(.app-kiosk) .identity-bar .screen-sub {
-    font-size: 15px;
-  }
 
   /* ---- shared screen chrome ---- */
   .app:not(.app-kiosk) .screen-head {

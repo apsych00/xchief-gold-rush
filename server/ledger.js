@@ -577,6 +577,13 @@ export async function settleTournaments() {
   return call('settle_tournaments');
 }
 
+/** Invalidates every outstanding token for a player by bumping players.token_version, which
+ * verifyToken (server/index.js) requires an exact match on. What makes a sign-out a real
+ * detachment rather than the browser forgetting a token that still works. */
+export async function revokePlayerSessions(playerId) {
+  return call('revoke_player_sessions', playerId);
+}
+
 /** Mirrors an env-driven tunable into public.settings at boot (ticket C9 decision 1): a running
  * box can then change it with one SQL update, and a restart with no env var set never clobbers
  * that manual change - see server/index.js's start(). */

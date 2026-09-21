@@ -169,6 +169,16 @@ const dict = {
       share: 'Share my record',
       shareText: 'My record in the xChief Gold Rush: {record} coins ({level}). Can you beat it? {url}',
       foot: 'Progress is saved on this device.',
+      signOut: 'Sign out',
+      signOutTitle: 'Sign out?',
+      // Says what actually happens, in the order the player will feel it. The middle line is the
+      // one that matters: missions and the free refill are capped per device, so the fresh player
+      // left behind on this phone cannot redo the ones already taken here.
+      signOutBody:
+        'You will start over on this phone as a new player, with a new balance. Missions already completed on this phone stay completed.',
+      signOutKeep: 'Your score and rank stay saved to {email}. Sign in again any time to pick them back up.',
+      signOutConfirm: 'Sign out',
+      signOutCancel: 'Stay signed in',
     },
     share: {
       // Modal chrome

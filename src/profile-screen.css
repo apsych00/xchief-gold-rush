@@ -540,3 +540,32 @@
     font-size: 15px;
   }
 }
+
+/* Share and Sign out stack rather than sit side by side: they are not peers. Share is the thing
+   the screen is inviting you to do; sign out is a quiet exit that happens to live here because
+   this is the only screen that knows who you are. */
+.pf-actions {
+  flex-direction: column;
+}
+
+/* Outlined, never filled. A filled red button reads as "delete everything" - this is disruptive
+   but ordinary, and the player can sign straight back in. The border and label carry the warning;
+   the surface stays dark, so it sits below Share in the visual order without competing with it. */
+.btn-signout {
+  height: 44px;
+  padding: 0 18px;
+  border-radius: 22px;
+  border: 1.5px solid rgba(255, 92, 92, 0.45);
+  background: transparent;
+  color: var(--red);
+  font: 700 14px var(--fa);
+  cursor: pointer;
+}
+.btn-signout:hover:not(:disabled) {
+  border-color: var(--red);
+  background: rgba(255, 92, 92, 0.08);
+}
+.btn-signout:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

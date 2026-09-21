@@ -693,3 +693,10 @@ export function instagramStart(handle) {
 export function instagramCheck() {
   return request(['instagram_result'], { type: 'instagram_check' }).then(payloadOf);
 }
+
+/** Sign out (docs/layers.md C3a): asks the server to revoke every token this player holds before
+ * the browser drops its own. Resolves once the revoke has committed - a client that cleared its
+ * token first and never heard back would leave the account signed in wherever else it was open. */
+export function signOutSession() {
+  return request(['signed_out'], { type: 'sign_out' }).then(payloadOf);
+}

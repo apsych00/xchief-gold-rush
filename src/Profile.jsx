@@ -82,6 +82,7 @@ export default function Profile({ profile, identityKnown, actions, onToast, shar
     shareMission?.pending ? { reward: shareMission.reward, onClaim: shareMission.onClaim } : null,
   );
   const [shareOpen, setShareOpen] = useState(!!missionSnapshot);
+  const [signOutOpen, setSignOutOpen] = useState(false);
   useEffect(() => {
     if (missionSnapshot) shareMission.onConsumed?.();
     // Runs once on mount only - shareMission is read from the closure captured above.
@@ -215,6 +216,14 @@ export default function Profile({ profile, identityKnown, actions, onToast, shar
         <button type="button" className="btn-primary pf-btn" onClick={() => setShareOpen(true)}>
           {t('profile.share')}
         </button>
+        {/* Only a signed-in player has anything to sign out of. This is the single sign-out in
+            the app - it used to be a text link in a header strip above every screen, which cost
+            a row of vertical space everywhere to offer an action almost nobody takes. */}
+        {profile.emailVerified && (
+          <button type="button" className="pf-btn btn-signout" onClick={() => setSignOutOpen(true)}>
+            {t('profile.signOut')}
+          </button>
+        )}
       </div>
       <div className="pf-foot">{t('profile.foot')}</div>
       {shareOpen && (
@@ -225,6 +234,53 @@ export default function Profile({ profile, identityKnown, actions, onToast, shar
           mission={missionSnapshot}
         />
       )}
+      {signOutOpen && (
+        <ConfirmSignOut
+          email={profile.display || profile.email}
+          onCancel={() => setSignOutOpen(false)}
+          onConfirm={actions.signOut}
+        />
+      )}
     </section>
+  );
+}
+
+/**
+ * Sign-out is not undoable from the player's side: the token is revoked server-side, this phone
+ * becomes a new player, and the missions already taken on it stay taken (they are capped per
+ * device, not per player). So it asks first, and the asking says what will actually happen
+ * rather than "are you sure?".
+ *
+ * Same modal chrome as ShareModal - no new dialog shape for one question.
+ */
+function ConfirmSignOut({ email, onCancel, onConfirm }) {
+  const { t } = useLang();
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t('profile.signOut')}>
+      <div className="modal">
+        <div className="modal-title">{t('profile.signOutTitle')}</div>
+        <div className="modal-sub">{t('profile.signOutBody')}</div>
+        <div className="modal-sub">{t('profile.signOutKeep', { email })}</div>
+        <div className="modal-actions">
+          <button type="button" className="btn-ghost" onClick={onCancel} disabled={busy}>
+            {t('profile.signOutCancel')}
+          </button>
+          <button
+            type="button"
+            className="btn-signout"
+            disabled={busy}
+            onClick={() => {
+              // The revoke is a round trip and the reload only happens after it lands, so without
+              // this the player can press twice and fire two of them.
+              setBusy(true);
+              onConfirm();
+            }}
+          >
+            {t('profile.signOutConfirm')}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

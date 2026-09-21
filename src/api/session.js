@@ -14,6 +14,7 @@ import {
   connect,
   onStatus,
   requestOtp as socketRequestOtp,
+  signOutSession as socketSignOut,
   state,
   verifyOtp as socketVerifyOtp,
 } from './socket.js';
@@ -62,12 +63,30 @@ export function verifyOtp(email, code) {
   return socketVerifyOtp(email, code);
 }
 
-/** Drops the stored token and reloads: the next load's `auth` frame carries nothing, so the
- * server starts a brand-new anonymous player (docs/layers.md C3). The player can log back into
- * the same verified player from any device by requesting a fresh code for the same email
- * (docs/layers.md C3a: OTP on a known email is a login, not an error). */
-export function signOut() {
+/**
+ * Sign out, properly: ask the server to revoke every token this player holds, THEN drop the one
+ * in this browser and reload. The next load's auth frame carries nothing, so the server starts
+ * a brand-new anonymous player (docs/layers.md C3).
+ *
+ * The order matters. Clearing locally first would leave a token that still validates for the
+ * rest of its 30 days on any other device it was copied to, which is not a sign-out. If the
+ * revoke fails we still clear locally - the player asked to leave and must not be trapped in a
+ * session by a network error - but the failure is logged rather than swallowed silently.
+ *
+ * The device id is deliberately NOT cleared (src/api/socket.js): a device outlives every player
+ * on it, and the once-per-device reward ceiling depends on that. See ConfirmSignOut's copy,
+ * which tells the player what that means for them.
+ *
+ * The player can sign back into the same verified player from any device by requesting a fresh
+ * code for the same email (docs/layers.md C3a: OTP on a known email is a login, not an error).
+ */
+export async function signOut() {
   if (!enabled) return;
+  try {
+    await socketSignOut();
+  } catch (err) {
+    console.error('[session] sign-out revoke failed, clearing locally anyway', err);
+  }
   clearToken();
   window.location.reload();
 }
