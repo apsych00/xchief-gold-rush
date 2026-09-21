@@ -630,6 +630,20 @@ export function useGame() {
 
   const reset = { phase: 'idle', dir: null, start: null, end: null, history: [], result: null };
 
+  // Ticket resume-round: the server keeps a round running and paying out whether or not any
+  // client is watching (AGENTS.md's "server owns the round"), so leaving the play screen mid-
+  // round must not touch this round's own state - the countdown timer above already tracks real
+  // wall-clock time via performance.now(), so simply leaving it alone is what lets a return to
+  // the play screen show the same round still in progress, and what lets the onSettled effect
+  // (which checks phaseRef.current === 'running') deliver the result normally instead of
+  // silently. Only an idle or already-settled round is safe to clear on the way to another
+  // screen, exactly as before.
+  const leaveGameState = () => {
+    if (phaseRef.current === 'running') return {};
+    stopTimer();
+    return reset;
+  };
+
   // Once per device or per verified email, computed server-side (docs/layers.md C5; ticket
   // B6+B7+B9 decision 5): the client keeps no task table of its own, so there is no offline
   // fallback here any more - a task can only ever be claimed with a live server.
@@ -858,8 +872,7 @@ export function useGame() {
       pushPath(SCREEN_PATHS.game);
     },
     goHome: () => {
-      stopTimer();
-      patch({ screen: 'home', ...reset });
+      patch({ screen: 'home', ...leaveGameState() });
       pushPath(SCREEN_PATHS.home);
     },
     goLeaderboard: () => {
@@ -868,8 +881,7 @@ export function useGame() {
       pushPath(SCREEN_PATHS.lb);
     },
     goProfile: () => {
-      stopTimer();
-      patch({ screen: 'profile', ...reset });
+      patch({ screen: 'profile', ...leaveGameState() });
       pushPath(SCREEN_PATHS.profile);
     },
     resetProfile: () => {
@@ -885,9 +897,8 @@ export function useGame() {
       patch({ screen: 'home', ...reset });
     },
     goTasks: () => {
-      stopTimer();
       refreshTasks();
-      patch({ screen: 'tasks', ...reset });
+      patch({ screen: 'tasks', ...leaveGameState() });
       pushPath(SCREEN_PATHS.tasks);
     },
     playAgain: () => patch(reset),

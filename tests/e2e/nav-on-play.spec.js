@@ -32,7 +32,7 @@ test.describe('Bottom nav on the play screen', () => {
 
     // Nav order is fixed (home, game, tasks, lb) - see App.jsx's Nav component.
     await page.locator('.nav-btn').nth(2).click();
-    await expect(page.locator('.modal-title')).toHaveText('Leave this round?');
+    await expect(page.locator('.modal-title')).toHaveText('Leave the play screen?');
     await expect(page.locator('.tasks')).toHaveCount(0);
     expect(pathnameOf(page)).toBe('/play');
   });
@@ -90,7 +90,7 @@ test.describe('Bottom nav on the play screen', () => {
     await expect(page.locator('.countdown')).toBeVisible({ timeout: 3000 });
 
     await page.evaluate(() => window.history.back());
-    await expect(page.locator('.modal-title')).toHaveText('Leave this round?');
+    await expect(page.locator('.modal-title')).toHaveText('Leave the play screen?');
 
     await page.getByRole('button', { name: 'Keep playing' }).click();
     await expect(page.locator('.modal-backdrop')).toHaveCount(0);

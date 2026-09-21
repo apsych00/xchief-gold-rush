@@ -1248,18 +1248,21 @@ function Nav({ screen, actions, onNavigate }) {
 }
 
 /**
- * Ticket nav-on-play: the nav bar is reachable on the play screen now, so an accidental tap mid-
- * round could otherwise cost a player their stake. Same modal chrome as Profile.jsx's
- * ConfirmSignOut - title, a line saying what actually happens, cancel as the filled ghost, the
- * disruptive choice outlined - and the same "say what they lose" tone, not "Are you sure?".
+ * Ticket nav-on-play (copy updated by ticket resume-round): the nav bar is reachable on the play
+ * screen now, so an accidental tap mid-round would otherwise take a player off their live round
+ * with no warning. Same modal chrome as Profile.jsx's ConfirmSignOut - title, a line saying what
+ * actually happens, cancel as the filled ghost, the disruptive choice outlined. The round itself
+ * keeps running and paying out on the server regardless of what this dialog decides (AGENTS.md's
+ * "server owns the round"), so the copy says exactly that rather than warning of a loss that no
+ * longer happens.
  */
-function ConfirmLeaveRound({ stake, onCancel, onConfirm }) {
-  const { t, lang } = useLang();
+function ConfirmLeaveRound({ onCancel, onConfirm }) {
+  const { t } = useLang();
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t('leaveRound.title')}>
       <div className="modal">
         <div className="modal-title">{t('leaveRound.title')}</div>
-        <div className="modal-sub">{t('leaveRound.body', { n: num(stake, lang) })}</div>
+        <div className="modal-sub">{t('leaveRound.body')}</div>
         <div className="modal-actions">
           <button type="button" className="btn-ghost" onClick={onCancel}>
             {t('leaveRound.cancel')}
@@ -1439,7 +1442,7 @@ export default function App() {
           {!isKiosk && !tourSeen && <TourPlaceholder cards={tourCards} onDone={markTourSeen} />}
           <ConnectionModal feed={state.feed} />
           {!isKiosk && pendingNav && (
-            <ConfirmLeaveRound stake={stakeFor(state.lev)} onCancel={cancelNav} onConfirm={confirmNav} />
+            <ConfirmLeaveRound onCancel={cancelNav} onConfirm={confirmNav} />
           )}
         </div>
         {/* Last child of .app so it covers the phone frame and everything in it, including the
