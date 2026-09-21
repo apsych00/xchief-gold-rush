@@ -15,6 +15,8 @@ import Profile, { UserIcon } from './Profile.jsx';
 
 import { AdZone, warmBanners } from './ads.js';
 import { LEVERS, maxAffordableLever, stakeFor, useGame } from './useGame.js';
+import Splash from './Splash.jsx';
+import { useBootReady } from './useBootReady.js';
 
 // Offline-only fallback (docs/layers.md C5): the no-backend preview mode (VITE_GAME_WS unset -
 // see src/api/client.js) never gets a `tasks` frame to read a reward number from. Whenever a
@@ -1215,6 +1217,7 @@ function Nav({ screen, actions }) {
 
 export default function App() {
   const { state, profile, actions, trackRef, isKiosk, tourSeen, markTourSeen } = useGame();
+  const boot = useBootReady();
   const { screen } = state;
   const [lang, setLangState] = useState(readStoredLang);
   const [otpOpen, setOtpOpen] = useState(false);
@@ -1369,6 +1372,10 @@ export default function App() {
           {!isKiosk && !tourSeen && <TourPlaceholder onDone={markTourSeen} />}
           <ConnectionModal feed={state.feed} />
         </div>
+        {/* Last child of .app so it covers the phone frame and everything in it, including the
+            first-visit tour - the tour is the first thing a new player should see, but only once
+            the app behind it is real. */}
+        {!boot.gone && <Splash leaving={boot.leaving} />}
       </div>
     </LangContext.Provider>
   );
