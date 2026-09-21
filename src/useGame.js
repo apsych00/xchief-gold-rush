@@ -93,6 +93,13 @@ const initialGame = {
   // Ticket K3: the Instagram account to follow, from the server's welcome (INSTAGRAM_HANDLE).
   // null until the session is up; the tasks UI falls back to a default until then.
   ourInstagramHandle: null,
+  // True once this session's own `me` row has landed from the server (applyMe below) - the
+  // app's only proof of who the player is. Deliberately transient state, never persisted on
+  // the profile object: every page load starts at false ("unknown"), and every email-ask
+  // guard (src/leads.js's mayAskEmail) treats unknown as "do not ask", so a verified user
+  // reconnecting - or deep-linking straight to /board - can never be prompted during the
+  // connect window, whatever localStorage happens to say.
+  identityKnown: false,
 };
 
 export function useGame() {
@@ -157,6 +164,11 @@ export function useGame() {
     };
     profileRef.current = next;
     setProfile(next);
+    // The server has now told this session who the player is, so the email guards
+    // (src/leads.js's mayAskEmail) may act from here on. Every `me`-shaped reply counts -
+    // the bootstrap get_me, a re-login's identity change, a claim/reward reply - they all
+    // carry the same authoritative row.
+    setState((s) => (s.identityKnown ? s : { ...s, identityKnown: true }));
     return next;
   }, []);
 

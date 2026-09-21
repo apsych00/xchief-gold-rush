@@ -38,6 +38,22 @@ export const readLead = () => read(LEAD_KEY);
 export const readSignup = () => read(SIGNUP_KEY);
 export const readPrompts = () => read(PROMPTS_KEY) || {};
 
+/**
+ * The one rule every email ask in the app goes through (never ask for an email we already
+ * have): a prompt may appear only when the app KNOWS the player has no verified email - not
+ * merely when it has not been told that they do. `identityKnown` flips true once this
+ * session's own `me` row has landed from the server (src/useGame.js's applyMe), and
+ * `profile.emailVerified` is that row's own flag - the server is the only authority on
+ * identity, never localStorage. Until then the player is unknown, and unknown behaves like
+ * "do not ask": during the connect window a verified user is indistinguishable from a brand
+ * new one, so a guard of any other shape can fire at exactly the wrong person.
+ *
+ * Every guard reads through this helper rather than negating the flag itself; the unit test
+ * test/unit/email-ask-rule.test.mjs fails any direct `!profile.emailVerified` read outside
+ * here, so a new entry point cannot reintroduce the old shape.
+ */
+export const mayAskEmail = (identityKnown, profile) => identityKnown && !profile.emailVerified;
+
 export function markPrompt(id) {
   write(PROMPTS_KEY, { ...readPrompts(), [id]: Date.now() });
 }
