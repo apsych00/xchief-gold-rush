@@ -1256,12 +1256,6 @@ export default function App() {
   const { screen } = state;
   const [lang, setLangState] = useState(readStoredLang);
   const [otpOpen, setOtpOpen] = useState(false);
-  // The "share your record" mission (Tasks.jsx's 'story' row): tapping it navigates to Profile and
-  // opens its share modal instead of granting anything on the tap (see src/Profile.jsx's
-  // shareMission handling). Holds the tapped task row while that hand-off is pending; Profile
-  // consumes it once on mount so a later, unrelated visit to the profile screen never re-triggers
-  // the auto-open.
-  const [shareMissionRow, setShareMissionRow] = useState(null);
   // A guest is a web player (never a kiosk, which never shows email or the leaderboard at all)
   // who the SERVER has said has no verified email (docs/layers.md C3, C4). mayAskEmail keeps the
   // guest row - and every other ask - silent during the connect window: /board is deep-linkable,
@@ -1375,18 +1369,11 @@ export default function App() {
                   identityKnown={state.identityKnown}
                   actions={actions}
                   onToast={(txt) => actions.toast?.(txt)}
-                  shareMission={
-                    shareMissionRow && {
-                      pending: true,
-                      reward: shareMissionRow.reward,
-                      onConsumed: () => setShareMissionRow(null),
-                      onClaim: () => actions.claimTask(shareMissionRow.id),
-                    }
-                  }
                 />
               )}
               {screen === 'tasks' && (
                 <Tasks
+                  profile={profile}
                   tasksRows={state.tasksRows}
                   onClaim={actions.claimTask}
                   onRefreshTasks={actions.refreshTasks}
@@ -1397,10 +1384,6 @@ export default function App() {
                   onInstagramCheck={actions.instagramCheck}
                   ourInstagramHandle={state.ourInstagramHandle}
                   onOpenIdentity={() => setOtpOpen(true)}
-                  onShareMission={(row) => {
-                    setShareMissionRow(row);
-                    actions.goProfile();
-                  }}
                   onToast={(txt) => actions.toast?.(txt)}
                 />
               )}
