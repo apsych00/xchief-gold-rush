@@ -869,6 +869,12 @@ export function Console({ state, profile, actions, trackRef, onOpenIdentity }) {
 // the board currently shown (live, or a past/upcoming one once switched to) and `tournaments` is
 // the full list every chip is drawn from. No new colours, fonts or components: the chips reuse
 // `.lang-btn`, the title/sub reuse `.screen-*`.
+/* Tournaments are stored with the campaign's name on the front ("Gold Rush Season 2"), which is
+ * right for a database row read out of context but redundant on a screen that is already the
+ * Gold Rush leaderboard - and it costs room the switcher does not have once there are several
+ * seasons. Display-only: the stored title is untouched. */
+const seasonLabel = (title) => (title || '').replace(/^Gold Rush\s+/i, '');
+
 function LeaderboardHeader({ tournament, tournaments, selectedId, onSelect }) {
   const { t } = useLang();
   const [, forceTick] = useState(0);
@@ -931,7 +937,7 @@ function LeaderboardHeader({ tournament, tournaments, selectedId, onSelect }) {
               }
               onClick={() => onSelect(tt.id)}
             >
-              {tt.title}
+              {seasonLabel(tt.title)}
             </button>
           ))}
         </div>
