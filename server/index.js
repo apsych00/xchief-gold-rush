@@ -630,16 +630,10 @@ export function createApp({
     }
     try {
       const result = await ledger.claimPrize(token, email, ip && ip !== 'unknown' ? ip : null);
-      // claimUrlFor throws if PUBLIC_URL is unset; the claim already committed above, so that
-      // must never turn into a false failure response - fall back to no link, same as
-      // sendClaimCode already does for the plain-text path.
-      let claimUrl = null;
-      try {
-        claimUrl = ledger.claimUrlFor(token);
-      } catch (err) {
-        console.error('[claim] claimUrlFor failed', err?.message || err);
-      }
-      otp.sendClaimCode(email, result.code, { claimUrl }).catch((err) => {
+      // The email no longer carries this claim link: its only link is the client area's promo
+      // page, where the code is redeemed. By the time the visitor reads it, this page has already
+      // done its job - it is where they typed the email that got them the code.
+      otp.sendClaimCode(email, result.code).catch((err) => {
         console.error('[claim] sendClaimCode failed', err?.message || err);
       });
       sendJson(res, 200, { ok: true, code: result.code, email });

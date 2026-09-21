@@ -50,7 +50,7 @@ test('with a template id set, sendClaimCode sends the template and its merge fie
   const calls = installFetchMock();
 
   await sendClaimCode('winner@example.com', 'XCH-CODE-0001', {
-    claimUrl: 'https://goldrush.xchief.academy/claim/sample-token',
+
   });
 
   assert.equal(calls.length, 1, 'exactly one send');
@@ -60,7 +60,9 @@ test('with a template id set, sendClaimCode sends the template and its merge fie
   assert.equal(params.get('to'), 'winner@example.com');
   assert.equal(params.get('template'), 'gift-card-template-123');
   assert.equal(params.get('merge_code'), 'XCH-CODE-0001');
-  assert.equal(params.get('merge_claim_url'), 'https://goldrush.xchief.academy/claim/sample-token');
+  // The fallback link under the Redeem button must lead where the button leads - the client
+  // area's promo page - not back to the claim page the visitor already used.
+  assert.equal(params.get('merge_claim_url'), 'https://my.xchief.com/bonuses-credits/promo?lang=en');
   assert.ok(params.get('merge_expires_at'), 'merge_expires_at is set');
   // Human-readable, not a raw ISO timestamp or epoch number.
   assert.match(params.get('merge_expires_at'), /^[A-Z][a-z]+ \d{1,2}, \d{4}$/);
@@ -74,7 +76,7 @@ test('sendClaimCode\'s expiry is about 30 days out, matching the email copy', as
   const calls = installFetchMock();
 
   const before = Date.now();
-  await sendClaimCode('winner@example.com', 'XCH-CODE-0001', { claimUrl: null });
+  await sendClaimCode('winner@example.com', 'XCH-CODE-0001');
   const after = Date.now();
 
   const expiresAtText = formParams(calls[0]).get('merge_expires_at');
@@ -101,7 +103,7 @@ test('without a template id, sendClaimCode falls back to the plain-text body', a
   const calls = installFetchMock();
 
   await sendClaimCode('winner@example.com', 'XCH-CODE-0002', {
-    claimUrl: 'https://goldrush.xchief.academy/claim/sample-token',
+
   });
 
   assert.equal(calls.length, 1);
@@ -118,7 +120,7 @@ test('without an API key, sendClaimCode sends nothing at all (dev path)', async 
   process.env.ELASTIC_CLAIM_TEMPLATE_ID = 'gift-card-template-123';
   const calls = installFetchMock();
 
-  await sendClaimCode('winner@example.com', 'XCH-CODE-0003', { claimUrl: 'https://example.com/claim/x' });
+  await sendClaimCode('winner@example.com', 'XCH-CODE-0003');
 
   assert.equal(calls.length, 0, 'no network call is made without an API key');
 });
@@ -129,7 +131,7 @@ test('a send failure rejects the promise (never throws synchronously) so a fire-
   process.env.ELASTIC_CLAIM_TEMPLATE_ID = 'gift-card-template-123';
   installFetchMock({ ok: false, json: async () => ({ success: false, error: 'bounced' }) });
 
-  const promise = sendClaimCode('winner@example.com', 'XCH-CODE-0004', { claimUrl: null });
+  const promise = sendClaimCode('winner@example.com', 'XCH-CODE-0004');
   // The call site (server/index.js) never awaits this - it only chains .catch(). Proving the
   // failure surfaces as a rejection, not a thrown exception before any promise exists, is what
   // makes that fire-and-forget pattern safe.

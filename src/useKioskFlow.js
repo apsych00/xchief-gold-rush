@@ -23,11 +23,11 @@ export const QR_MS = 20000;
 export const KIOSK_BROKE_MODAL_MS = 20000;
 export const DEFAULT_STREAK_TARGET = 3;
 // Idle countdown (ticket C2b): 20 s of no activity shows the overlay, which then counts down
-// 20 s to the flush - 40 s total. The server's own idle sweep (server/kiosk.js IDLE_MS) resets a
-// session after 60 s without a round, so 20 + 20 = 40 s keeps the client's flush ahead of it and
+// 10 s to the flush - 30 s total. The server's own idle sweep (server/kiosk.js IDLE_MS) resets a
+// session after 60 s without a round, so 20 + 10 = 30 s keeps the client's flush ahead of it and
 // the two never race.
 export const IDLE_BEFORE_COUNTDOWN_MS = 20000;
-export const COUNTDOWN_MS = 20000;
+export const COUNTDOWN_MS = 10000;
 
 // Runtime-configurable copies the interval below reads every tick, so the DEV-only
 // window.__xchief.kioskTiming hook can shrink them for E2E tests without a rebuild.

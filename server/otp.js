@@ -46,6 +46,10 @@ export async function send(email, code) {
   }
 }
 
+// Where the gift-card code is actually redeemed: the same destination as the template's own
+// Redeem button, so the fallback link under it cannot lead somewhere different.
+const REDEEM_URL = 'https://my.xchief.com/bonuses-credits/promo?lang=en';
+
 // The gift card's own copy ("Valid for 30 days from today") - claim_prize (db/schema.sql)
 // stamps claimed_at but nothing tracks a separate redemption deadline in Postgres, so "today"
 // is the moment this send runs, right after the claim committed.
@@ -68,7 +72,7 @@ function formatExpiry(date) {
  * placeholders - the owner only has to hand over the id once the template exists there. Until
  * then this falls back to the original plain-text body, so dev keeps working unchanged.
  */
-export async function sendClaimCode(email, code, { claimUrl } = {}) {
+export async function sendClaimCode(email, code) {
   const apiKey = process.env.ELASTIC_API_KEY;
   if (!apiKey) {
     console.log(`dev claim code captured for ${email}: ${code}`);
@@ -90,7 +94,16 @@ export async function sendClaimCode(email, code, { claimUrl } = {}) {
     form.set('subject', 'Your xChief $100 gift card code');
     form.set('merge_code', code);
     form.set('merge_expires_at', expiresAt);
-    form.set('merge_claim_url', claimUrl || '');
+    // The template's "Button not working?" line is a fallback for the Redeem button above it, so
+    // it has to lead to the same place - the client area's promo page, where the code is actually
+    // entered. It used to receive this send's own /claim/<token> link, which is where the visitor
+    // typed their email to get the code in the first place: by the time they are reading this,
+    // that page has done its job and sends them nowhere useful.
+    //
+    // Fixed here rather than in the HTML because the template already lives in Elastic Mail and
+    // cannot be edited right now. The placeholder is still called {claim_url} there; only the
+    // value we fill it with has changed.
+    form.set('merge_claim_url', REDEEM_URL);
   } else {
     form.set('subject', 'Your xChief $100 bonus code');
     form.set(
