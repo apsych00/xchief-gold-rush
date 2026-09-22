@@ -6,7 +6,14 @@ import { enabled as apiEnabled } from './api/client.js';
 import * as api from './api/game.js';
 import { ensureSession, requestOtp as sessionRequestOtp, signOut as sessionSignOut, verifyOtp as sessionVerifyOtp } from './api/session.js';
 import { IS_KIOSK, playKioskRound } from './api/kiosk.js';
-import { connect as connectSocket, getInstagramHandle, onIdentityChange, onLeaderboard, onSettled } from './api/socket.js';
+import {
+  connect as connectSocket,
+  getInstagramHandle,
+  onIdentityChange,
+  onKioskSession,
+  onLeaderboard,
+  onSettled,
+} from './api/socket.js';
 import { SCREEN_PATHS, useUrlRouting } from './useUrlRouting.js';
 
 export const ROUND_SECONDS = 5;
@@ -348,6 +355,26 @@ export function useGame() {
     if (!apiEnabled || IS_KIOSK) return undefined;
     return onLeaderboard(applyLeaderboardPush);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Kiosk balance sync: the server pushes a fresh kiosk_session after auth, after every settled
+  // round, after kiosk_reset, and from its own idle sweep. In kiosk mode this is the one source
+  // of truth for coins and streak; trusting it here keeps the header balance from showing the
+  // previous visitor's pot when the screen returns to ATTRACT (docs/layers.md C2).
+  useEffect(() => {
+    if (!apiEnabled || !IS_KIOSK) return undefined;
+    return onKioskSession((session) => {
+      const p = profileRef.current;
+      const next = {
+        ...p,
+        coins: session.coins,
+        streak: session.streak,
+        record: Math.max(p.record, session.coins),
+        bestStreak: Math.max(p.bestStreak, session.streak),
+      };
+      profileRef.current = next;
+      setProfile(next);
+    });
   }, []);
 
   const stopTimer = useCallback(() => {

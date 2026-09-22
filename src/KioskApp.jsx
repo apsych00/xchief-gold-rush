@@ -114,6 +114,9 @@ function KioskWonModal({ claimUrl, secondsLeft, onScanned }) {
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t('kioskWin.qrTitleEn')}>
       <div className="modal kiosk-modal kiosk-qr-modal">
         <div className="modal-title">{t('kioskWin.qrTitleEn')}</div>
+        <div className="modal-sub" dir="rtl">
+          {t('kioskWin.qrTitleFa')}
+        </div>
         <div className="kiosk-qr-wrap">
           {qrSrc ? (
             <img className="kiosk-qr" src={qrSrc} alt="" width={200} height={200} />
