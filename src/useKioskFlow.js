@@ -22,12 +22,14 @@ import { onSettled, onStatus } from './api/socket.js';
 export const QR_MS = 20000;
 export const KIOSK_BROKE_MODAL_MS = 20000;
 export const DEFAULT_STREAK_TARGET = 3;
-// Idle countdown (ticket C2b): 20 s of no activity shows the overlay, which then counts down
-// 10 s to the flush - 30 s total. The server's own idle sweep (server/kiosk.js IDLE_MS) resets a
-// session after 60 s without a round, so 20 + 10 = 30 s keeps the client's flush ahead of it and
-// the two never race.
-export const IDLE_BEFORE_COUNTDOWN_MS = 20000;
-export const COUNTDOWN_MS = 10000;
+// Idle countdown (ticket C2b): 12 s of no activity shows the overlay, which then counts down
+// 6 s to the flush - 18 s total. Shortened from 30 s on the owner's call (2026-09-22): at a busy
+// booth the cost of a slow handover is a queue staring at a kiosk still wearing the last
+// visitor's session, while the cost of challenging someone who is still there is one tap to
+// dismiss. The server's own idle sweep (server/kiosk.js IDLE_MS) resets a session after 60 s
+// without a round, so 12 + 6 = 18 s keeps the client's flush well ahead of it and they never race.
+export const IDLE_BEFORE_COUNTDOWN_MS = 12000;
+export const COUNTDOWN_MS = 6000;
 
 // Runtime-configurable copies the interval below reads every tick, so the DEV-only
 // window.__xchief.kioskTiming hook can shrink them for E2E tests without a rebuild.
