@@ -167,7 +167,7 @@ folder), `npm run box:otp:peek someone@example.com` (dev only).
 
 - `KIOSK_OPEN_PROVISION` - set to `1` during the exhibition to enable `/kiosk`. Set it back to
   `0` and restart the server after the exhibition.
-- `KIOSK_OPEN_MAX` - hard cap on the total number of active auto-provisioned open kiosks (default 100)
+- `KIOSK_OPEN_MAX` - hard cap on the total number of active auto-provisioned open kiosks (default 100).
   Once the cap is reached, `/kiosk` refuses new devices until old ones are removed.
 
 Turn it off after the exhibition:
