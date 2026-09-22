@@ -41,6 +41,10 @@ export default defineConfig({
         PORT: GAME_SERVER_PORT,
         PLAYER_TOKEN_SECRET: process.env.PLAYER_TOKEN_SECRET || 'dev-secret',
         DATABASE_URL: process.env.DATABASE_URL || 'postgresql://postgres:test@localhost:55432/postgres',
+        // Ticket C9: the server builds absolute claim links from PUBLIC_URL; without it a kiosk
+        // session that owns an open claim_link crashes when the idle sweep or a frame tries to
+        // build claim_url. Point it at the same origin the Vite dev server is serving the SPA from.
+        PUBLIC_URL: process.env.PUBLIC_URL || BASE_URL,
         // Every spec talks to the server from 127.0.0.1, so the per-IP windows (ticket S2) would
         // refuse the suite itself; they are exercised on their own terms in
         // test/integration-box/limits.test.mjs. Same override as the integration harness.
