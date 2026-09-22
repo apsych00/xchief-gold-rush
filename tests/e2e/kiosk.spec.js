@@ -218,7 +218,6 @@ test.describe.serial('kiosk visitor flow', () => {
     await expect(
       page.getByText('Congratulations! You won the xChief $100 bonus. Scan to claim your gift:'),
     ).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText('تبریک! شما برنده بونوس ۱۰۰ دلاری ایکس‌چیف شدید. برای دریافت هدیه اسکن کنید:')).toBeVisible();
     await expect(page.locator('.kiosk-qr')).toBeVisible();
     await expect(forbiddenUi(page)).toHaveCount(0);
 

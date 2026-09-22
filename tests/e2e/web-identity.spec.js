@@ -58,7 +58,7 @@ test.describe('web identity and the live, masked leaderboard (C3, C4)', () => {
     const leadEmailInput = page.locator('.lead-slim input[type="email"]');
     if (await leadEmailInput.count()) {
       await leadEmailInput.fill('not-an-email');
-      await page.locator('.lead-slim').getByRole('button', { name: /save|ثبت/i }).click();
+      await page.locator('.lead-slim').getByRole('button', { name: /save/i }).click();
       await expect(page.locator('.lead-slim .lead-error')).toBeVisible({ timeout: 3000 });
       await page.screenshot({ path: path.join(REPORT_DIR, '02-existing-lead-capture-error.png') });
     }

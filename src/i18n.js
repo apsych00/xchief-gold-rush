@@ -330,7 +330,6 @@ const dict = {
     },
     kioskWin: {
       qrTitleEn: 'Congratulations! You won the xChief $100 bonus. Scan to claim your gift:',
-      qrTitleFa: 'تبریک! شما برنده بونوس ۱۰۰ دلاری ایکس‌چیف شدید. برای دریافت هدیه اسکن کنید:',
       scannedBtnEn: "I've scanned it",
     },
     // ticket C11: the kiosk intro (A6). kioskIntro.en is read directly by key (never through
