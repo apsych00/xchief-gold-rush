@@ -63,7 +63,7 @@ Error codes are the ones in `docs/test-contract.md`.
 
 - First visit: the server creates an anonymous player and returns a **player token** (HMAC-signed id). The client keeps it in localStorage and sends it as `auth`. Same play-first flow as before.
 - `request_otp`: 8-digit code into `otp_codes(email, code_hash, expires_at, player_id)`, sent through Elastic's `gold_rush_otp` template; without `ELASTIC_API_KEY` it is stored in `dev_otps` as today. `verify_otp`: correct code within 10 minutes sets `players.email` on the same player id. Score kept.
-- Kiosk: `auth {kiosk: "<secret from the launch URL>"}` verified with the existing `verify_kiosk`.
+- Kiosk: `auth {kiosk: "<secret from device storage>"}` verified with the existing `verify_kiosk`. The secret is provisioned by `/kiosk` (ticket K1) and never travels in a URL (ticket S3).
 
 ## 1.6 Client (`src/api/`)
 

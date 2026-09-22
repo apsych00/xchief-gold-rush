@@ -137,33 +137,33 @@ the game server is alive. Then open the homepage and play a round.
 
 ## 7. Create the kiosk screens
 
-For each physical kiosk device, once:
+For each physical kiosk device, once: set `KIOSK_OPEN_PROVISION=1` in
+`.env.box`, then open `https://<your-domain>/kiosk` full-screen in Chrome
+kiosk mode. The device provisions its own identity on first load and keeps it
+in local storage, so a reload, a browser crash or a reboot resumes the same
+session - there is no launch URL to generate or distribute (ticket S3 removed
+the older `/?k=<secret>` flow entirely).
+
+Compromised or misbehaving device? Find its label and revoke it:
 
 ```
-npm run box:kiosk:new -- booth-1 https://<your-domain>
+npm run box:kiosk:list
+npm run box:kiosk:revoke -- open-20260101-ab12
 ```
 
-It prints a launch URL ending in `/?k=...` **exactly once**. Save it somewhere
-safe and open it full-screen in Chrome kiosk mode on that device. Repeat with
-`booth-2`, `booth-3`, `booth-4`, `booth-5`. Lost a secret? Revoke and reissue:
-
-```
-npm run box:kiosk:revoke -- booth-3
-npm run box:kiosk:new -- booth-3 https://<your-domain>
-```
+The device notices on its own next reconnect attempt, re-provisions a fresh
+identity, and carries on - no need to touch the device itself unless you also
+want to clear its browser storage.
 
 Other admin scripts (see `scripts/README.md`):
 `npm run box:kiosk:list`, `npm run box:coupons:export > coupons.csv`,
 `npm run box:coupons:load -- codes.txt` (the file must be in the `goldrush`
 folder), `npm run box:otp:peek someone@example.com` (dev only).
 
-## Open kiosk route (ticket K1)
+## The open kiosk route in detail (ticket K1)
 
-For the exhibition only, you can let anyone open `https://<your-domain>/kiosk` and get a working
-kiosk automatically, with no secret-in-URL step. The first visit provisions a kiosk and stores
-its identity on that device; reloads, crashes and reboots resume the same server-side session.
-
-Two environment switches control it in `.env.box`:
+`KIOSK_OPEN_PROVISION` and `KIOSK_OPEN_MAX` (used above) are the two environment switches in
+`.env.box` that control `/kiosk`:
 
 - `KIOSK_OPEN_PROVISION` - set to `1` during the exhibition to enable `/kiosk`. Set it back to
   `0` and restart the server after the exhibition.

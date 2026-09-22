@@ -15,7 +15,7 @@ Short version of `box-spec.md` plus the review's fixes, for sign-off. Layer 1 on
 | Late verdict | If `round_settled` has not arrived 2 s after the countdown, the client shows a small "settling" state and waits; it never fabricates. |
 | Client badge | LIVE (tick within 3 s) or QUIET MARKET (none for 3 s). No source names anywhere in the UI; the quiet-market micro-move animation is removed. |
 | Kiosk streak between players | Resets after 60 s with no round on that kiosk. Also resets on a loss or a claim, as today. |
-| Kiosks | One `kiosks` row and one launch URL per physical device. Five exist for the demo. |
+| Kiosks | One `kiosks` row per physical device. Five exist for the demo. (Superseded by ticket K1/S3: devices now self-provision at `/kiosk` rather than being handed a per-device launch URL.) |
 | Client price feed in server mode | Only ticks from the game socket. The browser's own exchange sockets and the quiet-market animation are off. What the player sees is what the server settles on. |
 | Process model | One game server process, forever. Restart voids open rounds (rare, visible, correct). Never run two. |
 | Frontend | Served by the box (Caddy). The marketing lead deploys with `npm run build` + one copy command, documented. |
@@ -31,7 +31,7 @@ Short version of `box-spec.md` plus the review's fixes, for sign-off. Layer 1 on
 
 ## Scenario B - the booth kiosk
 
-1. Staff open the kiosk's own launch URL (`/?k=<secret>`) in Chrome kiosk mode. The browser sends `auth {kiosk}`; the server verifies the hash, replies `welcome {kiosk: true, streak}`, streams prices. No email prompt, no leaderboard, no token stored.
+1. Staff open `/kiosk` in Chrome kiosk mode (superseded by ticket K1/S3: the device provisions its own identity and stores it locally, rather than being handed a per-device launch URL). The browser sends `auth {kiosk}`; the server verifies the hash, replies `welcome {kiosk: true, streak}`, streams prices. No email prompt, no leaderboard, no token stored.
 2. A visitor plays: same `play` -> `round_opened` -> local countdown -> `round_settled` at 5 s, with prices and streak from the server. Coins on the kiosk are cosmetic and also come from the server frame, so screen and server never disagree.
 3. Nth consecutive win (the streak target, `public.settings.kiosk_streak_target`, default 3): `settle_kiosk_round` claims one code atomically and returns it in `round_settled {coupon}`. The kiosk shows it once. Streak resets to 0. If no code is left: `coupons_exhausted`, streak kept, staff told.
 4. Visitor walks away: after 60 s without a round the kiosk streak resets, so the next person starts fresh. Any loss also resets it.

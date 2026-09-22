@@ -7,52 +7,10 @@
 //
 // Screenshots land in docs/reports/b10-b11/.
 import { expect, test } from '@playwright/test';
-import { WebSocket } from 'ws';
 
 import { dismissFirstVisit } from './first-visit.js';
 
-const KIOSK_SECRET = 'dev-kiosk-secret-0001';
-const KIOSK_URL = `/?k=${KIOSK_SECRET}`;
-const GAME_WS = process.env.VITE_GAME_WS;
 const REPORT_DIR = 'docs/reports/b10-b11';
-
-/** Ends whatever session the dev kiosk currently has, over an independent socket - run before
- * every kiosk test so one test's leftover state never leaks into the next (same pattern as
- * tests/e2e/kiosk.spec.js). */
-function resetKioskSession() {
-  return new Promise((resolve, reject) => {
-    expect(GAME_WS, 'VITE_GAME_WS must be set for this suite (never read from .env)').toBeTruthy();
-    const ws = new WebSocket(GAME_WS);
-    const timer = setTimeout(() => {
-      ws.terminate();
-      reject(new Error('timed out resetting the kiosk session'));
-    }, 8000);
-    ws.on('open', () => ws.send(JSON.stringify({ type: 'auth', kiosk: KIOSK_SECRET })));
-    ws.on('message', (data) => {
-      let frame;
-      try {
-        frame = JSON.parse(data.toString());
-      } catch {
-        return;
-      }
-      if (frame.type === 'welcome') {
-        ws.send(JSON.stringify({ type: 'kiosk_reset' }));
-      } else if (frame.type === 'kiosk_session') {
-        clearTimeout(timer);
-        ws.close();
-        resolve(frame);
-      } else if (frame.type === 'error') {
-        clearTimeout(timer);
-        ws.close();
-        reject(Object.assign(new Error(frame.code), { code: frame.code }));
-      }
-    });
-    ws.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-  });
-}
 
 // The hard guarantee a kiosk must keep (docs/layers.md C2, extended here to B11's ad zone):
 // none of the web's chrome, or the ad zone, may ever exist in the kiosk DOM.
@@ -98,14 +56,12 @@ test.describe('web: tour placeholder and the ad zone (B10, B11)', () => {
 test.describe.serial('kiosk: no ad zone or web chrome, intro once per boot (B10, B11)', () => {
   test.setTimeout(60000);
 
-  test.beforeEach(async () => {
-    await resetKioskSession();
-  });
-
+  // Each test gets its own fresh browser context (empty localStorage), so /kiosk self-provisions
+  // a brand-new, already-idle kiosk identity every time - no shared dev secret to reset anymore.
   test('the kiosk never renders the ad zone or web chrome, and the intro shows once this boot', async ({
     page,
   }) => {
-    await page.goto(KIOSK_URL);
+    await page.goto('/kiosk');
     await expect
       .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
         message: 'window.__xchief.mode must be "server" - the client is not wired to the game socket',

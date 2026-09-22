@@ -45,11 +45,11 @@ DATABASE_URL=postgresql://postgres:test@localhost:55447/postgres
 **2. The game server.** Port 8787, matching `VITE_GAME_WS` in `.env`. Leave `FINNHUB_TOKEN` and
 `ELASTIC_API_KEY` unset: the feed then runs on the free OKX/Binance sources, and login codes are
 captured in `public.dev_otps` instead of being mailed, which is what `scripts/peek-otp.mjs`
-reads.
+reads. `KIOSK_OPEN_PROVISION=1` turns on `/kiosk` (ticket K1); both kiosk windows need it.
 
 ```bash
 DATABASE_URL=postgresql://postgres:test@localhost:55447/postgres \
-  PLAYER_TOKEN_SECRET=dev-secret PORT=8787 npm run server
+  PLAYER_TOKEN_SECRET=dev-secret PORT=8787 KIOSK_OPEN_PROVISION=1 npm run server
 ```
 
 **3. The client.** A Vite dev server on a port nothing else is using:
@@ -83,10 +83,12 @@ Options:
 
 **Afterwards.** Stop the server and Vite, then `docker rm -f goldrush-demo-keep`.
 
-**Two kiosks.** `db/seed.sql` only creates one dev kiosk (`dev-kiosk-secret-0001`). The script
-creates the second on first run - label `demo-kiosk-b`, secret `demo-kiosk-secret-0002` - so
-Kiosk A and Kiosk B are genuinely different booths with separate server-side sessions. Both are
-dev-only secrets and neither exists on the box.
+**Two kiosks.** Both kiosk windows open the open route (`/kiosk`) and self-provision on load
+(ticket K1) - there is no seeded secret in the URL - so Kiosk A and Kiosk B are genuinely
+different booths with separate server-side sessions from the moment they load. The server must
+run with `KIOSK_OPEN_PROVISION=1` or neither can provision. `db/seed.sql`'s own dev kiosk
+(`dev-kiosk-secret-0001`) is unrelated to this script - it exists for tests that authenticate a
+kiosk directly over the socket, never through a browser.
 
 ---
 
@@ -226,9 +228,10 @@ which is the dead end ticket C7 was written to remove.
 **On screen.** The attract screen. A tap, then one real round against the live gold price:
 countdown, verdict, balance.
 
-**Underneath.** The kiosk's launch URL carries a bearer secret (`?k=`). On connect, the server
-calls `verify_kiosk()`, which bcrypt-compares it against the stored hash - the raw secret is never
-stored and never recoverable. From then on the booth has a server-owned visitor session: coins,
+**Underneath.** Opening `/kiosk` self-provisions a bearer secret and stores it on the device
+(ticket K1); it never rides in the URL (ticket S3). On connect, the server calls `verify_kiosk()`,
+which bcrypt-compares it against the stored hash - the raw secret is never stored server-side and
+never recoverable. From then on the booth has a server-owned visitor session: coins,
 streak, state, all in `public.kiosks`, all decided by `settle_kiosk_round()`. The scenario also
 counts the web-only UI in the DOM, at the attract screen and again at the verdict: `.lead`,
 `.signup`, `.lb`, `.tasks`, `.nav`, `input[type=email]`. It must be zero every time.

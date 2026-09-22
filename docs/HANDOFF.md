@@ -43,7 +43,7 @@ Order: Docker Desktop, then from the repo root:
 1. `docker compose --profile mt5 up -d db mt5` (the untracked, git-ignored `docker-compose.override.yml` publishes caddy 8080:80, db 127.0.0.1:55480, mt5 127.0.0.1:8765; caddy, server and dozzle stay down for the walk). Never `docker compose down -v`: it wipes the MT5 profile (tracker G12) and the first login has to be redone through the VNC page with Playwright (`docs/mt5-feed.md`, "First login").
 2. Relay: `PORT=8788 FINNHUB_TOKEN=<from .env.box> node relay/server.js`.
 3. Game server on 8787 from the main checkout: `DATABASE_URL=postgresql://postgres:<POSTGRES_PASSWORD from .env.box>@127.0.0.1:55480/postgres PLAYER_TOKEN_SECRET=dev-secret TRUST_PROXY=0 PUBLIC_URL=http://localhost:5173 FEED_RELAY_WS=ws://localhost:8788/ws MT5_BRIDGE_WS=ws://localhost:8765 MAX_ANON_PLAYERS_PER_IP_PER_10MIN=200 MAX_CONNECTIONS_PER_IP_PER_MIN=300 node server/index.js`. Pass secrets from the environment without printing them.
-4. `npx vite --port 5173 --strictPort` with `VITE_GAME_WS=ws://localhost:8787/ws`. Kiosk view: `/?k=dev-kiosk-secret-0001`.
+4. `npx vite --port 5173 --strictPort` with `VITE_GAME_WS=ws://localhost:8787/ws`. Kiosk view: `/kiosk` (set `KIOSK_OPEN_PROVISION=1` on the server first).
 5. Check `/status` on 8787: `feed.source` should read `mt5` once the bridge is up (the compose volume `mt5_data` keeps the logged-in profile), `finnhub` (through the relay) otherwise.
 
 The compose database on 55480 already carries K5's `mask_email` (applied by hand with `create or replace function`). Any future `db/schema.sql` change made by a worker has to be applied to that database the same way, or the walk shows stale behaviour. Before a box deploy the full schema still needs D4 (tracker).

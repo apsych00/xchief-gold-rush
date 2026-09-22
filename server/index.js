@@ -786,9 +786,10 @@ export function createApp({
   }
 
   async function handleAuth(ws, frame) {
-    // D7 (docs/reports/redteam.md): the kiosk parameter's presence is the signal, not its
-    // truthiness - `''` (a launch URL that lost its query string) must fail closed as a kiosk,
-    // never fall through and be welcomed as a fresh web player.
+    // The kiosk parameter's presence is the signal, not its truthiness - an empty secret must
+    // fail closed as a kiosk, never fall through and be welcomed as a fresh web player (closed
+    // finding, docs/reports/redteam.md D7; there is no longer a URL that could carry one at all,
+    // ticket S3, but the client's `kiosk` field could still be empty in principle).
     const isKioskAttempt = frame.kiosk !== undefined;
     if (isKioskAttempt) {
       try {

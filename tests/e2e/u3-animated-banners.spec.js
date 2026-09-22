@@ -6,13 +6,9 @@
 //
 // Screenshots land in docs/reports/u3/.
 import { expect, test } from '@playwright/test';
-import { WebSocket } from 'ws';
 
 import { dismissFirstVisit } from './first-visit.js';
 
-const KIOSK_SECRET = 'dev-kiosk-secret-0001';
-const KIOSK_URL = `/?k=${KIOSK_SECRET}`;
-const GAME_WS = process.env.VITE_GAME_WS;
 const REPORT_DIR = 'docs/reports/u3';
 // .ad-zone's own aspect-ratio (src/styles.css) - not the banners' native 1072:310 canvas. The
 // zone overscans and crops the banners' own dark margin (commit 1a41ed7, "crop banner dark
@@ -21,43 +17,6 @@ const REPORT_DIR = 'docs/reports/u3';
 // afterward (unrelated pre-existing test bug, fixed while touching this file for the ad-latency
 // ticket).
 const BANNER_ASPECT = 1072 / 272;
-
-/** Ends whatever session the dev kiosk currently has, over an independent socket - same helper
- * shape as tests/e2e/b10-b11-tour-ads.spec.js so kiosk state never leaks between the two suites. */
-function resetKioskSession() {
-  return new Promise((resolve, reject) => {
-    expect(GAME_WS, 'VITE_GAME_WS must be set for this suite (never read from .env)').toBeTruthy();
-    const ws = new WebSocket(GAME_WS);
-    const timer = setTimeout(() => {
-      ws.terminate();
-      reject(new Error('timed out resetting the kiosk session'));
-    }, 8000);
-    ws.on('open', () => ws.send(JSON.stringify({ type: 'auth', kiosk: KIOSK_SECRET })));
-    ws.on('message', (data) => {
-      let frame;
-      try {
-        frame = JSON.parse(data.toString());
-      } catch {
-        return;
-      }
-      if (frame.type === 'welcome') {
-        ws.send(JSON.stringify({ type: 'kiosk_reset' }));
-      } else if (frame.type === 'kiosk_session') {
-        clearTimeout(timer);
-        ws.close();
-        resolve(frame);
-      } else if (frame.type === 'error') {
-        clearTimeout(timer);
-        ws.close();
-        reject(Object.assign(new Error(frame.code), { code: frame.code }));
-      }
-    });
-    ws.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-  });
-}
 
 test.describe('web: the ad zone shows an animated banner (U3)', () => {
   test.setTimeout(60000);
@@ -188,12 +147,10 @@ async function goToLeaderboard(page) {
 test.describe.serial('kiosk: the ad zone never renders there (U3)', () => {
   test.setTimeout(60000);
 
-  test.beforeEach(async () => {
-    await resetKioskSession();
-  });
-
+  // Each test gets its own fresh browser context (empty localStorage), so /kiosk self-provisions
+  // a brand-new, already-idle kiosk identity every time - no shared dev secret to reset anymore.
   test('the kiosk never renders the animated banner zone', async ({ page }) => {
-    await page.goto(KIOSK_URL);
+    await page.goto('/kiosk');
     await expect
       .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
         message: 'window.__xchief.mode must be "server" - the client is not wired to the game socket',

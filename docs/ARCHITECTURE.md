@@ -82,7 +82,8 @@ Everything under `server/`, one process:
 ## The client
 
 Vite plus React, built to static files that Caddy serves. One codebase, two modes chosen at
-load time by whether a valid kiosk secret is present in the URL.
+load time by the route: `/kiosk` is the booth surface, everything else is the web surface. A
+kiosk's bearer secret lives only in that device's local storage, never in the URL.
 
 - `useGame.js` - the shared engine: socket, rounds, coins, profile, identity, routing
 - `useKioskFlow.js` - kiosk screen machine: `attract`, `playing`, `won`, `broke`,
@@ -103,8 +104,9 @@ Postgres, migrations in `db/migrations`. The domains:
 - **Engagement** - `tasks`, `task_claims`, `task_visits`, `video_progress`,
   `instagram_accounts`
 
-Kiosk secrets are stored only as bcrypt hashes and cannot be recovered; a lost one is
-replaced by minting a new kiosk.
+Kiosk secrets are stored only as bcrypt hashes and cannot be recovered; a device that loses
+its local storage, or whose kiosk row is revoked, self-provisions a fresh one the next time it
+opens `/kiosk`.
 
 ## The two journeys
 

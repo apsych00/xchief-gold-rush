@@ -19,7 +19,7 @@ RUN npm install --omit=dev --no-save --no-audit --no-fund metaapi.cloud-sdk
 
 COPY server/ ./server/
 COPY db/ ./db/
-# Ops scripts run here too: docker compose exec server node scripts/gen-kiosk.mjs ...
+# Ops scripts run here too: docker compose exec server node scripts/revoke-kiosk.mjs ...
 COPY scripts/ ./scripts/
 
 ENV NODE_ENV=production \

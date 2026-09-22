@@ -10,6 +10,21 @@
 {$SITE_ADDRESS} {
 	encode gzip
 
+	# Ticket S3: an old bookmarked or shared `?k=<secret>` launch link is no longer valid (the
+	# route was removed entirely), but if one is ever opened during the show it must not leave the
+	# secret sitting in the access log. Delete the `k` query parameter from every logged request
+	# line regardless of which handler serves it.
+	log {
+		format filter {
+			wrap console
+			fields {
+				request>uri query {
+					delete k
+				}
+			}
+		}
+	}
+
 	# The game socket (ticket 3: /ws) and the two HTTP endpoints.
 	# The WebSocket upgrade passes through reverse_proxy as-is.
 	handle /ws {

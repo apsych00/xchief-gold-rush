@@ -9,50 +9,8 @@
 // Vite on 5362. GAME_WS and DATABASE_URL must be set in the environment; this suite never reads
 // .env. Screenshots land in docs/reports/c11/.
 import { expect, test } from '@playwright/test';
-import { WebSocket } from 'ws';
 
-const KIOSK_SECRET = 'dev-kiosk-secret-0001';
-const KIOSK_URL = `/?k=${KIOSK_SECRET}`;
-const GAME_WS = process.env.VITE_GAME_WS;
 const REPORT_DIR = 'docs/reports/c11';
-
-/** Ends whatever session the dev kiosk currently has, over an independent socket - run before
- * every kiosk test so one test's leftover state never leaks into the next (same pattern as
- * tests/e2e/kiosk.spec.js). */
-function resetKioskSession() {
-  return new Promise((resolve, reject) => {
-    expect(GAME_WS, 'VITE_GAME_WS must be set for this suite (never read from .env)').toBeTruthy();
-    const ws = new WebSocket(GAME_WS);
-    const timer = setTimeout(() => {
-      ws.terminate();
-      reject(new Error('timed out resetting the kiosk session'));
-    }, 8000);
-    ws.on('open', () => ws.send(JSON.stringify({ type: 'auth', kiosk: KIOSK_SECRET })));
-    ws.on('message', (data) => {
-      let frame;
-      try {
-        frame = JSON.parse(data.toString());
-      } catch {
-        return;
-      }
-      if (frame.type === 'welcome') {
-        ws.send(JSON.stringify({ type: 'kiosk_reset' }));
-      } else if (frame.type === 'kiosk_session') {
-        clearTimeout(timer);
-        ws.close();
-        resolve(frame);
-      } else if (frame.type === 'error') {
-        clearTimeout(timer);
-        ws.close();
-        reject(Object.assign(new Error(frame.code), { code: frame.code }));
-      }
-    });
-    ws.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-  });
-}
 
 // The hard guarantee a kiosk must keep (docs/layers.md C2): none of the web's chrome may ever
 // exist in the kiosk DOM, intro screen included.
@@ -116,12 +74,10 @@ test.describe('web: the three-card first-visit tour (C11)', () => {
 test.describe.serial('kiosk: the intro on the B10 mount point (C11)', () => {
   test.setTimeout(60000);
 
-  test.beforeEach(async () => {
-    await resetKioskSession();
-  });
-
+  // Each test gets its own fresh browser context (empty localStorage), so /kiosk self-provisions
+  // a brand-new, already-idle kiosk identity every time - no shared dev secret to reset anymore.
   test('the intro shows once per boot, and Start goes to play', async ({ page }) => {
-    await page.goto(KIOSK_URL);
+    await page.goto('/kiosk');
     await expect
       .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
         message: 'window.__xchief.mode must be "server" - the client is not wired to the game socket',
@@ -159,7 +115,7 @@ test.describe.serial('kiosk: the intro on the B10 mount point (C11)', () => {
   });
 
   test('the intro number is the streak_target from the session frame, not a hard-coded 3', async ({ page }) => {
-    await page.goto(KIOSK_URL);
+    await page.goto('/kiosk');
     await expect
       .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
         message: 'window.__xchief.mode must be "server" - the client is not wired to the game socket',

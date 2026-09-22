@@ -48,7 +48,7 @@ The one rule everything serves: **the server decides every outcome; the browser 
 |---|---|---|
 | Campaign domain, e.g. `goldrush.xchief.com` | Cloudflare (proxied) -> the box's IP | Admin: add an A record in Cloudflare, proxy ON |
 | `goldrush.xchief.academy` (email sending) | Elastic Mail | Done: SPF, DKIM, DMARC verified |
-| Kiosk launch URL | `https://<campaign domain>/?k=<per-device secret>` | Generated on the box with `npm run kiosk:new -- booth-1 https://<domain>`; one per physical device |
+| Kiosk devices | `https://<campaign domain>/kiosk` | Same URL on every device; each self-provisions its own identity on first load (ticket K1) - nothing to generate or distribute per device (ticket S3) |
 
 The game server must know its public origin (`SITE_ADDRESS`) for Caddy's TLS and, in Layer 2, for origin pinning.
 

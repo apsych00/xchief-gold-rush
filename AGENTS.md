@@ -30,7 +30,7 @@ Everything runs on one machine, "the box", as docker containers:
 - **Caddy** - serves the built client and proxies `/ws` and `/api`. Cloudflare sits in front for DNS, TLS and edge shielding.
 - **Game server** (`server/`) - one Node process. Rounds, price aggregation with failover across several upstreams, coins, prizes, identity, rate limits, safe mode. It is the only thing that talks to the database.
 - **Postgres 16** - all durable state. Migrations in `db/migrations`, applied on boot by `server/migrate.mjs`.
-- **Client** (`src/`) - Vite plus React, built to static files. One codebase, two modes; kiosk mode is selected by a valid kiosk secret in the URL.
+- **Client** (`src/`) - Vite plus React, built to static files. One codebase, two modes; kiosk mode is the `/kiosk` route, which self-provisions its own device-stored identity. There is no secret in the URL.
 
 Clients hold a single WebSocket carrying gameplay, identity and leaderboard updates.
 

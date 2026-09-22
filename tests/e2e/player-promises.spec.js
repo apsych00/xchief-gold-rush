@@ -220,7 +220,7 @@ test.describe('player-visible promises', () => {
   });
 
   test('3. kiosk mode plays rounds with a verdict and never shows an email prompt', async ({ page }) => {
-    await page.goto('/?k=dev-kiosk-secret-0001');
+    await page.goto('/kiosk');
     await page.locator('.btn-start').click();
     await dismissFirstVisit(page);
     await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });

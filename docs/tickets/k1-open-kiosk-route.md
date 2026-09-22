@@ -11,3 +11,9 @@ Decisions (do not redesign):
 4. Existing `?k=<secret>` kiosks keep working unchanged (the seeded dev kiosk and the E2E suite depend on it).
 5. Operator visibility: `/status` gains `kiosks: {seeded, open}` counts; `scripts/export-coupons.mjs` (or the kiosk listing script if one exists) shows the label. docs/box-deploy.md gets an "Open kiosk route" paragraph: what it is, the two env switches, how to turn it off after the exhibition (`KIOSK_OPEN_PROVISION=0` and restart), and that decommissioning the kiosks means deleting the rows with the labels starting `open-`.
 Tests: pgTAP for the provisioning function (label shape, hashed secret, cap); integration (provision on, provision off, cap, the provisioned secret authenticates, per-IP window); E2E as in 3. Dev DB: copy db/run-tests.sh with PORT=55467 and container goldrush-k1-keep; server on PORT=8808 with KIOSK_OPEN_PROVISION=1 and VITE_GAME_WS=ws://localhost:8808/ws on the Vite command line; Vite on 5370. Never set FINNHUB_TOKEN. Delete the copy and container when done. Gates unpiped: lint, unit, pgTAP, test:server, build, the FULL E2E suite. Report: bad news first, judgement calls, files touched, gate outputs.
+
+**Decision 4 reversed by ticket S3** (kiosk secret out of the URL). The `?k=<secret>` path this
+decision kept alive was removed entirely, not kept "unchanged": the dev seed and the E2E suite
+were migrated to `/kiosk` instead of being preserved on the old route. `/kiosk` plus its
+device-stored identity (decisions 1-3 above) is the only way to authenticate a kiosk client now.
+This entry is left as written for the record; it is not the current behaviour.

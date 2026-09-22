@@ -2,53 +2,9 @@
 // frames enter through the DEV-only socket hook, while the assertions exercise the same client
 // rendering path as server frames.
 import { expect, test } from '@playwright/test';
-import fs from 'node:fs';
-import { WebSocket } from 'ws';
 
 import { dismissFirstVisit } from './first-visit.js';
 
-const KIOSK_SECRET = 'dev-kiosk-secret-0001';
-const KIOSK_URL = `/?k=${KIOSK_SECRET}`;
-
-// Overridable from the environment (same pattern as tests/e2e/kiosk.spec.js) so the suite can
-// target a dev server on a non-default port when 8787 is taken by another worktree's stack;
-// default stays exactly as .env has it.
-function gameWsUrl() {
-  // The environment wins over .env so a run on another port resets the kiosk the browser uses.
-  if (process.env.VITE_GAME_WS) return process.env.VITE_GAME_WS.trim();
-  const text = fs.readFileSync(new URL('../../.env', import.meta.url), 'utf8');
-  const line = text.split(/\r?\n/).find((l) => l.startsWith('VITE_GAME_WS='));
-  return line ? line.slice('VITE_GAME_WS='.length).trim() : null;
-}
-
-/** The dev kiosk is shared by every spec: end whatever session it is in before each test, over
- * an independent socket, so a session another spec left in 'playing' cannot hide the attract
- * screen this spec starts from. */
-function resetKioskSession() {
-  return new Promise((resolve, reject) => {
-    const url = gameWsUrl();
-    expect(url, 'VITE_GAME_WS is not set in .env').toBeTruthy();
-    const ws = new WebSocket(url);
-    const timer = setTimeout(() => {
-      ws.terminate();
-      reject(new Error('timed out resetting the kiosk session'));
-    }, 8000);
-    ws.on('open', () => ws.send(JSON.stringify({ type: 'auth', kiosk: KIOSK_SECRET })));
-    ws.on('message', (data) => {
-      const frame = JSON.parse(data.toString());
-      if (frame.type === 'welcome') ws.send(JSON.stringify({ type: 'kiosk_reset' }));
-      if (frame.type === 'kiosk_session' && frame.state === 'idle') {
-        clearTimeout(timer);
-        ws.close();
-        resolve(frame);
-      }
-    });
-    ws.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-  });
-}
 const CLAIM_URL = 'http://localhost:5359/claim/b14-exact-claim-token-1234';
 
 function settledFrame(streak, extra = {}) {
@@ -90,12 +46,10 @@ async function expectDisplayedStreak(page, streak) {
 test.describe.serial('kiosk streak QR claim screen', () => {
   test.setTimeout(45000);
 
-  test.beforeEach(async () => {
-    await resetKioskSession();
-  });
-
+  // Each test gets its own fresh browser context (empty localStorage), so /kiosk self-provisions
+  // a brand-new, already-idle kiosk identity every time - no shared dev secret to reset anymore.
   test('shows the QR claim screen with no code, and the button resets to ATTRACT', async ({ page }) => {
-    await page.goto(KIOSK_URL);
+    await page.goto('/kiosk');
     await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
     await page.locator('.btn-start').click();
     await dismissFirstVisit(page);
@@ -128,7 +82,7 @@ test.describe.serial('kiosk streak QR claim screen', () => {
   });
 
   test('does not hide the QR screen before its own 20-second contract window', async ({ page }) => {
-    await page.goto(KIOSK_URL);
+    await page.goto('/kiosk');
     await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
     await page.locator('.btn-start').click();
     await dismissFirstVisit(page);

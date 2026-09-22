@@ -25,7 +25,7 @@ supabase/.temp
 # per-machine Claude Code permissions
 .claude/settings.local.json
 
-# demo kiosk launch URLs contain secrets
+# per-machine demo window overrides (run-demo.mjs --kiosks-file)
 demo/kiosks.json
 
 # local compose port override (IIS holds :80 on the dev machine)
