@@ -377,7 +377,12 @@ function interpolate(str, vars) {
 export function makeT(lang) {
   const d = dict[lang] || dict.en;
   return (path, vars) => {
-    const val = path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), d);
+    let val = path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), d);
+    // A key missing from the active dictionary falls back to English rather than rendering the
+    // raw key path at the booth.
+    if (typeof val !== 'string' && d !== dict.en) {
+      val = path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), dict.en);
+    }
     if (typeof val !== 'string') return path;
     return vars ? interpolate(val, vars) : val;
   };

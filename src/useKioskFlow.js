@@ -152,16 +152,33 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
   );
 
   // "Reconnecting..." only after the socket has been up at least once - the very first connect
-  // is ordinary startup, not a drop.
-  useEffect(
-    () =>
-      onStatus((s) => {
-        if (s.connected) hasConnectedRef.current = true;
-        setReconnecting(hasConnectedRef.current && !s.connected);
-        setKioskUnauthorized(Boolean(s.kioskUnauthorized));
-      }),
-    [],
-  );
+  // is ordinary startup, not a drop. Transient hiccups (< 5s) are smoothed out to prevent
+  // disruptive modal flicker on the booth touchscreen.
+  const RECONNECTING_DELAY_MS = 5000;
+  useEffect(() => {
+    let reconnectTimer = null;
+    const unsub = onStatus((s) => {
+      if (s.connected) {
+        hasConnectedRef.current = true;
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = null;
+        }
+        setReconnecting(false);
+      } else if (hasConnectedRef.current) {
+        if (!reconnectTimer) {
+          reconnectTimer = setTimeout(() => {
+            setReconnecting(true);
+          }, RECONNECTING_DELAY_MS);
+        }
+      }
+      setKioskUnauthorized(Boolean(s.kioskUnauthorized));
+    });
+    return () => {
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      unsub();
+    };
+  }, []);
 
   // Any activity anywhere restarts the idle window and hides an overlay that is already showing
   // (ticket C2b). The listeners stay attached on every screen; only the PLAYING interval below
@@ -240,6 +257,7 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
      * starting PLAYING directly; dismissIntro below is what actually starts it. Every later tap
      * this boot skips straight to PLAYING. */
     startPlaying: () => {
+      if (screenRef.current !== 'attract') return;
       if (!introShownThisBoot) {
         setShowIntro(true);
         return;
@@ -250,6 +268,7 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
     /** The intro's single button. Counts as activity (docs/layers.md: "must not interfere with
      * the idle countdown") since it is the moment PLAYING actually starts. */
     dismissIntro: () => {
+      if (!showIntro) return;
       introShownThisBoot = true;
       setShowIntro(false);
       setScreen('playing');
@@ -260,8 +279,10 @@ export function useKioskFlow({ onReturnToAttract } = {}) {
       lastActivityRef.current = Date.now();
       setAbandonSecondsLeft(null);
     },
-    /** Claim (WON) / Done (BROKE): ends the session server-side and returns to ATTRACT. */
+    /** Claim (WON) / Done (BROKE): ends the session server-side and returns to ATTRACT.
+     * Guarded against duplicate taps on touchscreen hardware during transitions. */
     claimOrDone: () => {
+      if (screenRef.current !== 'won' && screenRef.current !== 'broke') return;
       kioskReset();
       goToAttract();
     },
