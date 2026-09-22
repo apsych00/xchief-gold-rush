@@ -44,3 +44,6 @@ docs/reports/**/*.jpg
 docs/reports/**/*.jpeg
 docs/reports/**/*.webp
 test-results/
+
+# live voucher codes - never commit
+real-coupons.txt
