@@ -12,6 +12,7 @@ import { Console, TopBar } from './App.jsx';
 import { SHARE_URL } from './config.js';
 import { useLang } from './i18n.js';
 import { QR_MS, useKioskFlow } from './useKioskFlow.js';
+import { useKioskAutoReload } from './useKioskAutoReload.js';
 
 // A small "Play on web" QR on the attract screen (owner 2026-09-18): booth visitors can carry the
 // campaign home by scanning the public web version. SHARE_URL is the app's own public web origin
@@ -86,9 +87,7 @@ function KioskWonModal({ claimUrl, secondsLeft, onScanned }) {
   // Fixed once per mount: the countdown bar's own denominator, read from the same DEV-only hook
   // src/useKioskFlow.js's timer reads, so a test that shrinks QR_MS still sees a bar that reaches
   // full width exactly when the button's own timer resets the kiosk.
-  const totalSecRef = useRef(
-    Math.ceil(((import.meta.env.DEV && window.__xchief?.kioskTiming?.QR_MS) || QR_MS) / 1000),
-  );
+  const totalSecRef = useRef(Math.ceil(((import.meta.env.DEV && window.__xchief?.kioskTiming?.QR_MS) || QR_MS) / 1000));
 
   useEffect(() => {
     if (!claimUrl) {
@@ -153,13 +152,7 @@ function KioskBrokeModal({ secondsLeft, onDone }) {
 
 function KioskAbandonOverlay({ secondsLeft, onTap }) {
   return (
-    <div
-      className="modal-backdrop"
-      role="alertdialog"
-      aria-live="assertive"
-      aria-label="Still there"
-      onClick={onTap}
-    >
+    <div className="modal-backdrop" role="alertdialog" aria-live="assertive" aria-label="Still there" onClick={onTap}>
       <div className="modal kiosk-modal">
         <div className="modal-title">Still there?</div>
         <div className="modal-sub">Resetting in {secondsLeft}s - tap anywhere to keep playing</div>
@@ -176,8 +169,8 @@ function KioskNoCodesModal() {
       <div className="modal kiosk-modal">
         <div className="modal-title">All the prizes are gone</div>
         <div className="modal-sub">
-          Every $100 code for today has been won. Tell someone at the xChief booth you&apos;d like to play - they
-          can load more prizes in a minute.
+          Every $100 code for today has been won. Tell someone at the xChief booth you&apos;d like to play - they can
+          load more prizes in a minute.
         </div>
         <div className="modal-sub">This screen updates by itself.</div>
       </div>
@@ -228,6 +221,10 @@ function KioskReconnecting({ unauthorized }) {
 export default function KioskApp({ state, profile, actions, trackRef }) {
   const flow = useKioskFlow({ onReturnToAttract: actions.goHome });
   const showAttractScreen = flow.screen === 'attract' || flow.screen === 'no_codes';
+  // Picks up a new deploy on its own, from the attract screen only (see useKioskAutoReload).
+  // Held off while the socket is down: reloading into an outage replaces a screen that is
+  // trying to recover with one that starts from nothing.
+  useKioskAutoReload(flow.screen, { enabled: !flow.reconnecting && !flow.kioskUnauthorized });
 
   return (
     <>
@@ -239,23 +236,17 @@ export default function KioskApp({ state, profile, actions, trackRef }) {
           streakTarget={flow.streakTarget}
         />
       )}
-      {!showAttractScreen && (
-        <Console state={state} profile={profile} actions={actions} trackRef={trackRef} />
-      )}
+      {!showAttractScreen && <Console state={state} profile={profile} actions={actions} trackRef={trackRef} />}
       {flow.screen === 'won' && (
         <KioskWonModal claimUrl={flow.claimUrl} secondsLeft={flow.modalSecondsLeft} onScanned={flow.claimOrDone} />
       )}
-      {flow.screen === 'broke' && (
-        <KioskBrokeModal secondsLeft={flow.modalSecondsLeft} onDone={flow.claimOrDone} />
-      )}
+      {flow.screen === 'broke' && <KioskBrokeModal secondsLeft={flow.modalSecondsLeft} onDone={flow.claimOrDone} />}
       {flow.screen === 'no_codes' && <KioskNoCodesModal />}
       {flow.abandonSecondsLeft !== null && (
         <KioskAbandonOverlay secondsLeft={flow.abandonSecondsLeft} onTap={flow.cancelAbandon} />
       )}
       {flow.showIntro && <KioskIntroModal streakTarget={flow.streakTarget} onDone={flow.dismissIntro} />}
-      {(flow.reconnecting || flow.kioskUnauthorized) && (
-        <KioskReconnecting unauthorized={flow.kioskUnauthorized} />
-      )}
+      {(flow.reconnecting || flow.kioskUnauthorized) && <KioskReconnecting unauthorized={flow.kioskUnauthorized} />}
     </>
   );
 }

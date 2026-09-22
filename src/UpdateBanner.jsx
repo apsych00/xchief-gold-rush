@@ -23,9 +23,17 @@ export function reloadFresh() {
   window.location.replace(url.toString());
 }
 
-export default function UpdateBanner() {
-  const { t } = useLang();
-  const [stale, setStale] = useState(false);
+/** The build id baked into this bundle, or 'dev' when running from the Vite dev server. */
+export const RUNNING_BUILD = RUNNING;
+
+/**
+ * Polls the deployed build id and returns it (null until the first answer lands). The web app
+ * turns a difference into a banner to tap; the kiosk (useKioskAutoReload) acts on it without
+ * asking, because nobody is standing there to tap anything. The kiosk needs the id itself, not
+ * just "stale", so it can avoid chasing the same build twice - see kioskAutoReload.js.
+ */
+export function useDeployedBuildId() {
+  const [deployed, setDeployed] = useState(null);
 
   useEffect(() => {
     if (RUNNING === 'dev') return undefined;
@@ -33,7 +41,7 @@ export default function UpdateBanner() {
     const check = async () => {
       try {
         const id = await fetchDeployedId();
-        if (!cancelled && id && id !== RUNNING) setStale(true);
+        if (!cancelled && id) setDeployed(id);
       } catch {
         /* offline or blocked: try again later */
       }
@@ -50,6 +58,19 @@ export default function UpdateBanner() {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
+
+  return deployed;
+}
+
+/** True once the deployed build id differs from the one baked into this bundle. */
+export function useBuildIsStale() {
+  const deployed = useDeployedBuildId();
+  return Boolean(deployed && deployed !== RUNNING);
+}
+
+export default function UpdateBanner() {
+  const { t } = useLang();
+  const stale = useBuildIsStale();
 
   if (!stale) return null;
   return (
