@@ -49,7 +49,9 @@ const COIN_PX = COIN_MAP.flatMap((row, r) =>
   }),
 );
 
-const KNOB_TOP = { 1: 134, 2: 67, 5: 0 };
+// Fraction of the knob's travel (track height minus knob height, both --knob-h
+// driven so this stays correct across breakpoints that resize the slider).
+const KNOB_FRAC = { 1: 1, 2: 0.5, 5: 0 };
 
 /* ---------- icons ---------- */
 
@@ -428,8 +430,6 @@ function Display({ state, profile, actions }) {
   const deltaColor = up ? GREEN : RED;
   const digit = isRunning ? Math.max(1, Math.ceil(remaining)) : 0;
   const stake = stakeFor(lev);
-  const isNewRecord =
-    isResult && result?.outcome === 'win' && profile.coins === profile.record && profile.record > ECON.startCoins;
   const curMult = comboMult(profile.streak); // multiplier the NEXT win will pay
   const potential = Math.round(stake * curMult);
   // Ask for the email once, right after the first win: the player now has a
@@ -522,18 +522,8 @@ function Display({ state, profile, actions }) {
                   <span className="win-word">WIN</span>
                   <span className="win-mult">×{lev}</span>
                 </div>
-                <div className="result-line">{isNewRecord ? t('result.newRecord') : t('result.winTitle')}</div>
                 <div className="result-points">{t('result.winDelta', { n: num(result.delta, lang) })}</div>
-                <div className="result-sub">
-                  {result.mult > 1
-                    ? t('result.streakTag', {
-                        n: num(result.streak, lang),
-                        stake: num(result.stake, lang),
-                        mult: num(result.mult, lang),
-                      })
-                    : t('result.winSub', { stake: num(result.stake, lang), mult: num(1, lang) })}
-                  {result.badge ? ` · ${t(`result.badge.${result.badge}`)}` : ''}
-                </div>
+                {result.badge && <div className="result-sub">{t(`result.badge.${result.badge}`)}</div>}
                 <div className="result-next">
                   {profile.streak >= ECON.combo.length - 1
                     ? t('result.maxCombo', { mult: num(COMBO_MAX, lang) })
@@ -555,7 +545,6 @@ function Display({ state, profile, actions }) {
                 <div className="miss-word" dir="ltr">
                   MISS
                 </div>
-                <div className="result-line miss-line">{t('result.missTitle')}</div>
                 <div className="result-points result-points-neg">
                   {/* result.delta is the frame's own number (server/rounds.js, round_settled): for a
                       loss it is already -stake, so the amount shown here is the server's figure,
@@ -755,7 +744,11 @@ export function Console({ state, profile, actions, trackRef, onOpenIdentity }) {
             onKeyDown={onKey}
           >
             <div className="slider-track" />
-            <div className="slider-knob" style={{ top: KNOB_TOP[lev] }} dir="ltr">
+            <div
+              className="slider-knob"
+              style={{ top: `calc((100% - var(--knob-h)) * ${KNOB_FRAC[lev]})` }}
+              dir="ltr"
+            >
               ×{lev}
             </div>
           </div>

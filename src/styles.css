@@ -1147,6 +1147,7 @@ button:focus:not(:focus-visible) {
   box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.8);
 }
 .slider-knob {
+  --knob-h: 36px;
   position: absolute;
   left: 12px;
   width: 36px;
@@ -2641,39 +2642,78 @@ button:focus:not(:focus-visible) {
   }
 
   /* ---- play screen: gold console body ----
-     The console art (Up/Down buttons, lever, level label) still scales at full
-     --s so it stays a comfortable booth tap target. We only close the slack the
-     phone layout leaves around the cluster: the level label, lever, ticks and
-     Up/Down group all ride up together and the hint tucks in right under the
-     lever, so the panel is shorter with no clipping (owner 2026-09-18). The 170px
-     lever height is untouched (its knob stops live in App.jsx's shared KNOB_TOP),
-     so the whole cluster shifts as a unit - label -4px, the lever/tick/button
-     group -6px, hint -12px - and the body cap drops from 250px to 230px, which
-     still leaves a few px of breathing room under the hint (no clipping). */
+     Portrait booths were starving the display pane (chart, price, countdown,
+     lock note) for room, so the console art is shrunk 15% geometrically - real
+     px dimensions and offsets, not a transform: scale() layered on top of --s -
+     to hand that space back to the top pane. Every box, offset and font below is
+     the old value × 0.85, keeping the cluster's proportions intact (owner
+     2026-09-22). */
   .app-kiosk .body {
-    height: calc(230px * var(--s));
+    height: calc(195.5px * var(--s));
+  }
+  .app-kiosk .body-scale {
+    width: 331.5px;
+    height: 246.5px;
   }
   .app-kiosk .lev-label {
-    top: 10px;
+    top: 8.5px;
+    font-size: 13.6px;
+  }
+  .app-kiosk .lev-label-x {
+    font-size: 14.45px;
+  }
+  .app-kiosk .lev-stake {
+    font-size: 11.05px;
   }
   .app-kiosk .btn-dir {
-    top: 74px;
+    top: 62.9px;
+    width: 88.4px;
+    height: 88.4px;
+    font-size: 16.15px;
+  }
+  .app-kiosk .btn-down {
+    left: 23.8px;
+  }
+  .app-kiosk .btn-up {
+    right: 23.8px;
   }
   .app-kiosk .slider {
-    top: 38px;
+    top: 32.3px;
+    width: 51px;
+    height: 144.5px;
+    margin-left: -25.5px;
+  }
+  .app-kiosk .slider-track {
+    left: 19.55px;
+    width: 11.9px;
+    height: 144.5px;
+  }
+  .app-kiosk .slider-knob {
+    --knob-h: 30.6px;
+    width: 30.6px;
+    height: 30.6px;
+    left: 10.2px;
+    font-size: 9.35px;
+  }
+  .app-kiosk .tick {
+    width: 30.6px;
+    height: 27.2px;
+    margin-left: 11.9px;
+    font-size: 11.9px;
   }
   .app-kiosk .tick-5 {
-    top: 40px;
+    top: 34px;
   }
   .app-kiosk .tick-2 {
-    top: 107px;
+    top: 90.95px;
   }
   .app-kiosk .tick-1 {
-    top: 174px;
+    top: 147.9px;
   }
   .app-kiosk .body-hint {
-    top: 210px;
+    top: 178.5px;
     bottom: auto;
+    font-size: 10.2px;
   }
 
   /* ---- kiosk modals: QR claim, broke, abandon, intro, no-codes, reconnect ---- */
