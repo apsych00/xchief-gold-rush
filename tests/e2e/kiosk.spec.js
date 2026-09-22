@@ -461,3 +461,278 @@ test.describe.serial('open kiosk route /kiosk', () => {
     await context2.close();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Gap cases from TICKET.md: the post-win kiosk/claim flow.
+// ---------------------------------------------------------------------------
+
+async function decodeQr(page) {
+  const locator = page.locator('.kiosk-qr');
+  await expect(locator).toHaveAttribute('src', /^data:image/, { timeout: 5000 });
+  const src = await locator.getAttribute('src');
+  const { data, width, height } = await page.evaluate(async (srcUrl) => {
+    const img = new Image();
+    img.src = srcUrl;
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    return {
+      data: Array.from(ctx.getImageData(0, 0, img.width, img.height).data),
+      width: img.width,
+      height: img.height,
+    };
+  }, src);
+  const jsQR = (await import('jsqr')).default;
+  const code = jsQR(Uint8ClampedArray.from(data), width, height);
+  return code?.data ?? null;
+}
+
+function injectKioskWin(page, claimUrl) {
+  return page.evaluate((url) => {
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    window.__xchief.inject({
+      type: 'round_settled',
+      round_id: 'gap-synthetic-round',
+      outcome: 'win',
+      delta: 300,
+      mult: 3,
+      coins: 1500,
+      streak: 0,
+      claim_url: url,
+      claim_expires_at: expiresAt,
+      coupons_exhausted: false,
+      state: 'won',
+      start_price: 2000,
+      end_price: 2001,
+    });
+    window.__xchief.inject({
+      type: 'kiosk_session',
+      coins: 1500,
+      streak: 0,
+      state: 'won',
+      codes_left: 1,
+      streak_target: 3,
+      claim_url: url,
+      claim_expires_at: expiresAt,
+    });
+  }, claimUrl);
+}
+
+async function mintClaimLinkForKiosk(kioskId, code, token, expiresAt) {
+  const { default: pg } = await import('pg');
+  const pool = new pg.Pool({ connectionString: DATABASE_URL });
+  try {
+    const { rows: couponRows } = await pool.query(
+      "insert into public.coupons (code, status) values ($1, 'reserved') returning id",
+      [code],
+    );
+    await pool.query(
+      'insert into public.claim_links (token, coupon_id, kiosk_id, expires_at) values ($1, $2, $3, $4)',
+      [token, couponRows[0].id, kioskId, expiresAt],
+    );
+    return couponRows[0].id;
+  } finally {
+    await pool.end();
+  }
+}
+
+async function devKioskId() {
+  const { default: pg } = await import('pg');
+  const pool = new pg.Pool({ connectionString: DATABASE_URL });
+  try {
+    const { rows } = await pool.query("select id from public.kiosks where label = 'dev-kiosk'");
+    return rows[0]?.id;
+  } finally {
+    await pool.end();
+  }
+}
+
+async function kioskIdBySecret(secret) {
+  const { default: pg } = await import('pg');
+  const pool = new pg.Pool({ connectionString: DATABASE_URL });
+  try {
+    const { rows } = await pool.query('select public.verify_kiosk($1) as id', [secret]);
+    return rows[0]?.id;
+  } finally {
+    await pool.end();
+  }
+}
+
+function hasPersianOrArabic(text) {
+  return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+}
+
+test.describe.serial('post-win kiosk flow gaps (TICKET.md)', () => {
+  test.setTimeout(120000);
+
+  test('W1. the QR code encodes the exact claim link the server issued', async ({ page }) => {
+    await tapToPlay(page);
+    const claimUrl = `${new URL(page.url()).origin}/claim/w1-synthetic-token`;
+    await injectKioskWin(page, claimUrl);
+    await expect(page.locator('.kiosk-qr')).toBeVisible({ timeout: 5000 });
+    const decoded = await decodeQr(page);
+    expect(decoded).toBe(claimUrl);
+  });
+
+  test('W2. activity during the prize countdown does not extend it', async ({ page }) => {
+    await tapToPlay(page);
+    const claimUrl = `${new URL(page.url()).origin}/claim/w2-synthetic-token`;
+    await page.evaluate(() => {
+      window.__xchief.kioskTiming.QR_MS = 1500;
+    });
+    await injectKioskWin(page, claimUrl);
+    await expect(page.locator('.kiosk-qr')).toBeVisible({ timeout: 5000 });
+
+    const started = Date.now();
+    while (Date.now() - started < 1200) {
+      await page.mouse.click(100, 100);
+      await page.waitForTimeout(150);
+    }
+
+    await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.kiosk-qr')).toHaveCount(0);
+  });
+
+  test('W3. the prize screen never reveals the coupon code', async ({ page }) => {
+    await tapToPlay(page);
+    const secret = await kioskSecret(page);
+    const suffix = Date.now();
+    const code = `GAP-SCREEN-SECRET-${suffix}`;
+    const token = `w3-real-token-${suffix}`;
+    const kioskId = await kioskIdBySecret(secret);
+    const claimUrl = `${new URL(page.url()).origin}/claim/${token}`;
+    await mintClaimLinkForKiosk(kioskId, code, token, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
+    await injectKioskWin(page, claimUrl);
+    await expect(page.locator('.kiosk-qr')).toBeVisible({ timeout: 5000 });
+
+    const html = await page.content();
+    expect(html.includes(code)).toBe(false);
+    await expect(page.getByText(code)).toHaveCount(0);
+  });
+
+  test('W4. no Persian text appears on the prize screen', async ({ page }) => {
+    await tapToPlay(page);
+    const claimUrl = `${new URL(page.url()).origin}/claim/w4-synthetic-token`;
+    await injectKioskWin(page, claimUrl);
+    await expect(page.locator('.kiosk-qr')).toBeVisible({ timeout: 5000 });
+
+    const text = await page.locator('body').innerText();
+    expect(hasPersianOrArabic(text)).toBe(false);
+  });
+
+  test('C4. an expired link tells the winner what to do', async ({ page }) => {
+    const suffix = Date.now();
+    const code = `C4-EXPIRED-${suffix}`;
+    const token = `c4-expired-token-${suffix}`;
+    const kioskId = await devKioskId();
+    await mintClaimLinkForKiosk(
+      kioskId,
+      code,
+      token,
+      new Date(Date.now() - 60 * 1000).toISOString(),
+    );
+    await page.goto(`/claim/${token}`);
+    await expect(page.getByText('Your xChief $100 bonus')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('This link has expired. Ask the booth staff.')).toBeVisible();
+    await expect(page.getByText(code)).toHaveCount(0);
+    await expect(page.locator('input[type="email"]')).toHaveCount(0);
+  });
+
+  test('C5. an unknown token is refused gracefully', async ({ page }) => {
+    await page.goto('/claim/this-token-was-never-issued-xyz');
+    await expect(page.getByText('Your xChief $100 bonus')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('This link is not valid.')).toBeVisible();
+    await expect(page.locator('input[type="email"]')).toHaveCount(0);
+  });
+
+  test('C6. a claim link outlives the booth session that created it', async ({ page, context }) => {
+    await tapToPlay(page);
+    const secret = await kioskSecret(page);
+    const suffix = Date.now();
+    const code = `C6-OUTLIVES-${suffix}`;
+    const token = `c6-outlives-token-${suffix}`;
+    const kioskId = await kioskIdBySecret(secret);
+    const claimUrl = `${new URL(page.url()).origin}/claim/${token}`;
+    await mintClaimLinkForKiosk(kioskId, code, token, new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
+    await injectKioskWin(page, claimUrl);
+    await expect(page.locator('.kiosk-qr')).toBeVisible({ timeout: 5000 });
+
+    // Reset the booth as if the next visitor is waiting.
+    await page.getByRole('button', { name: "I've scanned it" }).click();
+    await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
+
+    // The next visitor plays a round before the original winner claims.
+    await page.locator('.btn-start').click();
+    await dismissFirstVisit(page);
+    await playRound(page, 'up');
+
+    const claimPage = await context.newPage();
+    await claimPage.goto(`/claim/${token}`);
+    await expect(claimPage.getByText('Your xChief $100 bonus')).toBeVisible({ timeout: 10000 });
+    await claimPage.locator('input[type="email"]').fill('c6-winner@example.com');
+    await claimPage.getByRole('button', { name: 'Get my code' }).click();
+    await expect(claimPage.getByText(code)).toBeVisible({ timeout: 10000 });
+    await claimPage.close();
+  });
+
+  test('C8. an invalid email is refused without reaching the server', async ({ page }) => {
+    const suffix = Date.now();
+    const code = `C8-INVALID-${suffix}`;
+    const token = `c8-invalid-token-${suffix}`;
+    const kioskId = await devKioskId();
+    await mintClaimLinkForKiosk(
+      kioskId,
+      code,
+      token,
+      new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    );
+    await page.goto(`/claim/${token}`);
+    await expect(page.getByText('Your xChief $100 bonus')).toBeVisible({ timeout: 10000 });
+
+    let requestCount = 0;
+    await page.route(/\/api\/claim\//, (route) => {
+      requestCount += 1;
+      return route.fulfill({ status: 500, body: JSON.stringify({ error: 'should not reach server' }) });
+    });
+
+    await page.locator('input[type="email"]').fill('not-an-email');
+    await page.getByRole('button', { name: 'Get my code' }).click();
+    await expect(page.getByText('Enter a valid email')).toBeVisible();
+    expect(requestCount).toBe(0);
+
+    await page.unroute(/\/api\/claim\//);
+    await page.locator('input[type="email"]').fill('c8-winner@example.com');
+    await page.getByRole('button', { name: 'Get my code' }).click();
+    await expect(page.getByText(code)).toBeVisible({ timeout: 10000 });
+  });
+
+  test('C9. the claim page works on a phone', async ({ page }) => {
+    const suffix = Date.now();
+    const code = `C9-PHONE-${suffix}`;
+    const token = `c9-phone-token-${suffix}`;
+    const kioskId = await devKioskId();
+    await mintClaimLinkForKiosk(
+      kioskId,
+      code,
+      token,
+      new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    );
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/claim/${token}`);
+    await expect(page.getByText('Your xChief $100 bonus')).toBeVisible({ timeout: 10000 });
+    await page.locator('input[type="email"]').fill('c9-phone@example.com');
+    await page.getByRole('button', { name: 'Get my code' }).click();
+    await expect(page.getByText(code)).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('.claim-copy-btn')).toBeVisible();
+    await expect(page.locator('.claim-copy-btn')).toBeInViewport();
+
+    const noHorizontalScroll = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+    expect(noHorizontalScroll).toBe(true);
+  });
+});
