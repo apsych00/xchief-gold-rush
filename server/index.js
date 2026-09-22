@@ -588,7 +588,7 @@ export function createApp({
       sendJson(res, 429, { ok: false, error: 'rate_limited', retry_ms: budget.retryMs });
       return;
     }
-    const max = Number(process.env.KIOSK_OPEN_MAX) || 50;
+    const max = Number(process.env.KIOSK_OPEN_MAX) || 100;
     try {
       const kiosk = await ledger.createOpenKiosk(max);
       sendJson(res, 200, kiosk);
