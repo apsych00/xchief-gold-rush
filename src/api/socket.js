@@ -92,19 +92,18 @@ function clearStoredKiosk() {
   }
 }
 
-/** The kiosk's bearer secret: ?k= on a seeded launch URL, or the stored open-kiosk secret on
- * /kiosk. The open-kiosk secret is cached after provisioning so authFrame sees it on reconnect. */
+/** The kiosk's bearer secret: the stored open-kiosk secret on /kiosk, cached after provisioning
+ * so authFrame sees it on reconnect. Null everywhere else - a kiosk identity only ever comes from
+ * device storage now (ticket S3 removed the old `?k=` launch-URL secret entirely). */
 export function getKioskSecret() {
   if (cachedKioskSecret) return cachedKioskSecret;
-  if (isKioskPath()) {
-    const stored = readStoredKiosk();
-    if (stored?.secret) {
-      cachedKioskSecret = stored.secret;
-      return stored.secret;
-    }
-    return null;
+  if (!isKioskPath()) return null;
+  const stored = readStoredKiosk();
+  if (stored?.secret) {
+    cachedKioskSecret = stored.secret;
+    return stored.secret;
   }
-  return new URLSearchParams(window.location.search).get('k');
+  return null;
 }
 
 /** Open kiosk route (ticket K1): call the server's public provision endpoint, store the result,
@@ -209,19 +208,16 @@ let lastFrameQuiet = false; // the server's movement-based quiet flag from the l
 let lastTickAt = null;
 let isKiosk = false;
 let token = null;
-// D7 (docs/reports/redteam.md): a kiosk whose secret the server rejected (revoked, empty,
-// too short) - reconnect will keep retrying the same bad secret forever, so this stays true
-// across every retry until a `welcome` actually lands. Only ever set from a `k=` launch URL;
-// a web player never sees this. The open `/kiosk` route never sets this flag - see
-// needsReprovision below, which self-heals instead of getting stuck here.
+// True while `/kiosk` itself cannot get a usable kiosk identity: provisioning failed outright
+// (see connect() below), or - only in the narrow window before a reprovision completes - the
+// stored secret was just rejected. A web player never sees this.
 let kioskUnauthorized = false;
 // Booth bug fix: the open `/kiosk` route's stored secret can outlive the kiosk row it names (a
 // DB reset, a redeploy that resets the db, or a manual revoke). When the server rejects it with
 // kiosk_unauthorized, the handler below clears the stored secret and sets this flag; the next
 // scheduled reconnect (still governed by the normal backoff, so this never hammers the server)
 // re-provisions a fresh kiosk before it tries to open a socket again, instead of looping forever
-// on the same dead secret. Never set for the ?k= launch-URL route - that one is not
-// self-provisioning and keeps surfacing kioskUnauthorized as before.
+// on the same dead secret.
 let needsReprovision = false;
 // Ticket OD1: the WS upgrade path's own 429 (S2's per-IP connection window) refuses the TCP
 // handshake before any WebSocket frame exists (server/index.js's `upgrade` handler writes the
@@ -462,18 +458,12 @@ function handleMessage(frame) {
       // ws-level pongs answer the server's heartbeat automatically; nothing to send back.
       break;
     case 'error':
-      // D7: the server fails a rejected kiosk secret closed with kiosk_unauthorized, then closes
-      // the socket (4401) - onclose schedules a reconnect that will just fail the same way, so
-      // this flag (not the ordinary `reconnecting` status, which never lands without a prior
-      // `welcome`) is what tells the kiosk shell to show its own error state.
+      // The server fails a rejected kiosk secret closed with kiosk_unauthorized, then closes the
+      // socket (4401) - onclose schedules a reconnect that would otherwise just fail the same way
+      // forever on a secret the server no longer recognizes. Drop it and re-provision instead.
       if (frame.code === 'kiosk_unauthorized' && getKioskSecret() !== null) {
-        if (isKioskPath()) {
-          clearStoredKiosk();
-          needsReprovision = true;
-        } else {
-          kioskUnauthorized = true;
-          notifyStatus();
-        }
+        clearStoredKiosk();
+        needsReprovision = true;
       }
       settlePending(frame);
       break;
@@ -484,8 +474,10 @@ function handleMessage(frame) {
 }
 
 function authFrame() {
-  // D7 (docs/reports/redteam.md): presence, not truthiness - an empty `?k=` still authenticates
-  // as a kiosk (and fails closed there) rather than silently falling through to a web player.
+  // Presence, not truthiness: getKioskSecret() only ever returns a real secret or null, but the
+  // auth frame still keys off `!== null` rather than truthiness so a future empty-string secret
+  // (there is currently no way to produce one) would authenticate as a kiosk and fail closed
+  // there, never fall through and be welcomed as a web player (closed finding, docs/reports/redteam.md D7).
   const kioskSecret = getKioskSecret();
   if (kioskSecret !== null) return { type: 'auth', kiosk: kioskSecret };
   const frame = { type: 'auth' };

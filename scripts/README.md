@@ -15,8 +15,8 @@ the Docker network, so use the `box:` variants, which run the same script
 inside the server container (see `docs/box-deploy.md`):
 
 ```
-npm run box:kiosk:new -- booth-1 https://goldrush.example.com   # on the box
-DATABASE_URL=postgresql://postgres:...@localhost:5432/postgres npm run kiosk:new -- booth-1   # local dev
+npm run box:kiosk:revoke -- booth-1   # on the box
+DATABASE_URL=postgresql://postgres:...@localhost:5432/postgres npm run kiosk:list   # local dev
 ```
 
 Every script also accepts `--dry-run`, which prints the SQL that would run and
@@ -26,8 +26,7 @@ exits 0 without touching the database.
 
 | Script                            | npm              | box npm (on the deployed box) | What it does                                                                                                                                                                                                              |
 | --------------------------------- | ---------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gen-kiosk.mjs <label> [baseUrl]` | `kiosk:new`      | `box:kiosk:new`               | Generates a 32-char URL-safe secret, stores only its bcrypt hash, prints the launch URL `<baseUrl>/?k=<secret>` once (default base `http://localhost:5173`). The secret is not recoverable; lose it, revoke and re-issue. |
-| `revoke-kiosk.mjs <label>`        | `kiosk:revoke`   | `box:kiosk:revoke`            | Sets the kiosk's status to `revoked`; prints rows affected.                                                                                                                                                               |
+| `revoke-kiosk.mjs <label>`        | `kiosk:revoke`   | `box:kiosk:revoke`            | Sets the kiosk's status to `revoked`; prints rows affected. A booth device provisions its own identity at `/kiosk` - there is no longer a way to mint one from the command line (ticket S3). |
 | `list-kiosks.mjs`                 | `kiosk:list`     | `box:kiosk:list`              | Lists label, status, streak, created_at for every kiosk.                                                                                                                                                                  |
 | `export-coupons.mjs`              | `coupons:export` | `box:coupons:export`          | Prints all coupons as CSV `code,status,claimed_at`, oldest first. Redirect to a file: `npm run box:coupons:export > coupons.csv`.                                                                                         |
 | `load-coupons.mjs <file>`         | `coupons:load`   | `box:coupons:load -- <name>`  | Loads codes from a text file (one per line). Duplicates are skipped, so re-running is safe. Prints the inserted count. The `box:` form sees files in the repo directory as `/work`.                                       |

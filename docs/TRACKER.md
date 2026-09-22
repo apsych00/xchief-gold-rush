@@ -11,7 +11,7 @@ Layer: `L1` the game on the box · `L1.5` client experience · `L2` hardening ·
 |---|---|---|---|
 | L1 game on the box | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 7/7 | 0 | complete, load-tested (100 sockets, p95 settle 5024 ms), rehearsed through compose + Caddy |
 | L1.5 client experience | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 18/19 | C4b animation ⏳, Q1 rest 🟡 | booth and web flows built and verified end to end; red team: every loophole fixed (C10) |
-| L2 hardening | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 7/18 | S1, S3, S5, S6, S8, S10, S11, S12, S14, S15 are M2 scope creep | S2 rate limits and S18 safe mode merged; production numbers under review with the owner |
+| L2 hardening | 🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜ 8/18 | S1, S5, S6, S8, S10, S11, S12, S14, S15 are M2 scope creep | S2 rate limits, S18 safe mode and S3 kiosk secret out of the URL merged; production numbers under review with the owner |
 | MKT Part B | 🟩🟩🟩🟩🟩🟩🟩🟩🟩⬜ 15/16 | B12 ⏳ (content, marketing) | B1, B4, B5, B14, B15 (build), B16 done |
 | OPS | 🟩🟩🟩🟩🟩🟩⬜⬜⬜⬜ 3/5 | D3 run on the box, D4 schema apply (M2) | deploy scripts built; first real run happens on the box |
 | FEED | 🟩🟩🟩🟩🟩🟩🟩🟩⬜⬜ 4/5 | S17 MetaApi ⛔ admin (may be moot: the Docker bridge is live with the demo account) | Finnhub live with PAXG fallbacks, 3-decimal publishing |
@@ -162,7 +162,6 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | X1 | red team | `/status` and `/health` answer anyone (D6) | low | M2, basic_auth on `/status` in Caddy if the admin wants it |
 | X2 | red team | `npm run format:check` red on pre-existing files (G5) | low | any idle worker |
 | X3 | tracker audit | S5/S15 Postgres least privilege, S6 nightly dump and restore | medium | M2 |
-| X4 | tracker audit | S3 kiosk secret out of the URL | medium | M2 (needs a booth procedure) |
 | X5 | tracker audit | S1 secret rotation procedure, S11 code retention | low | M2 |
 | X6 | U1 | `README.md`, `CONTRIBUTING.md`, `relay/README.md` still tell developers to set `VITE_RELAY_URL` / `VITE_FINNHUB_TOKEN` for the client, which no longer reads them | low | any idle worker |
 | X7 | U1 | `Leaderboard` renders the offline dummy list (`{name, s}`) through the server branch when the fetch is refused, so React keys are `undefined` (console warning, no visible effect) | low | with C4b |
@@ -199,7 +198,7 @@ Four milestones, in order. Nothing outside the current milestone is picked up un
 | F1 | FEED | Finnhub + PAXG continuous series, 3 decimals | | ✅ done | measured 9 moves / 5 s vs 1-2 on PAXG | |
 | S1 | L2 | Secret rotation procedure | | ⏳ queued | folded into C3a except the procedure | |
 | S2 | L2 | Per-socket AND per-IP rate limits (sockets per IP, connections per minute, anonymous signups, OTP per IP, frame flood, frame size, play cadence), 15-minute IP block | Sonnet (cbx) | ✅ done | limits.js; load 100 sockets over 10 IPs p95 settle 5061 ms; merged; production numbers under review with the owner (venue NAT) | S18 next |
-| S3 | L2 | Kiosk secret out of the URL; scrub `k=` from Caddy logs | | ⏳ queued | audit: not done, secret still in `?k=` | |
+| S3 | L2 | Kiosk secret out of the URL; scrub `k=` from Caddy logs | | ✅ done | the `?k=<secret>` launch URL is removed everywhere (client, server comments, scripts, tests, demos, docs); `/kiosk` plus device storage is the only kiosk auth path; Caddy scrubs `k` from access logs; closes red team D7 | |
 | S4 | L2 | OTP on a known email logs into that player | | ✅ done | in C3a | |
 | S5 | L2 | Postgres least privilege: an `app` role | | ⏳ queued | audit: the server still connects as `postgres`; the compat roles exist only for pgTAP | |
 | S6 | L2 | Nightly `pg_dump` to object storage, one rehearsed restore | | ⏳ queued | audit: nothing yet | |

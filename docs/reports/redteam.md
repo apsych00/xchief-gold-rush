@@ -48,7 +48,7 @@ service-role function. The DEV cheat hook is not in a production build.
 | A4  | Two sockets on one token race a play                        | **HELD**     | Same player id; one `round_opened`, one `round_in_flight`.                    |
 | A5  | Dodge a loss: disconnect mid-round, then replay the play    | **HELD**     | Round settled anyway; replay refused; missed verdict delivered once.          |
 | A6  | Forged, expired and revoked player tokens (8 variants)      | **HELD**     | Every one became a fresh anonymous player, never the victim.                  |
-| A7  | Kiosk secret: guessing, length floor, reuse after revoke    | PARTIAL      | No guess authenticated; revoke enforced. See D7, D9, D10.                     |
+| A7  | Kiosk secret: guessing, length floor, reuse after revoke    | PARTIAL      | No guess authenticated; revoke enforced. See D7 (closed), D9, D10.            |
 | A8  | Web frames on a kiosk socket, kiosk frames on a web socket  | PARTIAL      | All player frames gated. `leaderboard` is not. See D8.                        |
 | A9  | Claim the same task twice, fast                             | **HELD**     | One claim row, one reward; the loser got `already_claimed`.                   |
 | A10 | Take the one-time free refill twice                         | **HELD**     | One grant of +300; every later call `already_refilled`.                       |
@@ -56,7 +56,7 @@ service-role function. The DEV cheat hook is not in a production build.
 | A12 | Take over someone else's verified email                     | **HELD**     | Eight ways in, all `expired_code`. Only the mailed code works.                |
 | A13 | `leaderboard` / `/status` leaking raw emails or ids         | PARTIAL      | No raw address, no uuid. `/status` is open to anyone. See D6.                 |
 | A14 | Force a flat by timing the play                             | **HELD**     | A flat pays zero. There is no profit in timing one.                           |
-| A15 | Kiosk at a 4-win streak reconnecting to keep or inflate it  | PARTIAL      | Cannot be inflated. The secret is in the URL. See D5.                         |
+| A15 | Kiosk at a 4-win streak reconnecting to keep or inflate it  | PARTIAL      | Cannot be inflated. The secret is in the URL. See D5 (closed).                |
 | A16 | Dodge a kiosk loss by resetting the session mid-round       | **LOOPHOLE** | **D1.**                                                                       |
 | A17 | Influence the start or end price                            | **HELD**     | Both prices came off the server's own feed, to three decimals.                |
 | A18 | Two kiosks hit five wins at once with one coupon left       | **HELD**     | Real two-winner race: one code, one `coupons_exhausted`.                      |
@@ -225,6 +225,10 @@ and a byte counter in `readJsonBody()` that destroys the request past ~64 kB.
 
 ### D5 - The kiosk bearer secret is in the launch URL - **Medium** (tracked: S3)
 
+**Closed by ticket S3.** The `?k=<secret>` launch URL this finding describes is removed entirely;
+`/kiosk` (ticket K1) plus a secret held only in that device's local storage is the sole way to
+authenticate a kiosk client now. Nothing below is rewritten - it is the finding as recorded.
+
 **Reproduce.** `node demo/redteam.mjs --only A15`.
 
 ```
@@ -273,6 +277,11 @@ once. Ticket **S12** already wants a coupon alert; this is the same number.
 ---
 
 ### D7 - An empty `?k=` silently turns a booth into a web player - **Low** (tracked: S14)
+
+**Closed by ticket S3.** The presence-not-truthiness fix below already stopped an empty secret
+from being silently welcomed as a web player; ticket S3 closes the finding for good by deleting
+the `?k=` code path it lives in - there is no longer a URL parameter to read at all. Nothing below
+is rewritten - it is the finding as recorded.
 
 **Reproduce.** `node demo/redteam.mjs --only A7`, or open `http://localhost:5347/?k=`.
 

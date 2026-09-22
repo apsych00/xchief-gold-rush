@@ -1,12 +1,11 @@
 // E2E for the booth visitor flow (ticket C2, docs/layers.md). Runs against the dev recipe:
 // bash db/run-tests.sh --keep, npm run server (PORT 8787, matching .env's VITE_GAME_WS), and a
 // Vite dev server serving the client - see this repo's C2 delivery report for the exact ports
-// used in this environment. The dev kiosk secret is dev-kiosk-secret-0001 (seeded).
+// used in this environment. Every kiosk test visits /kiosk (ticket K1), which self-provisions its
+// own identity - there is no shared dev secret and no launch URL (ticket S3 removed both).
 //
-// This suite shares one kiosk identity (one server-side session) across every test in the file,
-// so it runs serially and resets that session over its own independent WebSocket before each
-// test - the same "ask the server directly, not through the page" pattern player-promises.spec.js
-// uses for get_me, applied here to kiosk_reset so tests never see each other's leftover state.
+// Playwright gives every test its own fresh browser context (empty localStorage), so each visit
+// to /kiosk provisions a brand-new, already-idle kiosk row - no cross-test reset needed.
 //
 // The streak-target WON scenario is rare to hit for real inside a test's time budget. It is driven
 // the way the ticket allows: a synthetic round_settled (and its kiosk_session mirror) fed through
@@ -14,95 +13,48 @@
 // shape the real server sends, run through the exact same client handler a real frame takes.
 // Nothing about the client's own rendering is bypassed; only the input is synthetic.
 import { expect, test } from '@playwright/test';
-import fs from 'node:fs';
-import { WebSocket } from 'ws';
 
 import { dismissFirstVisit } from './first-visit.js';
 
-const KIOSK_SECRET = 'dev-kiosk-secret-0001';
-const KIOSK_URL = `/?k=${KIOSK_SECRET}`;
-
-function readEnv() {
-  const out = {};
-  // The environment wins over .env so a run on another port resets the kiosk the browser uses.
-  if (process.env.VITE_GAME_WS) return process.env.VITE_GAME_WS.trim();
-  const text = fs.readFileSync(new URL('../../.env', import.meta.url), 'utf8');
-  for (const line of text.split(/\r?\n/)) {
-    const i = line.indexOf('=');
-    if (i > 0 && !line.trim().startsWith('#')) out[line.slice(0, i).trim()] = line.slice(i + 1).trim();
-  }
-  return out;
-}
-// Both overridable from the environment (same pattern as DATABASE_URL below) so the suite can
-// target a dev server on a non-default port when 8787 is taken by another worktree's stack;
-// defaults stay exactly as .env has them.
-const GAME_WS = process.env.VITE_GAME_WS || readEnv().VITE_GAME_WS;
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:test@localhost:55432/postgres';
 
-/** Ends whatever session dev-kiosk-secret-0001 currently has, over an independent socket - run
- * before every test so one test's leftover streak/coins/state can never leak into the next. */
-function resetKioskSession() {
-  return new Promise((resolve, reject) => {
-    expect(GAME_WS, 'VITE_GAME_WS is not set in .env: the box game server is not configured').toBeTruthy();
-    const ws = new WebSocket(GAME_WS);
-    const timer = setTimeout(() => {
-      ws.terminate();
-      reject(new Error('timed out resetting the kiosk session'));
-    }, 8000);
-    ws.on('open', () => ws.send(JSON.stringify({ type: 'auth', kiosk: KIOSK_SECRET })));
-    ws.on('message', (data) => {
-      let frame;
-      try {
-        frame = JSON.parse(data.toString());
-      } catch {
-        return;
-      }
-      if (frame.type === 'welcome') {
-        ws.send(JSON.stringify({ type: 'kiosk_reset' }));
-      } else if (frame.type === 'kiosk_session') {
-        clearTimeout(timer);
-        ws.close();
-        resolve(frame);
-      } else if (frame.type === 'error') {
-        clearTimeout(timer);
-        ws.close();
-        reject(Object.assign(new Error(frame.code), { code: frame.code }));
-      }
-    });
-    ws.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-  });
+async function openKioskAttract(page) {
+  await page.goto('/kiosk');
+  await expect
+    .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
+      message: 'window.__xchief.mode must be "server" - the open kiosk route is not wired to the game socket',
+      timeout: 10000,
+    })
+    .toBe('server');
+  await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
 }
 
-/** Sets the dev kiosk's session pot directly - the server owns coins, so a test that needs a
- * specific balance goes through the database, never the client. */
-async function setSessionCoins(coins) {
+async function tapToPlay(page) {
+  await openKioskAttract(page);
+  await page.locator('.btn-start').click();
+  await dismissFirstVisit(page);
+  await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
+}
+
+/** The kiosk secret /kiosk just stored for this page's device identity (src/api/socket.js's
+ * KIOSK_STORAGE_KEY) - read back so a test can act on this exact kiosk's row directly. */
+async function kioskSecret(page) {
+  return page.evaluate(() => JSON.parse(localStorage.getItem('xchief.kiosk') || 'null')?.secret);
+}
+
+/** Sets a kiosk's session pot directly - the server owns coins, so a test that needs a specific
+ * balance goes through the database, never the client. */
+async function setSessionCoins(secret, coins) {
   const { default: pg } = await import('pg');
   const pool = new pg.Pool({ connectionString: DATABASE_URL });
   try {
     await pool.query(
       "update public.kiosks set session_coins = $2, session_state = 'playing', last_round_at = now() where id = public.verify_kiosk($1)",
-      [KIOSK_SECRET, coins],
+      [secret, coins],
     );
   } finally {
     await pool.end();
   }
-}
-
-async function tapToPlay(page) {
-  await page.goto(KIOSK_URL);
-  await expect
-    .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
-      message: 'window.__xchief.mode must be "server" - the client is not wired to the game socket',
-      timeout: 10000,
-    })
-    .toBe('server');
-  await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
-  await page.locator('.btn-start').click();
-  await dismissFirstVisit(page);
-  await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
 }
 
 async function playRound(page, dir = 'up') {
@@ -117,27 +69,26 @@ function forbiddenUi(page) {
   return page.locator('.lead, .signup, .lb, .tasks, .nav, input[type="email"]');
 }
 
-// D7 (docs/reports/redteam.md): a launch URL that lost its secret (`/?k=`) must render the
-// kiosk's own error state, never the web app - independent of the shared-session serial suite
-// below since this connection is never authenticated as any kiosk at all.
-test('D7: /?k= (empty secret) shows the not-configured state, never the web app', async ({ page }) => {
-  await page.goto('/?k=');
+// Closes D7 (docs/reports/redteam.md) by removing the code path it lived in (ticket S3): a
+// `k=` query parameter used to be the kiosk's bearer secret on any path, and an empty one
+// silently fell through to a web player. There is no longer any code that reads `k` from the
+// URL at all, so this must load the ordinary web app even when the parameter names a real,
+// valid kiosk secret - never a kiosk, configured or not.
+test('a k= query parameter is inert: the web app loads, never a kiosk', async ({ page }) => {
+  await page.goto('/?k=dev-kiosk-secret-0001');
   await expect
     .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
       message: 'window.__xchief.mode must be "server" - the client is not wired to the game socket',
       timeout: 10000,
     })
     .toBe('server');
-  await expect(page.getByText('Kiosk not configured. Tell the booth staff.')).toBeVisible({ timeout: 10000 });
-  await expect(forbiddenUi(page)).toHaveCount(0);
+  await expect(page.locator('.nav')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('Tap to play')).toHaveCount(0);
+  await expect(page.getByText('Kiosk not configured. Tell the booth staff.')).toHaveCount(0);
 });
 
 test.describe.serial('kiosk visitor flow', () => {
   test.setTimeout(180000);
-
-  test.beforeEach(async () => {
-    await resetKioskSession();
-  });
 
   test('1. ATTRACT -> tap -> play -> verdict, with no email/tasks/leaderboard UI', async ({ page }) => {
     await tapToPlay(page);
@@ -155,7 +106,7 @@ test.describe.serial('kiosk visitor flow', () => {
     // as insufficient_coins, the server marks the session broke and pushes kiosk_session - the
     // exact frame the EXIT modal is driven by. No market luck involved.
     await tapToPlay(page);
-    await setSessionCoins(50);
+    await setSessionCoins(await kioskSecret(page), 50);
     await page.locator('.tick-1').click();
     await page.click('.btn-up');
     await expect(page.getByText('That was your shot')).toBeVisible({ timeout: 10000 });
@@ -300,7 +251,7 @@ test.describe.serial('kiosk visitor flow', () => {
       availableBefore = rows;
       await pool.query("update public.coupons set status = 'claimed', claimed_at = now() where status = 'available'");
 
-      await page.goto(KIOSK_URL);
+      await page.goto('/kiosk');
       await expect
         .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
           message: 'window.__xchief.mode must be "server" - the client is not wired to the game socket',
@@ -432,24 +383,7 @@ test('claim page: scanning a real claim_url shows the gift card once, and reopen
 });
 
 // --- Ticket K1: open kiosk route (/kiosk) ----------------------------------------------------
-
-async function openKioskAttract(page) {
-  await page.goto('/kiosk');
-  await expect
-    .poll(() => page.evaluate(() => window.__xchief && window.__xchief.mode), {
-      message: 'window.__xchief.mode must be "server" - the open kiosk route is not wired to the game socket',
-      timeout: 10000,
-    })
-    .toBe('server');
-  await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
-}
-
-async function tapToPlayOpenKiosk(page) {
-  await openKioskAttract(page);
-  await page.locator('.btn-start').click();
-  await dismissFirstVisit(page);
-  await expect(page.locator('.btn-up')).toBeEnabled({ timeout: 20000 });
-}
+// openKioskAttract and tapToPlay are defined near the top of this file and reused here.
 
 // The kiosk up/down buttons lock through the verdict pane exactly like the web's, so a real
 // visitor taps Play Again on the result screen to arm the next round. Waits for the buttons to
@@ -485,7 +419,7 @@ test.describe.serial('open kiosk route /kiosk', () => {
     await page.goto('/kiosk');
     await page.evaluate(() => localStorage.removeItem('xchief.kiosk'));
 
-    await tapToPlayOpenKiosk(page);
+    await tapToPlay(page);
     await playRound(page, 'up');
     await tapPlayAgain(page);
     await playRound(page, 'down');
@@ -504,12 +438,12 @@ test.describe.serial('open kiosk route /kiosk', () => {
   test('a second browser context on /kiosk gets a different kiosk with a fresh session', async ({ browser }) => {
     const context1 = await browser.newContext();
     const page1 = await context1.newPage();
-    await tapToPlayOpenKiosk(page1);
+    await tapToPlay(page1);
     const kiosk1 = await page1.evaluate(() => JSON.parse(localStorage.getItem('xchief.kiosk') || '{}'));
 
     const context2 = await browser.newContext();
     const page2 = await context2.newPage();
-    await tapToPlayOpenKiosk(page2);
+    await tapToPlay(page2);
     const kiosk2 = await page2.evaluate(() => JSON.parse(localStorage.getItem('xchief.kiosk') || '{}'));
 
     expect(kiosk1.label).toBeTruthy();

@@ -952,7 +952,7 @@ async function a15KioskStreakReconnect() {
       `final streak=${finalState.streak} coins=${finalState.session_coins}`,
     ],
     verdict: w2.streak === 4 && afterSpam === 4 ? 'PARTIAL' : 'LOOPHOLE',
-    note: 'streak and coins are server state keyed by kiosk id, so a reconnect cannot inflate them - but the bearer secret rides in the launch URL (?k=), so anyone who photographs the booth address bar gets a live session on the booth from their own phone (ticket S3)',
+    note: 'streak and coins are server state keyed by kiosk id, so a reconnect cannot inflate them; the bearer secret now lives in device storage via /kiosk instead of the launch URL (ticket S3, closed) - a second device can still authenticate if it holds the raw secret, but that takes access to the provisioned device itself, not a glance at an address bar',
   });
 }
 

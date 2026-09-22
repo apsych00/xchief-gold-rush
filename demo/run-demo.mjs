@@ -114,7 +114,10 @@ function buildWindows(args) {
       console.warn(`[demo] could not read kiosks file ${args.kiosksFile}: ${err.message}`);
     }
   }
-  const defaultKioskUrl = `${args.base}/?k=dev-kiosk-secret-0001`;
+  // /kiosk self-provisions its own identity (ticket K1); the older ?k=<secret> launch URL this
+  // default used to point at is gone (ticket S3). A kiosks.json entry can still override `url`
+  // per window, but there is no longer a way to mint a labeled launch URL to put in one.
+  const defaultKioskUrl = `${args.base}/kiosk`;
   const windows = [];
   for (let i = 0; i < args.kiosks; i++) {
     const entry = kioskEntries[i];

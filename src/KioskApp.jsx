@@ -210,8 +210,8 @@ function KioskIntroModal({ streakTarget, onDone }) {
   );
 }
 
-// D7 (docs/reports/redteam.md): the same overlay a dropped connection shows, with one added
-// line when the server rejected this kiosk's secret (revoked, empty, too short) - reconnecting
+// The same overlay a dropped connection shows, with one added line when /kiosk could not get a
+// usable kiosk identity at all (provisioning switched off, capped, or offline) - reconnecting
 // keeps retrying but can never succeed on its own, so this is the booth's only signal to call
 // staff rather than wait it out.
 function KioskReconnecting({ unauthorized }) {

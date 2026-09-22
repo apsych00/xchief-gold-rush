@@ -4,7 +4,7 @@
  *   DATABASE_URL=postgresql://user:password@host:5432/dbname
  *
  * On the deployed box the database is not reachable from outside the Docker
- * network, so run these through the server container (npm run box:kiosk:new,
+ * network, so run these through the server container (npm run box:kiosk:revoke,
  * ... see docs/box-deploy.md). Against a local dev database set DATABASE_URL
  * yourself (db/run-tests.sh starts a throwaway postgres:16).
  * Credentials come from process.env only. They are never read from a .env
