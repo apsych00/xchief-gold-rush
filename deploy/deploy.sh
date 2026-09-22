@@ -17,7 +17,12 @@ HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-60}"
 
 fail() {
   echo "deploy.sh: FAILED - $1" >&2
-  telegram_alert_deploy_failed
+  # The REPO_DIR check below runs before .env.box is sourced and before the telegram
+  # helpers exist, so an early failure must not die on a missing function - that replaces
+  # the real reason with "command not found" and sends no alert at all.
+  if declare -F telegram_alert_deploy_failed > /dev/null; then
+    telegram_alert_deploy_failed
+  fi
   exit 1
 }
 

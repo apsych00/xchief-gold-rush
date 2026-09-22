@@ -13,12 +13,33 @@ What runs on the box (handled for you by `docker compose`):
 
 Everything after the one-time install is four scripts, all in `deploy/`:
 
-| Script                        | When                                                                                                    |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `deploy/install.sh`           | Once, on a brand new box.                                                                               |
-| `deploy/deploy.sh`            | Manually, any time you want to deploy right now. Also what a push triggers automatically.               |
-| `deploy/autodeploy.sh`        | Never by hand - a cron job runs it every minute and it only acts when there is something new to deploy. |
-| `deploy/rollback.sh <commit>` | When a deploy needs to be undone.                                                                       |
+| Script                        | When                                                                                                                    |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `deploy/install.sh`           | Once, on a brand new box.                                                                                               |
+| `deploy/deploy.sh`            | Manually, any time you want to deploy right now. **On the live box this is the only way a deploy happens** - see below. |
+| `deploy/autodeploy.sh`        | Never by hand - the cron entry point, when cron autodeploy is installed. **It is not installed on the live box.**       |
+| `deploy/rollback.sh <commit>` | When a deploy needs to be undone.                                                                                       |
+
+## The live box, as it actually is
+
+The rest of this document describes the layout `deploy/install.sh` creates. The live
+exhibition box was not built that way, so these are the values that are true today
+(verified 2026-09-22):
+
+|                | Documented default                     | Live box                                                        |
+| -------------- | -------------------------------------- | --------------------------------------------------------------- |
+| Checkout path  | `/opt/goldrush`                        | `/home/azadi/goldrush`                                          |
+| Login          | `deploy@<ip>` on port 22               | `azadi@95.216.141.182` on port **22334** (ssh alias `goldrush`) |
+| Deploy on push | cron runs `autodeploy.sh` every minute | **no cron installed - every deploy is manual**                  |
+| Git remote     | `origin`                               | `origin` = the `nightmareinc` fork                              |
+
+Two consequences worth knowing before you deploy:
+
+- `deploy/deploy.sh` defaults `REPO_DIR` to `/opt/goldrush` and will refuse to run. Pass the
+  real path: `REPO_DIR=$HOME/goldrush bash deploy/deploy.sh`. The same applies to
+  `rollback.sh`.
+- **Pushing does not deploy.** Nothing on the box watches the remote. After pushing to the
+  deploy branch, someone has to SSH in and run the command above.
 
 Node is never installed on the box. The website is built **inside Docker** by `deploy/deploy.sh` every time it runs, so the box can never end up serving a bundle built on the wrong machine.
 
@@ -144,7 +165,21 @@ in local storage, so a reload, a browser crash or a reboot resumes the same
 session - there is no launch URL to generate or distribute (ticket S3 removed
 the older `/?k=<secret>` flow entirely).
 
-Compromised or misbehaving device? Find its label and revoke it:
+### A deploy does not reach a kiosk that is already open
+
+**A tablet sitting on `/kiosk` keeps running the bundle it loaded until someone reloads the
+page.** Deploying does not reach it. Nothing on the kiosk screen polls for a new build, and
+there is no prompt.
+
+The web app does have this: `src/UpdateBanner.jsx` polls `/version.json` every 60 seconds,
+compares it to the build id baked into the running bundle, and offers an Update button.
+It is mounted in `App.jsx` only - `KioskApp.jsx` does not render it, and a tap-to-update
+banner would be the wrong answer on an unattended booth device anyway.
+
+So: **after any deploy during the exhibition, walk the tablets and reload each one.** Pull
+down to refresh, or `Cmd/Ctrl+R`. Do it between visitors - a reload mid-game abandons that
+visitor's round. Check you got a fresh bundle by comparing the tablet against
+`https://<your-domain>/version.json`.
 
 ```
 npm run box:kiosk:list
@@ -167,23 +202,54 @@ folder), `npm run box:otp:peek someone@example.com` (dev only).
 
 - `KIOSK_OPEN_PROVISION` - set to `1` during the exhibition to enable `/kiosk`. Set it back to
   `0` and restart the server after the exhibition.
-- `KIOSK_OPEN_MAX` - hard cap on the total number of active auto-provisioned open kiosks (default 100).
-  Once the cap is reached, `/kiosk` refuses new devices until old ones are removed.
+- `KIOSK_OPEN_MAX` - hard cap on the total number of active auto-provisioned open kiosks.
+  The code's fallback is 100, but `.env.box` sets it explicitly and **the explicit value wins**:
+  the live box is on `50`. Changing the fallback in code does nothing until `.env.box` changes
+  too. Once the cap is reached, `/kiosk` refuses new devices - and the tablet shows a generic
+  connection error, not the real reason, so it looks like a dead device.
 
-Turn it off after the exhibition:
-
-```
-# edit /opt/goldrush/.env.box and set KIOSK_OPEN_PROVISION=0
-deploy/deploy.sh
-```
-
-Decommissioning the auto-provisioned kiosks means deleting the rows whose labels start with
-`open-` (they are already excluded from the normal kiosk list once revoked):
+Turn it off after the exhibition (adjust the path - the live box uses `~/goldrush`):
 
 ```
-docker compose --env-file .env.box exec db psql -U postgres \
-  -c "delete from public.kiosks where label like 'open-%';"
+# edit .env.box and set KIOSK_OPEN_PROVISION=0
+REPO_DIR=$HOME/goldrush bash deploy/deploy.sh
 ```
+
+Decommissioning the auto-provisioned kiosks means deleting their rows. A plain
+`delete from public.kiosks` **fails**: `coupons.claimed_by_kiosk` and `claim_links.kiosk_id`
+both reference kiosks with no `on delete` rule, and `claim_links.kiosk_id` is `not null`, so
+the referencing rows have to go first. Only `rounds` cascades on its own.
+
+Before deleting anything, save the links you are about to destroy - which kiosk a prize came
+from, and who claimed it - because nothing else records them:
+
+```
+docker compose --env-file .env.box exec db psql -U postgres -P pager=off -c "
+  select cl.token, cl.email, cl.claimed_ip, cl.claimed_at, c.code, c.status, k.label
+    from public.claim_links cl
+    left join public.coupons c on c.id = cl.coupon_id
+    left join public.kiosks  k on k.id = cl.kiosk_id;" > kiosk-wipe-record.txt
+```
+
+Then, in one transaction - this returns unclaimed prizes to the pool and leaves genuinely
+claimed ones alone:
+
+```
+docker compose --env-file .env.box exec -T db psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+begin;
+update public.coupons set status = 'available', claimed_by_kiosk = null, claimed_at = null
+ where status = 'reserved';
+update public.coupons set claimed_by_kiosk = null where claimed_by_kiosk is not null;
+delete from public.claim_links;
+delete from public.kiosks where label like 'open-%';
+commit;
+SQL
+```
+
+Deleting a kiosk row does not lock a device out for good: a tablet whose identity is gone is
+refused, clears its stored secret and provisions a fresh one on its next reconnect. That is
+self-healing for the tablets, but it also means the count does not stay at zero while
+`KIOSK_OPEN_PROVISION=1`.
 
 `/status` reports `kiosks.open` and `kiosks.seeded` so you can watch the count.
 
@@ -327,18 +393,19 @@ caddy` shows what it is doing.
 **A deploy failed.** Read the log (below), fix whatever it points at, then run
 `deploy/deploy.sh` again by hand - it is safe to retry.
 
-## Normal updates: push to deploy
+## Normal updates: push, then deploy
 
-Once installed, the box checks for new commits on the campaign branch every
-minute by itself (a cron job runs `deploy/autodeploy.sh`). The marketing lead
-or the developer pushes to that branch, and within a minute the box notices,
-rebuilds the website inside Docker, rebuilds the server if it changed, and
-restarts only what needs restarting. Nothing to do on the box for this - just
-push.
+Where cron autodeploy is installed, the box checks the campaign branch every minute by
+itself (`deploy/autodeploy.sh`), notices a new commit, rebuilds the website inside Docker,
+rebuilds the server if it changed, and restarts only what needs restarting.
+
+**This is not set up on the live exhibition box** (see "The live box, as it actually is"
+near the top). There, pushing to the campaign branch changes nothing until a person runs
+the manual deploy below. Budget for that: a fix that is pushed is not a fix that is live.
 
 ## Manual deploy
 
-To deploy right now instead of waiting for the next cron tick, or to deploy a
+To deploy right now - on the live box, the only way to deploy at all - or to deploy a
 change you know has not landed on the campaign branch's remote head yet:
 
 ```
