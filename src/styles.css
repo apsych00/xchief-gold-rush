@@ -2431,9 +2431,10 @@ button:focus:not(:focus-visible) {
 
    - every rule is scoped to .app-kiosk, a class only the kiosk shell carries
      (App.jsx), so the web tree is never affected;
-   - it is gated behind a viewport that is large on BOTH axes (min 1000px each),
-     which no phone can satisfy in either orientation, so the mobile layout
-     (<=430px) keeps every base value untouched.
+   - portrait uses a tall threshold (min 744px wide and min 1000px tall) that
+      covers every iPad portrait without touching phones;
+   - landscape uses a wide threshold (min 1000px wide and min 700px tall) so
+      short wide tablets also get the kiosk layout while phones stay excluded.
 
    The console body art (Up/Down buttons, lever slider, level label) scales for
    free because we raise --s for the kiosk subtree: .app-kiosk declares its own
@@ -2442,9 +2443,9 @@ button:focus:not(:focus-visible) {
    display panes, attract screen and modals are scaled by the explicit,
    viewport-height-driven rules below so both orientations self-tune.
    ============================================================================ */
-@media (min-width: 1000px) and (min-height: 1000px) {
-  /* Portrait (1024x1366) defaults; the landscape block further down retunes
-     --s and the panel size for the shorter 1366x1024 viewport. */
+@media (min-width: 744px) and (min-height: 1000px) {
+  /* Portrait (744x1133 and up) defaults; the landscape block further down retunes
+     --s and the panel size for short wide tablets. */
   .app-kiosk {
     --s: 1.82;
   }
@@ -2722,11 +2723,11 @@ button:focus:not(:focus-visible) {
   }
 }
 
-/* Landscape iPad Air 13" (1366x1024): plenty of width but only 1024px tall, so
-   the console art scales a little less than portrait and the panel height is
+/* Landscape tablets (1133x744 and up): plenty of width but only ~744px tall,
+   so the console art scales a little less than portrait and the panel height is
    capped to the shorter axis. Everything else inherits the portrait rules
    above; the display type is height-driven (vh) so it self-tunes here. */
-@media (min-width: 1000px) and (min-height: 1000px) and (orientation: landscape) {
+@media (min-width: 1000px) and (min-height: 700px) and (orientation: landscape) {
   .app-kiosk {
     --s: 1.6;
   }
@@ -2742,9 +2743,10 @@ button:focus:not(:focus-visible) {
 
    - every rule is under .app:not(.app-kiosk); the kiosk shell carries .app-kiosk
      (App.jsx) and is retuned in its own block above, so the two never overlap;
-   - it is gated behind a viewport large on BOTH axes (min 1000px each), which no
-     phone reaches in either orientation, so the mobile build (<=430px) keeps every
-     base/mobile value untouched - this block is purely additive.
+   - portrait uses a tall threshold (min 744px wide and min 1000px tall) that
+     covers every iPad portrait without touching phones;
+   - landscape uses a wide threshold (min 1000px wide and min 700px tall) so
+     short wide tablets also get the large-display layout while phones stay excluded.
 
    Portrait (1024x1366) is the default here; the landscape block further down
    retunes --s, the hero and the column height for the shorter 1366x1024 viewport.
@@ -2754,7 +2756,7 @@ button:focus:not(:focus-visible) {
    capped at 1 and only reaches elements that do not redeclare it). The display
    panes and every screen's type/spacing/controls are scaled by the explicit rules
    below; height-driven clamps (vh) self-tune between the two orientations. */
-@media (min-width: 1000px) and (min-height: 1000px) {
+@media (min-width: 744px) and (min-height: 1000px) {
   .app:not(.app-kiosk) {
     --s: 1.55;
     --nav-h: 84px;
@@ -3227,12 +3229,12 @@ button:focus:not(:focus-visible) {
   }
 }
 
-/* Landscape iPad Air 13" (1366x1024): plenty of width but only 1024px tall, so the
+/* Landscape tablets (1133x744 and up): plenty of width but only ~744px tall, so the
    console art scales a little less than portrait and the column height is capped to
    the shorter axis. The hero shrinks so the attract screen still breathes; the
    display type is height-driven (vh) so it self-tunes here. Everything else inherits
    the portrait rules above. */
-@media (min-width: 1000px) and (min-height: 1000px) and (orientation: landscape) {
+@media (min-width: 1000px) and (min-height: 700px) and (orientation: landscape) {
   .app:not(.app-kiosk) {
     --s: 1.4;
   }
