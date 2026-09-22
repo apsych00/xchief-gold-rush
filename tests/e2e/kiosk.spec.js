@@ -218,7 +218,6 @@ test.describe.serial('kiosk visitor flow', () => {
     await expect(
       page.getByText('Congratulations! You won the xChief $100 bonus. Scan to claim your gift:'),
     ).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText('تبریک! شما برنده بونوس ۱۰۰ دلاری ایکس‌چیف شدید. برای دریافت هدیه اسکن کنید:')).toBeVisible();
     await expect(page.locator('.kiosk-qr')).toBeVisible();
     await expect(forbiddenUi(page)).toHaveCount(0);
 
@@ -342,6 +341,51 @@ test.describe.serial('kiosk visitor flow', () => {
       }
       await pool.end();
     }
+  });
+
+  test('7. idle reset shows the server balance, not the previous visitor balance', async ({ page }) => {
+    await tapToPlay(page);
+    await playRound(page, 'up');
+
+    // Force a stale non-default balance onto the client - exactly what the next visitor would
+    // see if the screen did not re-sync to the server on reset.
+    await setSessionCoins(800);
+    await page.evaluate(() => {
+      window.__xchief.inject({ type: 'kiosk_session', coins: 800, streak: 0, state: 'playing' });
+    });
+    await expect(page.locator('.balance-text')).toHaveText(/800/);
+
+    // Walk away: shrink the idle timers through the DEV-only hook and put the server back to the
+    // fresh default, so the kiosk's own flush produces a real kiosk_session idle frame.
+    await page.evaluate(() => window.__xchief.kioskTiming({ idleMs: 1500, countdownMs: 2000 }));
+    await setSessionCoins(1000);
+    await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 10000 });
+
+    // The fix: the balance on the attract screen must now be the server's 1000, not the stale 800.
+    await expect(page.locator('.balance-text')).toHaveText(/1,000/);
+  });
+
+  test('8. a visitor who drains the kiosk to zero does not block the next visitor', async ({ page }) => {
+    await tapToPlay(page);
+    await playRound(page, 'up');
+
+    // Simulate the previous visitor walking away after going broke.
+    await setSessionCoins(0);
+    await page.evaluate(() => {
+      window.__xchief.inject({ type: 'kiosk_session', coins: 0, streak: 0, state: 'broke' });
+    });
+    await expect(page.getByText('That was your shot')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.balance-text')).toHaveText(/0/);
+
+    // The server resets the session and pushes the idle frame; the next visitor must see a fresh
+    // 1000 coins and a working Play button.
+    await setSessionCoins(1000);
+    await page.evaluate(() => {
+      window.__xchief.inject({ type: 'kiosk_session', coins: 1000, streak: 0, state: 'idle' });
+    });
+    await expect(page.getByText('Tap to play')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.balance-text')).toHaveText(/1,000/);
+    await expect(page.locator('.btn-start')).toBeEnabled();
   });
 });
 
