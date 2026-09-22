@@ -928,7 +928,13 @@ export function useGame() {
       patch({ screen: 'tasks', ...leaveGameState() });
       pushPath(SCREEN_PATHS.tasks);
     },
-    playAgain: () => patch(reset),
+    // Touchscreen hardware often registers one press twice. Play Again only means anything on
+    // the result screen; a second tap mid-transition would otherwise re-arm the round.
+    playAgain: () => {
+      if (phaseRef.current !== 'result') return;
+      phaseRef.current = 'idle';
+      patch(reset);
+    },
     pickUp: () => startRound('up'),
     pickDown: () => startRound('down'),
     sliderDown: (e) => {
