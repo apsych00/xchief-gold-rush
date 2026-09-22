@@ -132,9 +132,6 @@ Do not mistake these for the live system:
   replaced it. Nothing in that design is deployed, and the server is now the only thing
   that speaks to the database, so there is no row-level security layer to reason about.
 
-Note that `AGENTS.md` still describes the Vercel plus Supabase plus Fly stack in its Stack
-section. That section is out of date; this file and `box-architecture.md` reflect reality.
-
 ## Where to look next
 
 | Question | File |

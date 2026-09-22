@@ -51,7 +51,6 @@ npm run test:e2e         # playwright
 
 npm run box:up           # bring the whole stack up with docker compose
 npm run box:logs         # follow the server log
-npm run box:kiosk:new    # mint a kiosk and print its URL once (secret is unrecoverable)
 npm run box:coupons:load # load the prize pool
 ```
 
